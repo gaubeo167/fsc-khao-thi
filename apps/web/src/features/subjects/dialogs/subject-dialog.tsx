@@ -27,21 +27,27 @@ interface Props {
 }
 
 export function SubjectDialog({ open, onOpenChange, editing }: Props) {
-  const grades = useGradesStore((s) => s.grades);
-  const campuses = useCampusesStore((s) => s.campuses);
+  const allGrades = useGradesStore((s) => s.grades);
+  const allCampuses = useCampusesStore((s) => s.campuses);
   const session = useAuthStore((s) => s.session);
   const activeCampusId = useCampusStore((s) => s.activeCampusId);
   const createSubject = useSubjectsStore((s) => s.createSubject);
   const updateSubject = useSubjectsStore((s) => s.updateSubject);
 
-  // Default campus(es) for a new subject. If the user is operating a single
-  // campus (pinned or locked), default to that one; otherwise leave empty so
-  // the user explicitly picks.
-  const operatingCampusId =
-    session?.role === "superadmin"
-      ? activeCampusId
-      : session?.campusId ?? null;
+  // Scope rules:
+  //  - Superadmin → can apply to any campus / any grade in catalog
+  //  - All other roles → locked to their session.campusId; grades
+  //    restricted to that campus's tier (campus.gradeIds).
+  const isSuperadmin = session?.role === "superadmin";
+  const operatingCampusId = isSuperadmin
+    ? activeCampusId
+    : session?.campusId ?? null;
   const defaultCampusIds = operatingCampusId ? [operatingCampusId] : [];
+
+  // Campus options visible in the picker.
+  const campuses = isSuperadmin
+    ? allCampuses
+    : allCampuses.filter((c) => c.id === session?.campusId);
 
   const form = useForm<SubjectValues>({
     resolver: zodResolverSafe(SubjectSchema),
@@ -177,9 +183,28 @@ export function SubjectDialog({ open, onOpenChange, editing }: Props) {
             <Controller
               control={form.control}
               name="gradeIds"
-              render={({ field }) => (
+              render={({ field }) => {
+                // Compute the union of gradeIds across selected campuses
+                // — that defines which grades the subject can apply to.
+                // If no campus selected yet (rare), fall back to all.
+                const selectedCampusIds: string[] =
+                  (form.watch("campusIds") as string[] | undefined) ?? [];
+                const allowedGradeIds = new Set<string>();
+                for (const cid of selectedCampusIds) {
+                  const c = allCampuses.find((x) => x.id === cid);
+                  for (const gid of c?.gradeIds ?? []) allowedGradeIds.add(gid);
+                }
+                const scopedGrades =
+                  selectedCampusIds.length === 0
+                    ? allGrades
+                    : allGrades.filter((g) => allowedGradeIds.has(g.id));
+                // Dedupe by id just in case the catalog has duplicates.
+                const dedupedGrades = Array.from(
+                  new Map(scopedGrades.map((g) => [g.id, g])).values(),
+                ).sort((a, b) => a.order - b.order);
+                return (
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-                  {grades.map((g) => {
+                  {dedupedGrades.map((g) => {
                     const selected = field.value.includes(g.id);
                     return (
                       <button
@@ -215,14 +240,15 @@ export function SubjectDialog({ open, onOpenChange, editing }: Props) {
                     );
                   })}
                 </div>
-              )}
+                );
+              }}
             />
             <p className="text-meta mt-1">
               Đã chọn{" "}
               <span className="font-semibold text-foreground/85 tabular-nums">
                 {watchedGradeIds.length}
               </span>{" "}
-              / {grades.length} khối
+              khối — chỉ hiện khối thuộc campus đã chọn ở dưới
             </p>
           </Field>
 
