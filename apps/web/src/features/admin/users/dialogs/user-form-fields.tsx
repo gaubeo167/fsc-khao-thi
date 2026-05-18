@@ -577,159 +577,170 @@ export function UserFormFields({
 
       {role === "student" && (
         <>
-          <Field label="Khối">
-            {!selectedCampus ? (
-              <Select disabled>
-                <option>— Chọn campus trước —</option>
-              </Select>
-            ) : gradesForCampus.length === 0 ? (
-              <Select disabled>
-                <option>Campus chưa có khối khả dụng</option>
-              </Select>
-            ) : (
-              <Select
-                value={selectedGradeId}
-                onChange={(e) => {
-                  setSelectedGradeId(e.target.value);
-                  // Reset class whenever grade changes so users don't keep
-                  // a class that belongs to a different khối. We deliberately
-                  // skip `shouldValidate` here — validating the whole form
-                  // mid-edit triggers Zod errors on still-empty siblings
-                  // like email (which is fine until the user submits).
-                  setValue("className", "", {
-                    shouldValidate: false,
-                    shouldDirty: true,
-                  });
-                }}
+          {/* ───── Section: Học vụ — Khối, Lớp, Mã học sinh ─────────── */}
+          <div className="sm:col-span-2 space-y-3 rounded-xl border border-emerald-200/70 bg-emerald-50/40 p-4">
+            <p className="inline-flex items-center gap-2 text-[13px] font-semibold text-emerald-900">
+              <span aria-hidden className="text-base">🎓</span>
+              Học vụ
+            </p>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Khối">
+                {!selectedCampus ? (
+                  <Select disabled>
+                    <option>— Chọn campus trước —</option>
+                  </Select>
+                ) : gradesForCampus.length === 0 ? (
+                  <Select disabled>
+                    <option>Campus chưa có khối khả dụng</option>
+                  </Select>
+                ) : (
+                  <Select
+                    value={selectedGradeId}
+                    onChange={(e) => {
+                      setSelectedGradeId(e.target.value);
+                      setValue("className", "", {
+                        shouldValidate: false,
+                        shouldDirty: true,
+                      });
+                    }}
+                  >
+                    <option value="">— Chọn khối —</option>
+                    {gradesForCampus.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.name}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
+
+              <Field
+                label="Lớp (tuỳ chọn)"
+                error={errors.className?.message as string | undefined}
               >
-                <option value="">— Chọn khối —</option>
-                {gradesForCampus.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.name}
-                  </option>
-                ))}
-              </Select>
-            )}
-            {selectedCampus && gradesForCampus.length > 0 && (
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                Hiện {gradesForCampus.length} khối của {selectedCampus.name}.
-              </p>
-            )}
-          </Field>
+                {!selectedCampus ? (
+                  <Select disabled>
+                    <option>— Chọn campus trước —</option>
+                  </Select>
+                ) : !selectedGradeId ? (
+                  <Select disabled>
+                    <option>— Chọn khối trước —</option>
+                  </Select>
+                ) : classesForCampus.length === 0 ? (
+                  <Select {...register("className")} disabled>
+                    <option value="">Khối chưa có lớp — xếp sau</option>
+                  </Select>
+                ) : (
+                  <Select {...register("className")}>
+                    <option value="">— Chưa xếp lớp —</option>
+                    {classesForCampus.map((c) => (
+                      <option key={c.id} value={c.code}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
 
-          <Field
-            label="Lớp (tuỳ chọn)"
-            error={errors.className?.message as string | undefined}
-          >
-            {!selectedCampus ? (
-              <Select disabled>
-                <option>— Chọn campus trước —</option>
-              </Select>
-            ) : !selectedGradeId ? (
-              <Select disabled>
-                <option>— Chọn khối trước —</option>
-              </Select>
-            ) : classesForCampus.length === 0 ? (
-              <Select {...register("className")} disabled>
-                <option value="">Khối chưa có lớp — sẽ xếp lớp sau</option>
-              </Select>
-            ) : (
-              <Select {...register("className")}>
-                <option value="">— Chưa xếp lớp —</option>
-                {classesForCampus.map((c) => (
-                  <option key={c.id} value={c.code}>
-                    {c.name}
-                  </option>
-                ))}
-              </Select>
-            )}
-            {selectedGradeId && classesForCampus.length > 0 ? (
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                {classesForCampus.length} lớp thuộc khối đã chọn tại{" "}
-                {selectedCampus?.name}. Có thể để trống và xếp lớp sau.
-              </p>
-            ) : selectedGradeId && classesForCampus.length === 0 ? (
-              <p className="mt-1 text-[11px] text-amber-700">
-                Khối này chưa khai báo lớp. Bạn vẫn có thể tạo người dùng và
-                xếp lớp ở trang "Khối · lớp" sau.
-              </p>
-            ) : null}
-          </Field>
+              <Field
+                label="Mã học sinh (tuỳ chọn)"
+                error={errors.studentCode?.message as string | undefined}
+                className="sm:col-span-2"
+              >
+                <Input
+                  placeholder="vd: FSCCG-2024-001"
+                  {...register("studentCode")}
+                />
+                <p className="mt-1 text-[11px] text-emerald-800/70">
+                  Mã định danh để tìm kiếm / báo cáo. Để trống → tự sinh.
+                </p>
+              </Field>
+            </div>
+          </div>
 
-          {/* ───── Student-specific fields ─────────────────────────────── */}
-          <Field
-            label="Mã học sinh (tuỳ chọn)"
-            error={errors.studentCode?.message as string | undefined}
-          >
-            <Input
-              placeholder="vd: FSCCG-2024-001"
-              {...register("studentCode")}
-            />
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              Mã định danh để tìm kiếm / báo cáo. Để trống → hệ thống tự sinh
-              theo mã campus.
+          {/* ───── Section: Tài khoản đăng nhập ──────────────────────── */}
+          <div className="sm:col-span-2 space-y-3 rounded-xl border border-amber-200/70 bg-amber-50/40 p-4">
+            <p className="inline-flex items-center gap-2 text-[13px] font-semibold text-amber-900">
+              <span aria-hidden className="text-base">🔑</span>
+              Tài khoản đăng nhập
             </p>
-          </Field>
 
-          <Field
-            label="Tài khoản đăng nhập (tuỳ chọn)"
-            error={errors.username?.message as string | undefined}
-          >
-            <Input
-              placeholder="vd: lan.nh"
-              {...register("username")}
-            />
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              Để trống → tự sinh từ mã học sinh. Hệ thống tự check trùng.
+            <Field
+              label="Tài khoản (tuỳ chọn)"
+              error={errors.username?.message as string | undefined}
+            >
+              <Input
+                placeholder="vd: lan.nh"
+                {...register("username")}
+              />
+              <p className="mt-1 text-[11px] text-amber-800/70">
+                Bỏ trống → hệ thống tự sinh từ mã học sinh. Tự check trùng.
+              </p>
+            </Field>
+          </div>
+
+          {/* ───── Section: Phụ huynh ────────────────────────────────── */}
+          <div className="sm:col-span-2 space-y-3 rounded-xl border border-violet-200/70 bg-violet-50/40 p-4">
+            <p className="inline-flex items-center gap-2 text-[13px] font-semibold text-violet-900">
+              <span aria-hidden className="text-base">👨‍👩‍👦</span>
+              Phụ huynh
             </p>
-          </Field>
 
-          <Field
-            label="SĐT phụ huynh"
-            error={errors.parentPhone?.message as string | undefined}
-          >
-            <Input
-              type="tel"
-              placeholder="vd: 0912345678"
-              {...register("parentPhone")}
-            />
-          </Field>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field
+                label="SĐT phụ huynh"
+                error={errors.parentPhone?.message as string | undefined}
+              >
+                <Input
+                  type="tel"
+                  placeholder="0912xxx xxx"
+                  {...register("parentPhone")}
+                />
+              </Field>
 
-          <Field
-            label="Email phụ huynh"
-            error={errors.parentEmail?.message as string | undefined}
-          >
-            <Input
-              type="email"
-              placeholder="vd: phuhuynh@gmail.com"
-              {...register("parentEmail")}
-            />
-          </Field>
+              <Field
+                label="Email phụ huynh"
+                error={errors.parentEmail?.message as string | undefined}
+              >
+                <Input
+                  type="email"
+                  placeholder="phuhuynh@gmail.com"
+                  {...register("parentEmail")}
+                />
+              </Field>
+            </div>
+          </div>
         </>
       )}
 
       {withPassword && (
-        <Field
-          label="Mật khẩu khởi tạo"
-          error={errors.password?.message as string | undefined}
-          className="sm:col-span-2"
-        >
-          <Input
-            type="text"
-            placeholder="Tự sinh hoặc nhập tay (≥ 6 ký tự)"
-            aria-invalid={Boolean(errors.password)}
-            {...register("password")}
-          />
-          <p className="text-meta mt-1">
-            Người dùng sẽ được yêu cầu đổi mật khẩu ở lần đăng nhập đầu tiên.
+        <div className="sm:col-span-2 space-y-3 rounded-xl border border-rose-200/70 bg-rose-50/40 p-4">
+          <p className="inline-flex items-center gap-2 text-[13px] font-semibold text-rose-900">
+            <span aria-hidden className="text-base">🔒</span>
+            Bảo mật
           </p>
-        </Field>
+          <Field
+            label="Mật khẩu khởi tạo"
+            error={errors.password?.message as string | undefined}
+          >
+            <Input
+              type="text"
+              placeholder="Tự sinh hoặc nhập tay (≥ 6 ký tự)"
+              aria-invalid={Boolean(errors.password)}
+              {...register("password")}
+            />
+            <p className="mt-1 text-[11px] text-rose-800/70">
+              Người dùng nên đổi mật khẩu sau lần đăng nhập đầu tiên.
+            </p>
+          </Field>
+        </div>
       )}
 
       {withOptionalPassword && (
-        <div className="sm:col-span-2 space-y-1.5 rounded-xl border bg-muted/20 p-3">
-          <p className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-foreground/85">
-            <span aria-hidden>🔒</span>
+        <div className="sm:col-span-2 space-y-3 rounded-xl border border-rose-200/70 bg-rose-50/40 p-4">
+          <p className="inline-flex items-center gap-2 text-[13px] font-semibold text-rose-900">
+            <span aria-hidden className="text-base">🔒</span>
             Bảo mật
           </p>
           <Field
@@ -742,7 +753,7 @@ export function UserFormFields({
               aria-invalid={Boolean(errors.password)}
               {...register("password")}
             />
-            <p className="text-meta mt-1">
+            <p className="mt-1 text-[11px] text-rose-800/70">
               Để trống nếu không đổi mật khẩu. Tối thiểu 6 ký tự nếu nhập.
             </p>
           </Field>
