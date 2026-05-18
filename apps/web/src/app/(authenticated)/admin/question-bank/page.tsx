@@ -195,7 +195,7 @@ export default function QuestionBankPage() {
   }, [questions, session, activeCampusId, khoView, scope]);
 
   const filtered = useMemo(() => {
-    return scoped.filter((q) => {
+    const list = scoped.filter((q) => {
       if (typeFilter !== "all" && q.type !== typeFilter) return false;
       if (statusFilter !== "all" && q.status !== statusFilter) return false;
       if (subjectFilter !== "all" && q.subjectId !== subjectFilter) return false;
@@ -207,6 +207,15 @@ export default function QuestionBankPage() {
         if (!hay.includes(qStr)) return false;
       }
       return true;
+    });
+    // Newest first — sort by createdAt descending. Falls back to id
+    // comparison so questions with identical timestamps (or missing
+    // createdAt on legacy records) still sort deterministically.
+    return list.slice().sort((a, b) => {
+      const ta = Date.parse(a.createdAt) || 0;
+      const tb = Date.parse(b.createdAt) || 0;
+      if (tb !== ta) return tb - ta;
+      return b.id.localeCompare(a.id);
     });
   }, [scoped, typeFilter, statusFilter, subjectFilter, gradeFilter, difficultyFilter, search]);
 
