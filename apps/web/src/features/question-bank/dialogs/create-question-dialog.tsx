@@ -27,6 +27,7 @@ import {
 } from "@/features/auth/lib/use-scope";
 import { useAuthStore } from "@/features/auth/state/auth-store";
 import { useCampusStore } from "@/features/campus/state/campus-store";
+import { useCampusesStore } from "@/features/campus/state/campuses-store";
 import { useGradesStore } from "@/features/grades/state/grades-store";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 
@@ -223,12 +224,29 @@ export function QuestionForm({ type, editing, isEdit, onBack, onSubmit }: FormPr
   const grades = useGradesStore((s) => s.grades);
   const subjects = useSubjectsStore((s) => s.subjects);
   const tocNodes = useSubjectsStore((s) => s.tocNodes);
+  const allCampuses = useCampusesStore((s) => s.campuses);
   // Scope — teachers / TBM are restricted to their assigned subjects +
   // grades. Admin-class roles (campus-admin / academic-director /
   // superadmin) bypass via `scope.isUnscoped`.
   const scope = useUserScope();
+  // After the role-scope filter, further restrict to the operating
+  // campus's gradeIds so a campus-admin on a primary-secondary campus
+  // doesn't see K10–K12 (which don't exist there).
+  const activeCampusIdLocal = useCampusStore((s) => s.activeCampusId);
+  const operatingCampusId =
+    session?.role === "superadmin"
+      ? activeCampusIdLocal
+      : session?.campusId ?? null;
+  const operatingCampus = operatingCampusId
+    ? allCampuses.find((c) => c.id === operatingCampusId) ?? null
+    : null;
+  const campusGradeIds = operatingCampus
+    ? new Set(operatingCampus.gradeIds)
+    : null;
   const allowedSubjects = filterSubjectsByScope(subjects, scope);
-  const allowedGrades = filterGradesByScope(grades, scope);
+  const allowedGrades = filterGradesByScope(grades, scope).filter(
+    (g) => (campusGradeIds ? campusGradeIds.has(g.id) : true),
+  );
 
   const meta = findQuestionType(type);
   const Icon = meta.icon;

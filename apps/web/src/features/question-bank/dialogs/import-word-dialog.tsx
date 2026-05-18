@@ -20,6 +20,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { useAuthStore } from "@/features/auth/state/auth-store";
 import { useCampusStore } from "@/features/campus/state/campus-store";
+import { useCampusesStore } from "@/features/campus/state/campuses-store";
 import { useGradesStore } from "@/features/grades/state/grades-store";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 
@@ -174,8 +175,9 @@ type State =
 export function ImportWordDialog({ open, onOpenChange }: Props) {
   const session = useAuthStore((s) => s.session);
   const activeCampusId = useCampusStore((s) => s.activeCampusId);
+  const campuses = useCampusesStore((s) => s.campuses);
   const subjects = useSubjectsStore((s) => s.subjects);
-  const grades = useGradesStore((s) => s.grades);
+  const allGrades = useGradesStore((s) => s.grades);
   const tocNodes = useSubjectsStore((s) => s.tocNodes);
   const createQuestion = useQuestionsStore((s) => s.create);
 
@@ -187,9 +189,28 @@ export function ImportWordDialog({ open, onOpenChange }: Props) {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
 
-  const availableTocs = tocNodes.filter(
-    (n) => n.subjectId === subjectId && (gradeId ? n.gradeId === gradeId : true),
+  // Scope grades to the operating campus's tier so import dialog doesn't
+  // offer K10-K12 when the campus is primary-secondary (K1-K9).
+  const operatingCampusId =
+    session?.role === "superadmin"
+      ? activeCampusId
+      : session?.campusId ?? null;
+  const operatingCampus = operatingCampusId
+    ? campuses.find((c) => c.id === operatingCampusId) ?? null
+    : null;
+  const grades = operatingCampus
+    ? allGrades.filter((g) => operatingCampus.gradeIds.includes(g.id))
+    : allGrades;
+
+  // TOC: prefer exact (subject, grade) match, fall back to subject-only
+  // so admins who built a Mục lục under one grade don't have to rebuild
+  // it for every other grade of the same subject.
+  const exactToc = tocNodes.filter(
+    (n) => n.subjectId === subjectId && n.gradeId === gradeId,
   );
+  const subjectToc = tocNodes.filter((n) => n.subjectId === subjectId);
+  const availableTocs = exactToc.length > 0 ? exactToc : subjectToc;
+  const tocFallback = exactToc.length === 0 && subjectToc.length > 0;
 
   async function importFile(file: File) {
     setState({ kind: "loading" });
@@ -463,6 +484,11 @@ export function ImportWordDialog({ open, onOpenChange }: Props) {
                   </option>
                 ))}
               </Select>
+              {tocFallback && (
+                <p className="mt-1 text-[11px] text-amber-700">
+                  Đang dùng mục lục đã tạo cho khối khác của môn này.
+                </p>
+              )}
             </Field>
           </div>
 
