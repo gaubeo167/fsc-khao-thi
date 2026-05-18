@@ -42,8 +42,17 @@ export function GradeDialog({ open, onOpenChange, editing }: Props) {
   }, [open, editing?.id]);
 
   function onSubmit(values: GradeValues) {
-    if (editing) updateGrade(editing.id, values);
-    else createGrade(values);
+    if (editing) {
+      // Only mã + thứ tự + trạng thái are editable; tên khối is locked
+      // to its catalog value so naming stays consistent across campuses.
+      updateGrade(editing.id, {
+        code: values.code,
+        order: values.order,
+        status: values.status,
+      });
+    } else {
+      createGrade(values);
+    }
     onOpenChange(false);
   }
 
@@ -69,18 +78,31 @@ export function GradeDialog({ open, onOpenChange, editing }: Props) {
 
         <form onSubmit={form.handleSubmit(onSubmit)}>
           <div className="space-y-4 px-6 py-5">
-            <div className="grid grid-cols-2 gap-3">
+            {/* Tên khối is part of the global catalog and cannot be
+                renamed from the campus admin UI — show it read-only so
+                the admin still knows which grade they're editing. */}
+            {editing && (
+              <Field label="Tên khối">
+                <Input value={editing.name} disabled readOnly />
+                <p className="text-[11px] text-muted-foreground">
+                  Tên khối thuộc catalog toàn cục, không sửa được tại đây.
+                </p>
+              </Field>
+            )}
+            {!editing && (
               <Field label="Tên khối" required error={form.formState.errors.name?.message}>
                 <Input placeholder="VD: Khối 7" {...form.register("name")} />
+              </Field>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Mã khối" required error={form.formState.errors.code?.message}>
+                <Input placeholder="VD: K7" {...form.register("code")} />
               </Field>
               <Field label="Thứ tự" error={form.formState.errors.order?.message}>
                 <Input type="number" min={0} {...form.register("order")} />
               </Field>
             </div>
-
-            <Field label="Mã khối" required error={form.formState.errors.code?.message}>
-              <Input placeholder="VD: K7" {...form.register("code")} />
-            </Field>
 
             <Field label="Trạng thái">
               <Select {...form.register("status")}>

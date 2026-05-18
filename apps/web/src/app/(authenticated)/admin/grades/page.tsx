@@ -258,19 +258,10 @@ export default function GradesAdminPage() {
         description="Tổ chức và quản lý các khối / lớp học trong FSchools"
         actions={
           <>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                setEditingGrade(null);
-                setGradeDialogOpen(true);
-              }}
-              disabled={!canMutate}
-              title={!canMutate ? "Chọn 1 campus để thêm khối" : undefined}
-            >
-              <Plus className="h-4 w-4" />
-              Thêm khối
-            </Button>
+            {/* "Thêm khối" intentionally removed — the global K1–K12
+                 catalog is fixed and each campus inherits its visible
+                 subset via `gradeIdsForTier(campus.tier)`. To change a
+                 campus's grade coverage, edit its tier instead. */}
             <Button
               size="sm"
               onClick={() => {

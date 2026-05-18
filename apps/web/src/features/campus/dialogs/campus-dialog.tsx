@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { useUsersStore } from "@/features/admin/users/users-store";
+import { useGradesStore } from "@/features/grades/state/grades-store";
 import { cn } from "@/lib/utils";
 
 import {
@@ -64,6 +65,9 @@ export function CampusDialog({ open, onOpenChange, editing }: Props) {
   const update = useCampusesStore((s) => s.update);
   const createUser = useUsersStore((s) => s.create);
   const findUserByIdentifier = useUsersStore((s) => s.findByIdentifier);
+  const allClasses = useGradesStore((s) => s.classes);
+  const allGrades = useGradesStore((s) => s.grades);
+  const allUsers = useUsersStore((s) => s.users);
 
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
@@ -115,6 +119,47 @@ export function CampusDialog({ open, onOpenChange, editing }: Props) {
       return;
     }
     if (editing) {
+      // ───── Tier change validation ─────────────────────────────────────
+      // If superadmin shrinks the campus's grade coverage (e.g. "Liên
+      // cấp 1·2·3" → "Cấp 1 & 2"), make sure no students are still
+      // attached to grades that would disappear. Force them to be
+      // reassigned first.
+      if (tier !== editing.tier) {
+        const newGradeIds = new Set(gradeIdsForTier(tier));
+        const removedGradeIds = (editing.gradeIds ?? []).filter(
+          (gid) => !newGradeIds.has(gid),
+        );
+        if (removedGradeIds.length > 0) {
+          // Find classes in this campus that belong to a removed grade.
+          const blockingClasses = allClasses.filter(
+            (c) =>
+              c.campusId === editing.id &&
+              removedGradeIds.includes(c.gradeId),
+          );
+          const studentsInBlocking = allUsers.filter(
+            (u) =>
+              u.role === "student" &&
+              u.campusId === editing.id &&
+              blockingClasses.some(
+                (c) => u.className === c.code || u.classIds?.includes(c.id),
+              ),
+          );
+          if (studentsInBlocking.length > 0) {
+            const lostNames = removedGradeIds
+              .map(
+                (gid) =>
+                  allGrades.find((g) => g.id === gid)?.name ?? gid,
+              )
+              .join(", ");
+            setError(
+              `Không thể chuyển cấp campus: ${studentsInBlocking.length} học sinh đang thuộc khối sắp bị loại (${lostNames}). ` +
+                "Chuyển các học sinh này sang khối khác trước rồi mới đổi cấp campus được.",
+            );
+            return;
+          }
+        }
+      }
+
       update(editing.id, {
         name: name.trim(),
         code: code.trim().toUpperCase(),
