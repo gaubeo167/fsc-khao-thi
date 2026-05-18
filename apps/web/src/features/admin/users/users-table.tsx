@@ -60,7 +60,6 @@ export function UsersTable({
         <TableHeader>
           <TableRow className="hover:bg-transparent">
             <TableHead>Người dùng</TableHead>
-            <TableHead>Mã NDG</TableHead>
             <TableHead>Vai trò</TableHead>
             <TableHead>Campus</TableHead>
             <TableHead>Bộ môn / Lớp</TableHead>
@@ -89,9 +88,6 @@ export function UsersTable({
                       <p className="text-meta truncate">{u.email}</p>
                     </div>
                   </button>
-                </TableCell>
-                <TableCell>
-                  <span className="font-mono text-[12px] text-foreground/75">{u.id}</span>
                 </TableCell>
                 <TableCell>
                   <span
