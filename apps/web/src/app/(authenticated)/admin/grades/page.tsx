@@ -82,8 +82,13 @@ export default function GradesAdminPage() {
   const { canMutate } = useCampusGate();
 
   // When a campus is pinned (superadmin operating mode or staff locked to
-  // their own), only show the grades that campus actually offers via its
-  // tier. Without a pin, all 12 grades are visible.
+  // Scope rules:
+  //  - Pinned campus (or non-superadmin's locked campus) → show that
+  //    campus's gradeIds only.
+  //  - Superadmin with no pin → show the *union* of every campus's
+  //    gradeIds (only grades actually in use by at least one campus).
+  //    This stops K10-K12 from appearing when the only campus in the
+  //    system is a primary-secondary one with gradeIds = K1-K9.
   const operatingCampusId =
     session?.role === "superadmin"
       ? activeCampusId
@@ -95,10 +100,18 @@ export default function GradesAdminPage() {
         : null,
     [operatingCampusId, campuses],
   );
-  const scopedGradeIds = useMemo(
-    () => (operatingCampus ? new Set(operatingCampus.gradeIds) : null),
-    [operatingCampus],
-  );
+  const scopedGradeIds = useMemo(() => {
+    if (operatingCampus) return new Set(operatingCampus.gradeIds);
+    // Superadmin no-pin path — union across campuses. Empty union
+    // (no campuses yet) falls back to null = "show all" so the first
+    // admin can still see the global K1–K12 list to set things up.
+    if (campuses.length === 0) return null;
+    const union = new Set<string>();
+    for (const c of campuses) {
+      for (const gid of c.gradeIds ?? []) union.add(gid);
+    }
+    return union.size > 0 ? union : null;
+  }, [operatingCampus, campuses]);
 
   const [tab, setTab] = useState<"grade" | "class">("grade");
   const [search, setSearch] = useState("");
