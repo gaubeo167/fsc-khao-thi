@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 import { subscribeUsers } from "@/features/admin/users/users-store";
 import { subscribeCampuses } from "@/features/campus/state/campuses-store";
@@ -18,19 +18,23 @@ import { isFirebaseConfigured } from "@/lib/firebase";
 import { startAuthSubscription, useAuthStore } from "../state/auth-store";
 
 /**
- * Mounts the two long-lived Firebase listeners exactly once:
+ * Boots Firebase listeners.
  *
- *   1. `onAuthStateChanged` — keeps `useAuthStore.session` in sync with
- *      Firebase Auth (handles refresh, sign-in from another tab, token
- *      expiry, …).
- *   2. `onSnapshot(/users)` — keeps `useUsersStore.users` in sync with
- *      Firestore so dropdowns / admin tables stay live.
+ * Auth subscription is permanent. Data subscriptions (campuses,
+ * subjects, …) are started ONLY after a user is signed in, because
+ * Firestore security rules require `isSignedIn()` for reads — if we
+ * subscribed pre-login, the snapshot would be permission-denied and
+ * stay empty even after the user signed in (the listener doesn't
+ * auto-retry on auth change). Tearing down / restarting them on each
+ * session change keeps everything in sync.
  *
- * If Firebase env vars are missing (typical for dev before configuring
- * `.env.local`), we skip both and log a single warning so the rest of
- * the UI still renders with seed data.
+ * If Firebase env vars are missing, both are skipped and the UI falls
+ * back to seed data in demo mode.
  */
 export function AuthBootstrap() {
+  const dataUnsubsRef = useRef<Array<() => void>>([]);
+
+  // Auth subscription — mount once, kept alive.
   useEffect(() => {
     if (!isFirebaseConfigured()) {
       // eslint-disable-next-line no-console
@@ -38,32 +42,75 @@ export function AuthBootstrap() {
         "[FSC] Firebase env vars not set — running in offline / seed-data mode. " +
           "Copy apps/web/.env.example to .env.local and fill in values to enable auth.",
       );
-      // Unblock the authenticated layout so it stops showing the spinner;
-      // it'll redirect to /login because session is null.
       useAuthStore.getState()._applySession(null);
       return;
     }
-    const unsubs: Array<() => void> = [];
-    try {
-      unsubs.push(startAuthSubscription());
-      unsubs.push(subscribeUsers());
-      unsubs.push(subscribeCampuses());
-      unsubs.push(subscribeSubjects());
-      unsubs.push(subscribeGradesCatalog());
-      unsubs.push(subscribeTeaching());
-      unsubs.push(subscribeQuestions());
-      unsubs.push(subscribeBlueprints());
-      unsubs.push(subscribePackages());
-      unsubs.push(subscribeShifts());
-      unsubs.push(subscribeAttempts());
-      unsubs.push(subscribeGrading());
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.error("[FSC] Firebase bootstrap failed:", e);
+    const unsub = startAuthSubscription();
+    return () => unsub();
+  }, []);
+
+  // Data subscriptions — start when signed in, tear down on signout.
+  // Subscribing post-signin avoids permission-denied snapshots that
+  // would leave stores empty until a manual hard-refresh.
+  useEffect(() => {
+    if (!isFirebaseConfigured()) return;
+    const unsubAuthStore = useAuthStore.subscribe((state, prev) => {
+      const sessionChanged = state.session?.userId !== prev.session?.userId;
+      if (!sessionChanged) return;
+      // Tear down whatever's currently subscribed.
+      for (const u of dataUnsubsRef.current) u();
+      dataUnsubsRef.current = [];
+      // No active session → leave stores empty.
+      if (!state.session) return;
+      // Start a fresh set of subscriptions under the new auth context.
+      try {
+        dataUnsubsRef.current = [
+          subscribeUsers(),
+          subscribeCampuses(),
+          subscribeSubjects(),
+          subscribeGradesCatalog(),
+          subscribeTeaching(),
+          subscribeQuestions(),
+          subscribeBlueprints(),
+          subscribePackages(),
+          subscribeShifts(),
+          subscribeAttempts(),
+          subscribeGrading(),
+        ];
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.error("[FSC] Data subscriptions failed:", e);
+      }
+    });
+    // If a session is already present at mount (e.g., page refresh while
+    // signed in), trigger the same flow immediately.
+    const current = useAuthStore.getState().session;
+    if (current) {
+      try {
+        dataUnsubsRef.current = [
+          subscribeUsers(),
+          subscribeCampuses(),
+          subscribeSubjects(),
+          subscribeGradesCatalog(),
+          subscribeTeaching(),
+          subscribeQuestions(),
+          subscribeBlueprints(),
+          subscribePackages(),
+          subscribeShifts(),
+          subscribeAttempts(),
+          subscribeGrading(),
+        ];
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.error("[FSC] Data subscriptions failed:", e);
+      }
     }
     return () => {
-      for (const u of unsubs) u();
+      unsubAuthStore();
+      for (const u of dataUnsubsRef.current) u();
+      dataUnsubsRef.current = [];
     };
   }, []);
+
   return null;
 }
