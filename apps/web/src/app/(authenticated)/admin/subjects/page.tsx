@@ -379,8 +379,17 @@ export default function SubjectsAdminPage() {
           <div className="grid gap-3 lg:grid-cols-[280px_minmax(0,1fr)]">
             <aside className="rounded-xl border bg-card p-2.5">
               <p className="text-eyebrow mb-2 px-1.5">Chọn môn học</p>
+              {/* TOC sidebar honours the same campus scope as the
+                  "Danh sách" tab — showing subjects that don't belong
+                  to this campus was the source of confusion. */}
               <ul className="space-y-0.5">
-                {subjects.map((s) => {
+                {filteredSubjects.length === 0 && (
+                  <li className="px-2 py-3 text-[12px] text-muted-foreground">
+                    Chưa có môn học nào trong campus này. Vào tab "Danh
+                    sách" → "+ Thêm môn học" để tạo.
+                  </li>
+                )}
+                {filteredSubjects.map((s) => {
                   const active = s.id === tocSubjectId;
                   return (
                     <li key={s.id}>
