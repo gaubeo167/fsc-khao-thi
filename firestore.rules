@@ -35,11 +35,26 @@ service cloud.firestore {
     function isSuperadmin() {
       return isSignedIn() && role() == "superadmin";
     }
+    // "admin" tier — anyone with full mutation rights inside their campus.
+    // Matches the actual role names defined in auth-store: superadmin,
+    // academic-director, campus-admin. (Old code used just "admin" — was
+    // a bug that locked campus-admin out of /grades, /classes, /subjects
+    // and other catalog writes.)
     function isAdmin() {
-      return isSignedIn() && (role() == "superadmin" || role() == "admin");
+      return isSignedIn() && (
+        role() == "superadmin" ||
+        role() == "academic-director" ||
+        role() == "campus-admin"
+      );
     }
     function isTeacherOrAbove() {
-      return isSignedIn() && role() in ["teacher", "admin", "superadmin"];
+      return isSignedIn() && (
+        role() == "teacher" ||
+        role() == "subject-lead" ||
+        role() == "campus-admin" ||
+        role() == "academic-director" ||
+        role() == "superadmin"
+      );
     }
     function inSameCampus(cid) {
       return isSuperadmin() || callerCampusId() == cid;

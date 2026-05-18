@@ -69,19 +69,21 @@ async function seedCatalog() {
     address: "—",
     phone: "—",
     status: "active",
-    gradeIds: ["grade-10", "grade-11", "grade-12"],
+    gradeIds: Array.from({ length: 12 }, (_, i) => `grade-${i + 1}`),
     createdAt: new Date().toISOString(),
   });
 
-  const grades = [
-    { id: "grade-10", name: "Khối 10", code: "K10" },
-    { id: "grade-11", name: "Khối 11", code: "K11" },
-    { id: "grade-12", name: "Khối 12", code: "K12" },
-  ];
+  // K1 → K12 — global catalog shared across all campuses. Each campus
+  // picks a subset via its `gradeIds` field (derived from `tier`).
+  const grades = Array.from({ length: 12 }, (_, i) => ({
+    id: `grade-${i + 1}`,
+    name: `Khối ${i + 1}`,
+    code: `K${i + 1}`,
+  }));
   for (const g of grades) {
     await ensureDoc("grades", g.id, {
       ...g,
-      campusId,
+      campusId: null,
       classCount: 0,
       studentCount: 0,
       createdAt: new Date().toISOString(),
