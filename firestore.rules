@@ -88,20 +88,23 @@ service cloud.firestore {
     }
 
     // ───── /campuses — superadmin-only writes ─────────────────────────────
+    // Read is open to any signed-in user. Per-doc gating via dynamic
+    // `inSameCampus()` made collection-level `onSnapshot` queries fail
+    // (Firestore denies the entire query when the rule can't be
+    // statically evaluated per-doc). Campus metadata (name, tier,
+    // gradeIds) isn't sensitive — the heavy filtering happens in the
+    // UI based on session.campusId.
     match /campuses/{campusId} {
-      allow read: if isSignedIn() && inSameCampus(campusId);
+      allow read: if isSignedIn();
       allow create, update, delete: if isSuperadmin();
     }
 
     // ───── /subjects, /grades, /classes — campus-scoped catalog ───────────
-    // Subjects can carry `campusIds[]` (multi-campus) instead of a single
-    // `campusId`, so the read gate falls back to "no campusId field" = global.
+    // Catalog data is readable by any signed-in user. UI filters by
+    // `subject.campusIds` to scope per-campus. Dynamic per-doc rules
+    // break collection-level onSnapshot queries.
     match /subjects/{subjectId} {
-      allow read: if isSignedIn() && (
-        !("campusId" in resource.data) ||
-        resource.data.campusId == null ||
-        inSameCampus(resource.data.campusId)
-      );
+      allow read: if isSignedIn();
       allow create, update, delete: if isAdmin();
     }
     match /grades/{gradeId} {
