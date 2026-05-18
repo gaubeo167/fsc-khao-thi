@@ -9,7 +9,7 @@ rules_version = '2';
 // Conventions:
 //   • Every doc under /campuses/{cid}/... requires the caller's campusId to
 //     match {cid} (superadmin bypasses).
-//   • Personal kho (kho="user", ownerId=caller) is always writable by owner.
+//   • Personal kho (kho="personal", ownerId=caller) is always writable by owner.
 //   • Campus kho (kho="campus") requires admin/superadmin OR teacher-with-permission
 //     to create; pending → approved requires admin/superadmin (TBM duyệt flow).
 
@@ -141,17 +141,17 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isTeacherOrAbove() &&
         request.resource.data.ownerId == uid() &&
-        (request.resource.data.kho == "user" ||
+        (request.resource.data.kho == "personal" ||
           request.resource.data.status == "pending");
       allow update: if isSignedIn() && (
         (isAdmin() && inSameCampus(resource.data.campusId)) ||
         (resource.data.ownerId == uid() &&
-          (resource.data.kho == "user" || resource.data.status == "pending") &&
+          (resource.data.kho == "personal" || resource.data.status == "pending") &&
           request.resource.data.status == resource.data.status)
       );
       allow delete: if isSignedIn() && (
         (isAdmin() && inSameCampus(resource.data.campusId)) ||
-        (resource.data.ownerId == uid() && resource.data.kho == "user")
+        (resource.data.ownerId == uid() && resource.data.kho == "personal")
       );
     }
 
