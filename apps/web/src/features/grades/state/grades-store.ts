@@ -3,6 +3,7 @@
 import type { Unsubscribe } from "firebase/firestore";
 import { create } from "zustand";
 
+import { isFirebaseConfigured } from "@/lib/firebase";
 import { COLLECTIONS } from "@/lib/firestore-collections";
 import {
   patchDoc,
@@ -71,9 +72,12 @@ function sortClasses(classes: SchoolClass[]): SchoolClass[] {
   );
 }
 
+const INITIAL_GRADES = isFirebaseConfigured() ? [] : sortGrades(SEED_GRADES);
+const INITIAL_CLASSES = isFirebaseConfigured() ? [] : sortClasses(SEED_CLASSES);
+
 export const useGradesStore = create<State & Actions>()((set, get) => ({
-  grades: sortGrades(SEED_GRADES),
-  classes: sortClasses(SEED_CLASSES),
+  grades: INITIAL_GRADES,
+  classes: INITIAL_CLASSES,
   hydrated: false,
 
   createGrade(input) {

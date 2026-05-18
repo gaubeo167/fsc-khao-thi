@@ -3,6 +3,7 @@
 import type { Unsubscribe } from "firebase/firestore";
 import { create } from "zustand";
 
+import { isFirebaseConfigured } from "@/lib/firebase";
 import { COLLECTIONS } from "@/lib/firestore-collections";
 import {
   patchDoc,
@@ -56,8 +57,15 @@ function nextId(existing: Campus[], code: string): string {
   return `${id}-${n}`;
 }
 
+// When Firebase is configured, start empty and wait for the first
+// snapshot — avoids the "deleted campus reappears for ~1s on every
+// page load" flash that happened when we pre-populated with the
+// hardcoded SEED_CAMPUSES array. Seed data is only useful as a UI
+// preview when no backend is configured (local dev / demo mode).
+const INITIAL_CAMPUSES: Campus[] = isFirebaseConfigured() ? [] : SEED_CAMPUSES;
+
 export const useCampusesStore = create<State & Actions>()((set, get) => ({
-  campuses: SEED_CAMPUSES,
+  campuses: INITIAL_CAMPUSES,
   hydrated: false,
 
   create(input) {

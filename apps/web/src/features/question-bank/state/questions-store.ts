@@ -3,6 +3,7 @@
 import type { Unsubscribe } from "firebase/firestore";
 import { create } from "zustand";
 
+import { isFirebaseConfigured } from "@/lib/firebase";
 import { COLLECTIONS } from "@/lib/firestore-collections";
 import {
   patchDoc,
@@ -45,10 +46,13 @@ function nextId(existing: Question[]): string {
   return `Q-${String(max + 1).padStart(4, "0")}`;
 }
 
+// Pre-populate with seed only when Firebase isn't configured so the
+// UI has demo data. With Firebase, wait for the snapshot to avoid the
+// flash of stale / deleted seed entries on every load.
+const INITIAL_QUESTIONS = isFirebaseConfigured() ? [] : SEED_QUESTIONS;
+
 export const useQuestionsStore = create<State & Actions>()((set, get) => ({
-  // Pre-populate with seed so the UI has data on first render before
-  // the Firestore snapshot arrives. The first snapshot will replace this.
-  questions: SEED_QUESTIONS,
+  questions: INITIAL_QUESTIONS,
   hydrated: false,
 
   create(input) {

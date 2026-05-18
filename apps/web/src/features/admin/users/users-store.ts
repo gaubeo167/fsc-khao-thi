@@ -97,10 +97,13 @@ interface UsersActions {
   _applySnapshot(users: SeedUser[]): void;
 }
 
+// Only fall back to seed users when Firebase isn't configured — in
+// production we wait for the snapshot to avoid the "deleted account
+// reappears for ~1s on every page load" flash.
+const INITIAL_USERS = isFirebaseConfigured() ? [] : SEED_USERS;
+
 export const useUsersStore = create<UsersState & UsersActions>()((set, get) => ({
-  // Start with seed data so dropdowns aren't empty before the first
-  // snapshot arrives. The snapshot will overwrite this.
-  users: SEED_USERS,
+  users: INITIAL_USERS,
   hydrated: false,
 
   async create(input) {

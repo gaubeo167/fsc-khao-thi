@@ -3,6 +3,7 @@
 import type { Unsubscribe } from "firebase/firestore";
 import { create } from "zustand";
 
+import { isFirebaseConfigured } from "@/lib/firebase";
 import { COLLECTIONS } from "@/lib/firestore-collections";
 import {
   patchDoc,
@@ -65,8 +66,10 @@ function sanitizeBlueprint<T extends Partial<ExamBlueprint>>(input: T): T {
   };
 }
 
+const INITIAL_BLUEPRINTS = isFirebaseConfigured() ? [] : SEED_BLUEPRINTS;
+
 export const useBlueprintsStore = create<State & Actions>()((set, get) => ({
-  blueprints: SEED_BLUEPRINTS,
+  blueprints: INITIAL_BLUEPRINTS,
   hydrated: false,
 
   create(input) {

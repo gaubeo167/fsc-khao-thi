@@ -3,6 +3,7 @@
 import type { Unsubscribe } from "firebase/firestore";
 import { create } from "zustand";
 
+import { isFirebaseConfigured } from "@/lib/firebase";
 import { COLLECTIONS } from "@/lib/firestore-collections";
 import {
   patchDoc,
@@ -42,8 +43,10 @@ function nextId(existing: ExamPackage[]): string {
   return `PKG-${String(max + 1).padStart(4, "0")}`;
 }
 
+const INITIAL_PACKAGES = isFirebaseConfigured() ? [] : SEED_PACKAGES;
+
 export const usePackagesStore = create<State & Actions>()((set, get) => ({
-  packages: SEED_PACKAGES,
+  packages: INITIAL_PACKAGES,
   hydrated: false,
 
   create(input) {

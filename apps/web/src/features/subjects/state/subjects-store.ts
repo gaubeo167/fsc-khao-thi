@@ -3,6 +3,7 @@
 import type { Unsubscribe } from "firebase/firestore";
 import { create } from "zustand";
 
+import { isFirebaseConfigured } from "@/lib/firebase";
 import { COLLECTIONS } from "@/lib/firestore-collections";
 import {
   patchDoc,
@@ -57,9 +58,12 @@ function nextId(existing: { id: string }[], prefix: string): string {
   return `${prefix}${max + 1}`;
 }
 
+const INITIAL_SUBJECTS = isFirebaseConfigured() ? [] : SEED_SUBJECTS;
+const INITIAL_TOC = isFirebaseConfigured() ? [] : SEED_TOC;
+
 export const useSubjectsStore = create<State & Actions>()((set, get) => ({
-  subjects: SEED_SUBJECTS,
-  tocNodes: SEED_TOC,
+  subjects: INITIAL_SUBJECTS,
+  tocNodes: INITIAL_TOC,
   hydrated: false,
 
   createSubject(input) {
