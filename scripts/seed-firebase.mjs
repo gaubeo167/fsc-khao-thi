@@ -79,6 +79,7 @@ async function seedCatalog() {
     id: `grade-${i + 1}`,
     name: `Khối ${i + 1}`,
     code: `K${i + 1}`,
+    order: i + 1,
   }));
   for (const g of grades) {
     await ensureDoc("grades", g.id, {
@@ -86,6 +87,7 @@ async function seedCatalog() {
       campusId: null,
       classCount: 0,
       studentCount: 0,
+      status: "active",
       createdAt: new Date().toISOString(),
     });
   }
