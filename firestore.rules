@@ -61,15 +61,16 @@ service cloud.firestore {
     }
 
     // ───── /users — profile + role + scope ────────────────────────────────
-    // Read: self always, admin within campus, superadmin everywhere.
-    // Write (role/permission/campusId): admin within campus, superadmin everywhere.
-    // Write (name/avatar only): self can update own profile fields.
+    // Read is allowed for any signed-in user so collection-level
+    // onSnapshot queries succeed. (Dynamic per-doc rules break list
+    // queries — Firestore denies them entirely.) Sensitive fields like
+    // password aren't stored in Firestore at all; emails/roles are
+    // already visible through enrollment lists elsewhere. UI does the
+    // per-campus filtering after read.
+    //
+    // Writes stay tightly gated.
     match /users/{userId} {
-      allow read: if isSignedIn() && (
-        uid() == userId ||
-        isSuperadmin() ||
-        (isAdmin() && resource.data.campusId == callerCampusId())
-      );
+      allow read: if isSignedIn();
       allow create: if isAdmin() && (
         isSuperadmin() ||
         request.resource.data.campusId == callerCampusId()
