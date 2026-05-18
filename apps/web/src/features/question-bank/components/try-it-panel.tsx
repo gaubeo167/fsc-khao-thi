@@ -1458,22 +1458,38 @@ function DragDropArea({ values, submitted }: AreaProps) {
     setAssigned({});
   }, [initialPool]);
 
-  // Parse content to render with zone chip → drop zone inline
+  // Parse content into LINES first, then each line into segments. This
+  // preserves the visual row layout the author typed — without it the
+  // text + chips collapse onto one wrapping line and the preview no
+  // longer matches the editor.
   const content: string = values.content ?? "";
-  const segments = useMemo(() => {
-    const out: Array<{ kind: "text" | "zone"; value: string; zoneId?: string }> = [];
-    const regex = /\[zone:(\d+)\]/g;
-    let last = 0;
-    let m: RegExpExecArray | null;
-    while ((m = regex.exec(content)) !== null) {
-      if (m.index > last) out.push({ kind: "text", value: content.slice(last, m.index) });
-      const idx = Number(m[1]) - 1;
-      const zone = zones[idx];
-      if (zone) out.push({ kind: "zone", value: "", zoneId: zone.id });
-      last = m.index + m[0].length;
+  const lines = useMemo(() => {
+    const linesOut: Array<
+      Array<{ kind: "text" | "zone"; value: string; zoneId?: string }>
+    > = [];
+    const rawLines = content.split("\n");
+    for (const rawLine of rawLines) {
+      const segs: Array<{
+        kind: "text" | "zone";
+        value: string;
+        zoneId?: string;
+      }> = [];
+      const regex = /\[zone:(\d+)\]/g;
+      let last = 0;
+      let m: RegExpExecArray | null;
+      while ((m = regex.exec(rawLine)) !== null) {
+        if (m.index > last)
+          segs.push({ kind: "text", value: rawLine.slice(last, m.index) });
+        const idx = Number(m[1]) - 1;
+        const zone = zones[idx];
+        if (zone) segs.push({ kind: "zone", value: "", zoneId: zone.id });
+        last = m.index + m[0].length;
+      }
+      if (last < rawLine.length)
+        segs.push({ kind: "text", value: rawLine.slice(last) });
+      linesOut.push(segs);
     }
-    if (last < content.length) out.push({ kind: "text", value: content.slice(last) });
-    return out;
+    return linesOut;
   }, [content, zones]);
 
   function handleDrop(zoneId: string, chipId: string) {
@@ -1522,32 +1538,41 @@ function DragDropArea({ values, submitted }: AreaProps) {
         </p>
       </div>
 
-      {/* Content with inline drop zones */}
-      <div className="rounded-lg border bg-surface p-4 text-[14px] leading-loose">
-        {segments.map((seg, i) =>
-          seg.kind === "text" ? (
-            <RenderedContent inline key={i} content={seg.value} />
-          ) : (
-            <ZoneDrop
-              key={seg.zoneId}
-              zoneId={seg.zoneId!}
-              chipId={assigned[seg.zoneId!] ?? null}
-              chipContent={
-                assigned[seg.zoneId!]
-                  ? pool.find((p) => p.chipId === assigned[seg.zoneId!])?.content
-                  : undefined
-              }
-              correctContent={zones.find((z) => z.id === seg.zoneId)?.correctContent ?? ""}
-              isOver={Boolean(dragging) && !submitted}
-              submitted={submitted}
-              onDrop={(chipId) => handleDrop(seg.zoneId!, chipId)}
-              onClear={() => handleClear(seg.zoneId!)}
-              index={
-                zones.findIndex((z) => z.id === seg.zoneId) + 1
-              }
-            />
-          ),
-        )}
+      {/* Content with inline drop zones — one row per source line so
+          the visual layout matches the editor. Within each row, text
+          and zone chips share a flex-wrap line. */}
+      <div className="space-y-1.5 rounded-lg border bg-surface p-4 text-[14px] leading-loose">
+        {lines.map((segs, lineIdx) => (
+          <div
+            key={lineIdx}
+            className="flex flex-wrap items-baseline gap-x-1 gap-y-1.5 min-h-[1.6em]"
+          >
+            {segs.map((seg, i) =>
+              seg.kind === "text" ? (
+                <RenderedContent inline key={i} content={seg.value} />
+              ) : (
+                <ZoneDrop
+                  key={seg.zoneId}
+                  zoneId={seg.zoneId!}
+                  chipId={assigned[seg.zoneId!] ?? null}
+                  chipContent={
+                    assigned[seg.zoneId!]
+                      ? pool.find((p) => p.chipId === assigned[seg.zoneId!])?.content
+                      : undefined
+                  }
+                  correctContent={
+                    zones.find((z) => z.id === seg.zoneId)?.correctContent ?? ""
+                  }
+                  isOver={Boolean(dragging) && !submitted}
+                  submitted={submitted}
+                  onDrop={(chipId) => handleDrop(seg.zoneId!, chipId)}
+                  onClear={() => handleClear(seg.zoneId!)}
+                  index={zones.findIndex((z) => z.id === seg.zoneId) + 1}
+                />
+              ),
+            )}
+          </div>
+        ))}
       </div>
 
       {/* Pool of draggable chips */}
