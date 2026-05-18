@@ -217,10 +217,29 @@ export const useSubjectsStore = create<State & Actions>()((set, get) => ({
   },
 }));
 
+/** Defensive decoder — Firestore docs may have been written by an
+ *  older version of the seed script without all required fields.
+ *  Supply sane defaults so the rest of the app can assume a complete
+ *  Subject shape and never `.includes()` on undefined. */
+function decodeSubject(id: string, data: Record<string, unknown>): Subject {
+  return {
+    id,
+    code: typeof data.code === "string" ? data.code : "",
+    name: typeof data.name === "string" ? data.name : "",
+    description: typeof data.description === "string" ? data.description : "",
+    color: typeof data.color === "string" ? data.color : "#888888",
+    gradeIds: Array.isArray(data.gradeIds) ? (data.gradeIds as string[]) : [],
+    campusIds: Array.isArray(data.campusIds) ? (data.campusIds as string[]) : [],
+    status: data.status === "archived" ? "archived" : "active",
+    createdAt:
+      typeof data.createdAt === "string" ? data.createdAt : new Date().toISOString(),
+  };
+}
+
 export function subscribeSubjects(): Unsubscribe {
   const unsubS = subscribeCollection<Subject>({
     collectionName: COLLECTIONS.subjects,
-    fromDoc: (id, data) => ({ ...(data as Subject), id }),
+    fromDoc: (id, data) => decodeSubject(id, data),
     onChange: (rows) => {
       if (rows.length === 0 && !useSubjectsStore.getState().hydrated) {
         useSubjectsStore.setState({ hydrated: true });

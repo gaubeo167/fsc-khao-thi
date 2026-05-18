@@ -171,10 +171,47 @@ export const useGradesStore = create<State & Actions>()((set, get) => ({
   },
 }));
 
+/** Defensive decoder — Firestore docs may be missing fields. */
+function decodeGrade(id: string, data: Record<string, unknown>): Grade {
+  const orderNum = Number(data.order);
+  return {
+    id,
+    code: typeof data.code === "string" ? data.code : id,
+    name: typeof data.name === "string" ? data.name : id,
+    order: Number.isFinite(orderNum) ? orderNum : 99,
+    classCount: typeof data.classCount === "number" ? data.classCount : 0,
+    studentCount: typeof data.studentCount === "number" ? data.studentCount : 0,
+    status: data.status === "archived" ? "archived" : "active",
+    createdAt:
+      typeof data.createdAt === "string" ? data.createdAt : new Date().toISOString(),
+  };
+}
+
+function decodeClass(id: string, data: Record<string, unknown>): SchoolClass {
+  return {
+    id,
+    code: typeof data.code === "string" ? data.code : id,
+    name: typeof data.name === "string" ? data.name : id,
+    gradeId: typeof data.gradeId === "string" ? data.gradeId : "",
+    campusId: typeof data.campusId === "string" ? data.campusId : "",
+    homeroomTeacher:
+      typeof data.homeroomTeacher === "string" ? data.homeroomTeacher : "",
+    homeroomTeacherId:
+      typeof data.homeroomTeacherId === "string"
+        ? data.homeroomTeacherId
+        : null,
+    studentCount:
+      typeof data.studentCount === "number" ? data.studentCount : 0,
+    status: data.status === "archived" ? "archived" : "active",
+    createdAt:
+      typeof data.createdAt === "string" ? data.createdAt : new Date().toISOString(),
+  };
+}
+
 export function subscribeGradesCatalog(): Unsubscribe {
   const unsubG = subscribeCollection<Grade>({
     collectionName: COLLECTIONS.grades,
-    fromDoc: (id, data) => ({ ...(data as Grade), id }),
+    fromDoc: (id, data) => decodeGrade(id, data),
     onChange: (rows) => {
       if (rows.length === 0 && !useGradesStore.getState().hydrated) {
         useGradesStore.setState({ hydrated: true });
@@ -185,7 +222,7 @@ export function subscribeGradesCatalog(): Unsubscribe {
   });
   const unsubC = subscribeCollection<SchoolClass>({
     collectionName: COLLECTIONS.classes,
-    fromDoc: (id, data) => ({ ...(data as SchoolClass), id }),
+    fromDoc: (id, data) => decodeClass(id, data),
     onChange: (rows) => {
       if (rows.length === 0) return; // keep seed
       useGradesStore.getState()._applyClasses(rows);
