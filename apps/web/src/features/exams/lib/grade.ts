@@ -180,6 +180,132 @@ export function gradeQuestion(question: Question, answer: unknown): GradeResult 
         studentText: txt ? `${txt.length} ký tự` : "(chưa làm)",
       };
     }
+    case "multi-tf": {
+      const map = (answer && typeof answer === "object" ? answer : {}) as Record<string, boolean>;
+      let okCount = 0;
+      for (const sub of question.subQuestions) {
+        if (map[sub.id] === sub.correctAnswer) okCount++;
+      }
+      const allCorrect = okCount === question.subQuestions.length;
+      return {
+        verdict: allCorrect ? "correct" : okCount > 0 ? "partial" : "wrong",
+        score: allCorrect ? 1 : 0,
+        correctText: question.subQuestions
+          .map((s, i) => `${i + 1}. ${s.correctAnswer ? "Đ" : "S"}`)
+          .join(" · "),
+        studentText:
+          Object.keys(map).length === 0
+            ? "(chưa làm)"
+            : question.subQuestions
+                .map(
+                  (s, i) =>
+                    `${i + 1}. ${map[s.id] === undefined ? "—" : map[s.id] ? "Đ" : "S"}`,
+                )
+                .join(" · "),
+      };
+    }
+    case "matching": {
+      const map = (answer && typeof answer === "object" ? answer : {}) as Record<string, string>;
+      let okCount = 0;
+      for (const p of question.pairs) {
+        if (map[p.id] === p.id) okCount++;
+      }
+      const allCorrect = okCount === question.pairs.length;
+      return {
+        verdict:
+          Object.keys(map).length === 0
+            ? "skipped"
+            : allCorrect
+              ? "correct"
+              : okCount > 0
+                ? "partial"
+                : "wrong",
+        score: allCorrect ? 1 : 0,
+        correctText: question.pairs.map((p) => `${p.left} → ${p.right}`).join(" · "),
+        studentText:
+          Object.keys(map).length === 0
+            ? "(chưa làm)"
+            : `Ghép đúng ${okCount}/${question.pairs.length}`,
+      };
+    }
+    case "ordering": {
+      const order = Array.isArray(answer) ? (answer as string[]) : [];
+      const correct = question.items.map((it) => it.id);
+      const allCorrect =
+        order.length === correct.length &&
+        order.every((id, i) => id === correct[i]);
+      return {
+        verdict:
+          order.length === 0 ? "skipped" : allCorrect ? "correct" : "wrong",
+        score: allCorrect ? 1 : 0,
+        correctText: question.items.map((it, i) => `${i + 1}. ${it.content}`).join(" · "),
+        studentText:
+          order.length === 0
+            ? "(chưa làm)"
+            : order
+                .map((id, i) => {
+                  const it = question.items.find((x) => x.id === id);
+                  return `${i + 1}. ${it?.content ?? id}`;
+                })
+                .join(" · "),
+      };
+    }
+    case "drag-drop": {
+      const arr = Array.isArray(answer) ? (answer as string[]) : [];
+      const norm = (s: string) => (s ?? "").trim().toLowerCase();
+      let okCount = 0;
+      for (let i = 0; i < question.zones.length; i++) {
+        if (norm(arr[i] ?? "") === norm(question.zones[i]!.correctContent))
+          okCount++;
+      }
+      const allCorrect = okCount === question.zones.length;
+      return {
+        verdict:
+          arr.filter(Boolean).length === 0
+            ? "skipped"
+            : allCorrect
+              ? "correct"
+              : okCount > 0
+                ? "partial"
+                : "wrong",
+        score: allCorrect ? 1 : 0,
+        correctText: question.zones
+          .map((z, i) => `${i + 1}. ${z.correctContent}`)
+          .join(" · "),
+        studentText:
+          arr.filter(Boolean).length === 0
+            ? "(chưa làm)"
+            : `Đúng ${okCount}/${question.zones.length} vùng`,
+      };
+    }
+    case "underline": {
+      const picked = Array.isArray(answer) ? (answer as string[]) : [];
+      const re = /\[u:([^\]\n]+)\]/g;
+      const correctPhrases: string[] = [];
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(question.content)) !== null) {
+        correctPhrases.push(m[1]!);
+      }
+      const pickedSet = new Set(picked.map((s) => s.trim().toLowerCase()));
+      const correctSet = new Set(correctPhrases.map((s) => s.trim().toLowerCase()));
+      let truePos = 0;
+      for (const p of correctSet) if (pickedSet.has(p)) truePos++;
+      const exactMatch =
+        pickedSet.size === correctSet.size && truePos === correctSet.size;
+      return {
+        verdict:
+          picked.length === 0
+            ? "skipped"
+            : exactMatch
+              ? "correct"
+              : truePos > 0
+                ? "partial"
+                : "wrong",
+        score: exactMatch ? 1 : 0,
+        correctText: correctPhrases.join(", "),
+        studentText: picked.length === 0 ? "(chưa làm)" : picked.join(", "),
+      };
+    }
     default:
       return {
         verdict: "manual",

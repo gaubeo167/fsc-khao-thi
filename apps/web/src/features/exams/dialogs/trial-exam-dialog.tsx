@@ -743,11 +743,262 @@ function AnswerArea({
         />
       );
     }
+    case "multi-tf": {
+      const map = (value && typeof value === "object" ? value : {}) as Record<
+        string,
+        boolean
+      >;
+      return (
+        <div className="space-y-2">
+          {question.subQuestions.map((sub, i) => {
+            const v = map[sub.id];
+            return (
+              <div
+                key={sub.id}
+                className="rounded-lg border bg-card px-3 py-2"
+              >
+                <p className="text-[13px] text-foreground/85">
+                  <span className="mr-1 font-semibold">{i + 1}.</span>
+                  <RenderedContent inline content={sub.statement} />
+                </p>
+                <div className="mt-2 flex gap-2">
+                  {[true, false].map((b) => (
+                    <button
+                      key={String(b)}
+                      type="button"
+                      onClick={() => onChange({ ...map, [sub.id]: b })}
+                      className={cn(
+                        "rounded-md border px-3 py-1 text-[12px] font-semibold transition-colors",
+                        v === b
+                          ? b
+                            ? "border-emerald-400 bg-emerald-50 text-emerald-700"
+                            : "border-rose-400 bg-rose-50 text-rose-700"
+                          : "border-border bg-card text-foreground/70 hover:bg-accent",
+                      )}
+                    >
+                      {b ? "Đúng" : "Sai"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+    case "matching": {
+      const map = (value && typeof value === "object" ? value : {}) as Record<
+        string,
+        string
+      >;
+      const allRights = [
+        ...question.pairs.map((p) => ({ id: p.id, right: p.right })),
+        ...((question.distractors ?? []).map((d) => ({
+          id: d.id,
+          right: d.right,
+        }))),
+      ];
+      return (
+        <ul className="space-y-2">
+          {question.pairs.map((p, i) => (
+            <li
+              key={p.id}
+              className="grid grid-cols-[28px_minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 rounded-lg border bg-card p-2.5"
+            >
+              <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-primary text-[11px] font-bold text-white">
+                {i + 1}
+              </span>
+              <RenderedContent inline content={p.left} />
+              <span className="text-muted-foreground">→</span>
+              <select
+                value={map[p.id] ?? ""}
+                onChange={(e) =>
+                  onChange({ ...map, [p.id]: e.target.value })
+                }
+                className="rounded-md border bg-background px-2 py-1.5 text-[13px]"
+              >
+                <option value="">— chọn —</option>
+                {allRights.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.right}
+                  </option>
+                ))}
+              </select>
+            </li>
+          ))}
+        </ul>
+      );
+    }
+    case "ordering": {
+      const ids = Array.isArray(value)
+        ? (value as string[])
+        : question.items.map((it) => it.id);
+      function move(idx: number, dir: -1 | 1) {
+        const next = [...ids];
+        const swap = idx + dir;
+        if (swap < 0 || swap >= next.length) return;
+        [next[idx], next[swap]] = [next[swap]!, next[idx]!];
+        onChange(next);
+      }
+      return (
+        <ol className="space-y-2">
+          {ids.map((id, idx) => {
+            const item = question.items.find((it) => it.id === id);
+            return (
+              <li
+                key={id}
+                className="flex items-center gap-2 rounded-lg border bg-card p-2.5"
+              >
+                <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-primary text-[11px] font-bold text-white">
+                  {idx + 1}
+                </span>
+                <span className="flex-1 text-[13px]">{item?.content}</span>
+                <button
+                  type="button"
+                  onClick={() => move(idx, -1)}
+                  disabled={idx === 0}
+                  className="rounded-md border px-2 py-1 text-[12px] disabled:opacity-40"
+                  title="Lên"
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  onClick={() => move(idx, 1)}
+                  disabled={idx === ids.length - 1}
+                  className="rounded-md border px-2 py-1 text-[12px] disabled:opacity-40"
+                  title="Xuống"
+                >
+                  ↓
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+      );
+    }
+    case "drag-drop": {
+      const arr = Array.isArray(value) ? (value as string[]) : [];
+      const options = [
+        ...question.zones.map((z) => z.correctContent),
+        ...(question.distractors ?? []).map((d) => d.content),
+      ];
+      return (
+        <div className="space-y-2">
+          {question.zones.map((_, i) => (
+            <div
+              key={i}
+              className="flex items-center gap-2 rounded-lg border bg-card p-2.5"
+            >
+              <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-amber-500 text-[11px] font-bold text-white">
+                {i + 1}
+              </span>
+              <select
+                value={arr[i] ?? ""}
+                onChange={(e) => {
+                  const next = [...arr];
+                  next[i] = e.target.value;
+                  onChange(next);
+                }}
+                className="flex-1 rounded-md border bg-background px-2 py-1.5 text-[13px]"
+              >
+                <option value="">— chọn cụm từ —</option>
+                {options.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ))}
+        </div>
+      );
+    }
+    case "underline": {
+      const selected = Array.isArray(value)
+        ? new Set(value as string[])
+        : new Set<string>();
+      // Walk content + markers in lockstep so each word knows whether
+      // it sits inside a `[u:...]` (the answer) — only those are
+      // clickable / counted. Other "10"s in the prompt won't trigger.
+      const slices: Array<{ text: string; isMarker: boolean }> = [];
+      const reMark = /\[u:([^\]\n]+)\]/g;
+      let lastIdx = 0;
+      let m: RegExpExecArray | null;
+      while ((m = reMark.exec(question.content)) !== null) {
+        if (m.index > lastIdx)
+          slices.push({
+            text: question.content.slice(lastIdx, m.index),
+            isMarker: false,
+          });
+        slices.push({ text: m[1]!, isMarker: true });
+        lastIdx = m.index + m[0].length;
+      }
+      if (lastIdx < question.content.length)
+        slices.push({
+          text: question.content.slice(lastIdx),
+          isMarker: false,
+        });
+
+      const tokens: Array<{
+        kind: "word" | "sep";
+        value: string;
+        correct: boolean;
+      }> = [];
+      const tokRe = /([\p{L}\p{N}]+(?:['']\p{L}+)?)|([^\p{L}\p{N}]+)/gu;
+      for (const slice of slices) {
+        tokRe.lastIndex = 0;
+        let tm: RegExpExecArray | null;
+        while ((tm = tokRe.exec(slice.text)) !== null) {
+          if (tm[1] !== undefined)
+            tokens.push({
+              kind: "word",
+              value: tm[1],
+              correct: slice.isMarker,
+            });
+          else if (tm[2] !== undefined)
+            tokens.push({
+              kind: "sep",
+              value: tm[2]!,
+              correct: false,
+            });
+        }
+      }
+
+      function toggle(word: string) {
+        const next = new Set(selected);
+        if (next.has(word)) next.delete(word);
+        else next.add(word);
+        onChange(Array.from(next));
+      }
+
+      return (
+        <div className="rounded-lg border bg-surface p-4 text-[14px] leading-loose">
+          {tokens.map((t, i) =>
+            t.kind === "sep" ? (
+              <span key={i}>{t.value}</span>
+            ) : (
+              <span
+                key={i}
+                onClick={() => toggle(t.value)}
+                className={cn(
+                  "cursor-pointer rounded px-0.5 transition-colors",
+                  selected.has(t.value)
+                    ? "bg-primary/15 text-primary underline decoration-2 underline-offset-2"
+                    : "hover:bg-muted",
+                )}
+              >
+                {t.value}
+              </span>
+            ),
+          )}
+        </div>
+      );
+    }
     default:
       return (
         <p className="rounded-lg border border-dashed bg-muted/20 px-3 py-4 text-center text-[12px] text-muted-foreground">
-          Dạng câu hỏi này chỉ xem trước được trong giao diện thi thử. Vào
-          ngân hàng câu hỏi để xem chi tiết.
+          Dạng câu hỏi này chỉ xem trước được trong giao diện thi thử.
         </p>
       );
   }
