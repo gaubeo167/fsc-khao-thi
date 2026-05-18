@@ -1,0 +1,21 @@
+{
+  "name": "@fsc/worker",
+  "version": "0.1.0",
+  "private": true,
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fsc/database": "*",
+    "@fsc/shared": "*",
+    "pino": "^10.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.7.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.0.0"
+  }
+}

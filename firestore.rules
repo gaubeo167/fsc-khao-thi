@@ -1,0 +1,236 @@
+rules_version = '2';
+
+// FSC Exam Platform — Firestore security rules.
+//
+// Roles (stored in /users/{uid}.role): "superadmin" | "admin" | "teacher" | "student".
+// Campus isolation (stored in /users/{uid}.campusId) enforced server-side here —
+// the client-side checks in useUserScope are UX hints only; this is the real gate.
+//
+// Conventions:
+//   • Every doc under /campuses/{cid}/... requires the caller's campusId to
+//     match {cid} (superadmin bypasses).
+//   • Personal kho (kho="user", ownerId=caller) is always writable by owner.
+//   • Campus kho (kho="campus") requires admin/superadmin OR teacher-with-permission
+//     to create; pending → approved requires admin/superadmin (TBM duyệt flow).
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ───── Helper functions ───────────────────────────────────────────────
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function uid() {
+      return request.auth.uid;
+    }
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(uid())).data;
+    }
+    function role() {
+      return userDoc().role;
+    }
+    function callerCampusId() {
+      return userDoc().campusId;
+    }
+    function isSuperadmin() {
+      return isSignedIn() && role() == "superadmin";
+    }
+    function isAdmin() {
+      return isSignedIn() && (role() == "superadmin" || role() == "admin");
+    }
+    function isTeacherOrAbove() {
+      return isSignedIn() && role() in ["teacher", "admin", "superadmin"];
+    }
+    function inSameCampus(cid) {
+      return isSuperadmin() || callerCampusId() == cid;
+    }
+
+    // ───── /users — profile + role + scope ────────────────────────────────
+    // Read: self always, admin within campus, superadmin everywhere.
+    // Write (role/permission/campusId): admin within campus, superadmin everywhere.
+    // Write (name/avatar only): self can update own profile fields.
+    match /users/{userId} {
+      allow read: if isSignedIn() && (
+        uid() == userId ||
+        isSuperadmin() ||
+        (isAdmin() && resource.data.campusId == callerCampusId())
+      );
+      allow create: if isAdmin() && (
+        isSuperadmin() ||
+        request.resource.data.campusId == callerCampusId()
+      );
+      allow update: if isSignedIn() && (
+        isSuperadmin() ||
+        (isAdmin() && resource.data.campusId == callerCampusId()) ||
+        (uid() == userId &&
+          // Self can only change profile fields, not role/campus/permissions.
+          request.resource.data.role == resource.data.role &&
+          request.resource.data.campusId == resource.data.campusId)
+      );
+      allow delete: if isAdmin() && (
+        isSuperadmin() || resource.data.campusId == callerCampusId()
+      );
+    }
+
+    // ───── /campuses — superadmin-only writes ─────────────────────────────
+    match /campuses/{campusId} {
+      allow read: if isSignedIn() && inSameCampus(campusId);
+      allow create, update, delete: if isSuperadmin();
+    }
+
+    // ───── /subjects, /grades, /classes — campus-scoped catalog ───────────
+    // Subjects can carry `campusIds[]` (multi-campus) instead of a single
+    // `campusId`, so the read gate falls back to "no campusId field" = global.
+    match /subjects/{subjectId} {
+      allow read: if isSignedIn() && (
+        !("campusId" in resource.data) ||
+        resource.data.campusId == null ||
+        inSameCampus(resource.data.campusId)
+      );
+      allow create, update, delete: if isAdmin();
+    }
+    match /grades/{gradeId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+    match /classes/{classId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ───── /toc_nodes — table-of-contents per subject/grade ───────────────
+    match /toc_nodes/{nodeId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isTeacherOrAbove();
+    }
+
+    // ───── /teaching_assignments — teacher↔class↔subject mapping ──────────
+    match /teaching_assignments/{id} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ───── /questions — kho cá nhân vs kho campus ─────────────────────────
+    // Personal (kho=="user"): only owner reads/writes.
+    // Campus (kho=="campus"):
+    //   - read: any signed-in user in same campus (teachers compose exams)
+    //   - create with status="pending": teacher with create permission
+    //   - update to status="approved"/"rejected": admin or above
+    //   - other updates: owner if still pending; admin/superadmin any time
+    match /questions/{questionId} {
+      allow read: if isSignedIn() && (
+        resource.data.ownerId == uid() ||
+        (resource.data.kho == "campus" && inSameCampus(resource.data.campusId))
+      );
+      allow create: if isTeacherOrAbove() &&
+        request.resource.data.ownerId == uid() &&
+        inSameCampus(request.resource.data.campusId) &&
+        (request.resource.data.kho == "user" ||
+          request.resource.data.status == "pending");
+      allow update: if isSignedIn() && (
+        // Approver flow.
+        (isAdmin() && inSameCampus(resource.data.campusId)) ||
+        // Owner can edit own personal questions or own pending campus
+        // questions; not the status field once approved.
+        (resource.data.ownerId == uid() &&
+          (resource.data.kho == "user" || resource.data.status == "pending") &&
+          request.resource.data.status == resource.data.status)
+      );
+      allow delete: if isSignedIn() && (
+        (isAdmin() && inSameCampus(resource.data.campusId)) ||
+        (resource.data.ownerId == uid() && resource.data.kho == "user")
+      );
+    }
+
+    // ───── /blueprints, /packages — same kho pattern as questions ─────────
+    match /blueprints/{id} {
+      allow read: if isSignedIn() && (
+        resource.data.ownerId == uid() ||
+        (resource.data.kho == "campus" && inSameCampus(resource.data.campusId))
+      );
+      allow create: if isTeacherOrAbove() &&
+        request.resource.data.ownerId == uid() &&
+        inSameCampus(request.resource.data.campusId);
+      allow update, delete: if isSignedIn() && (
+        (isAdmin() && inSameCampus(resource.data.campusId)) ||
+        resource.data.ownerId == uid()
+      );
+    }
+    match /packages/{id} {
+      allow read: if isSignedIn() && (
+        resource.data.ownerId == uid() ||
+        (resource.data.kho == "campus" && inSameCampus(resource.data.campusId))
+      );
+      allow create: if isTeacherOrAbove() &&
+        request.resource.data.ownerId == uid() &&
+        inSameCampus(request.resource.data.campusId);
+      allow update, delete: if isSignedIn() && (
+        (isAdmin() && inSameCampus(resource.data.campusId)) ||
+        resource.data.ownerId == uid()
+      );
+    }
+
+    // ───── /shifts — exam shifts (ca thi) ─────────────────────────────────
+    // Anyone in the same campus can READ a shift. Per-student eligibility
+    // (rooms[].studentIds) is checked in the UI on top of this gate — the
+    // shift metadata is non-sensitive (name, time, status).
+    match /shifts/{shiftId} {
+      allow read: if isSignedIn() && inSameCampus(resource.data.campusId);
+      allow create: if isTeacherOrAbove() &&
+        inSameCampus(request.resource.data.campusId) &&
+        request.resource.data.ownerId == uid();
+      allow update, delete: if isSignedIn() && (
+        (isAdmin() && inSameCampus(resource.data.campusId)) ||
+        (resource.data.ownerId == uid() && inSameCampus(resource.data.campusId))
+      );
+    }
+
+    // ───── /attempts — student submissions ────────────────────────────────
+    // Student: only their own attempt for shifts they're assigned to.
+    // Teacher/admin: read attempts within their campus scope.
+    match /attempts/{attemptId} {
+      allow read: if isSignedIn() && (
+        resource.data.studentId == uid() ||
+        (isTeacherOrAbove() && inSameCampus(resource.data.campusId))
+      );
+      allow create: if isSignedIn() &&
+        request.resource.data.studentId == uid();
+      // Student can update their own attempt only while not submitted.
+      // Teacher/admin updates allowed for grading flow.
+      allow update: if isSignedIn() && (
+        (resource.data.studentId == uid() &&
+          resource.data.submittedAt == null) ||
+        (isTeacherOrAbove() && inSameCampus(resource.data.campusId))
+      );
+      allow delete: if isAdmin() && inSameCampus(resource.data.campusId);
+    }
+
+    // ───── /grades_essay — manual essay grading by teacher ────────────────
+    match /grades_essay/{gradeId} {
+      allow read: if isSignedIn() && (
+        resource.data.studentId == uid() ||
+        (isTeacherOrAbove() && inSameCampus(resource.data.campusId))
+      );
+      allow create: if isTeacherOrAbove() &&
+        inSameCampus(request.resource.data.campusId);
+      allow update, delete: if isTeacherOrAbove() &&
+        inSameCampus(resource.data.campusId);
+    }
+
+    // ───── /grading_assignments — who grades which shift's essays ─────────
+    match /grading_assignments/{id} {
+      allow read: if isSignedIn() && (
+        isTeacherOrAbove() && inSameCampus(resource.data.campusId)
+      );
+      allow create: if isAdmin() &&
+        inSameCampus(request.resource.data.campusId);
+      allow update, delete: if isAdmin() &&
+        inSameCampus(resource.data.campusId);
+    }
+
+    // ───── Default deny — anything not matched above is forbidden ─────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

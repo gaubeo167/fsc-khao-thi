@@ -1,0 +1,32 @@
+import { ChevronDown } from "lucide-react";
+import * as React from "react";
+
+import { cn } from "@/lib/utils";
+
+export type SelectProps = React.SelectHTMLAttributes<HTMLSelectElement>;
+
+export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
+  ({ className, children, ...props }, ref) => (
+    <div className="relative">
+      <select
+        ref={ref}
+        className={cn(
+          "flex h-9 w-full appearance-none rounded-md border border-input bg-background px-3 pr-9 text-sm text-foreground transition-colors",
+          "focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30",
+          "disabled:cursor-not-allowed disabled:opacity-50",
+          "aria-[invalid=true]:border-destructive",
+          className,
+        )}
+        {...props}
+      >
+        {children}
+      </select>
+      <ChevronDown
+        aria-hidden
+        className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
+        strokeWidth={1.75}
+      />
+    </div>
+  ),
+);
+Select.displayName = "Select";

@@ -1,0 +1,49 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AttemptStatus {
+  IN_PROGRESS
+  SUBMITTED
+  EXPIRED
+}
+
+model Attempt {
+  id          String        @id @default(cuid())
+  examId      String
+  studentId   String
+  status      AttemptStatus @default(IN_PROGRESS)
+  durationMs  Int
+
+  startedAt   DateTime      @default(now())
+  submittedAt DateTime?
+
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  responses   Response[]
+
+  @@index([studentId, status])
+  @@index([examId, status])
+}
+
+model Response {
+  id          String   @id @default(cuid())
+
+  attemptId   String
+  questionId  String
+  payload     String
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  attempt     Attempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  @@unique([attemptId, questionId], name: "attemptId_questionId")
+  @@index([attemptId])
+}

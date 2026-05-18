@@ -1,0 +1,181 @@
+FSC EXAM PLATFORM — MẪU IMPORT CÂU HỎI TỪ FILE WORD
+=====================================================
+
+HƯỚNG DẪN CHUNG
+---------------
+1. Mỗi câu hỏi bắt đầu bằng `# Câu N` (N là số thứ tự).
+2. Sau header là các trường meta theo định dạng `Tên trường: giá trị`.
+3. Các trường meta hỗ trợ:
+   - Dạng: bắt buộc — MCQ-SINGLE, MCQ-MULTI, TRUE-FALSE, FILL-BLANK,
+     MATCHING, ORDERING, ESSAY, UNDERLINE
+     (hoặc tiếng Việt: Trắc nghiệm 1, Trắc nghiệm nhiều, Đúng/Sai,
+     Điền khuyết, Ghép cặp, Sắp xếp, Tự luận, Gạch chân)
+   - Độ khó: Dễ (Nhận biết) / Trung bình (Thông hiểu) / Khó (Vận dụng)
+   - Đề bài: nội dung câu hỏi (dùng LaTeX $...$ nếu có công thức)
+   - Giải thích: tuỳ chọn
+4. Bỏ qua các đoạn không thuộc dạng trên — parser sẽ bỏ qua.
+5. Sau khi soạn xong, lưu file Word (.docx) hoặc copy nội dung
+   dán vào ô "Dán văn bản trực tiếp" trong dialog Import.
+
+
+===== CÁC VÍ DỤ CHO TỪNG DẠNG CÂU HỎI =====
+
+
+# Câu 1
+Dạng: MCQ-SINGLE
+Độ khó: Dễ
+Đề bài: Đạo hàm của $f(x) = x^2$ bằng?
+
+A. $x$
+B. $2x$ [đúng]
+C. $x^2$
+D. $0$
+
+Giải thích: Áp dụng công thức $(x^n)' = n \cdot x^{n-1}$, ta có $(x^2)' = 2x$.
+
+
+# Câu 2
+Dạng: MCQ-MULTI
+Độ khó: Trung bình
+Đề bài: Các số nào sau đây là số nguyên tố?
+
+A. 2 [đúng]
+B. 3 [đúng]
+C. 4
+D. 5 [đúng]
+E. 6
+F. 9
+
+Giải thích: Số nguyên tố là số tự nhiên > 1, chỉ chia hết cho 1 và chính nó.
+
+
+# Câu 3
+Dạng: TRUE-FALSE
+Độ khó: Dễ
+Đề bài: Đạo hàm của một hằng số luôn bằng 0.
+Đáp án: Đúng
+Giải thích: Hằng số không thay đổi theo biến nên đạo hàm bằng 0.
+
+
+# Câu 4
+Dạng: TRUE-FALSE
+Độ khó: Trung bình
+Đề bài: Tổng các góc trong tam giác bằng 360°.
+Đáp án: Sai
+Giải thích: Tổng các góc trong tam giác bằng 180°, không phải 360°.
+
+
+# Câu 5
+Dạng: FILL-BLANK
+Độ khó: Dễ
+Đề bài: Thủ đô của nước Việt Nam là ___. Quốc kỳ Việt Nam có ___ ngôi sao vàng.
+Đáp án 1: Hà Nội | Hanoi | HN
+Đáp án 2: 1 | một | một (1)
+Giải thích: Hà Nội là thủ đô từ năm 1010. Quốc kỳ có 1 ngôi sao 5 cánh.
+
+
+# Câu 6
+Dạng: FILL-BLANK
+Độ khó: Trung bình
+Đề bài: Phương trình $x^2 - 5x + 6 = 0$ có nghiệm $x_1 = ___$ và $x_2 = ___$.
+Đáp án 1: 2
+Đáp án 2: 3
+
+
+# Câu 7
+Dạng: MATCHING
+Độ khó: Dễ
+Đề bài: Ghép cặp quốc gia với thủ đô tương ứng.
+
+1. Việt Nam → Hà Nội
+2. Pháp → Paris
+3. Nhật Bản → Tokyo
+4. Anh → London
+5. Đức → Berlin
+
+Giải thích: Học sinh kéo thả các thủ đô vào quốc gia tương ứng.
+
+
+# Câu 8
+Dạng: MATCHING
+Độ khó: Trung bình
+Đề bài: Ghép cặp axit với muối được tạo ra khi tác dụng với NaOH.
+
+1. HCl → NaCl
+2. H₂SO₄ → Na₂SO₄
+3. HNO₃ → NaNO₃
+4. H₃PO₄ → Na₃PO₄
+
+
+# Câu 9
+Dạng: ORDERING
+Độ khó: Dễ
+Đề bài: Sắp xếp các số từ bé đến lớn.
+
+1. -5
+2. -2
+3. 0
+4. 3
+5. 7
+
+Giải thích: Số âm bé hơn 0, số dương lớn hơn 0.
+
+
+# Câu 10
+Dạng: ORDERING
+Độ khó: Trung bình
+Đề bài: Sắp xếp các bước của vòng đời nước theo thứ tự.
+
+1. Bốc hơi
+2. Ngưng tụ
+3. Mưa
+4. Chảy ra biển
+
+
+# Câu 11
+Dạng: UNDERLINE
+Độ khó: Dễ
+Đề bài: Gạch chân các động từ trong câu sau: Cô bé [đang đi] đến trường [bằng xe đạp].
+
+(Quy tắc: dùng dấu ngoặc vuông [...] để đánh dấu cụm cần gạch chân.)
+
+
+# Câu 12
+Dạng: UNDERLINE
+Độ khó: Trung bình
+Đề bài: Gạch chân các tính từ trong đoạn sau: Hôm nay trời rất [đẹp], gió thổi [nhẹ nhàng], hoa nở [rực rỡ].
+
+
+# Câu 13
+Dạng: ESSAY
+Độ khó: Khó
+Đề bài: Phân tích bài thơ "Tây Tiến" của Quang Dũng.
+Số từ tối thiểu: 300
+Số từ tối đa: 800
+Tiêu chí 1: Mở bài giới thiệu tác giả + bối cảnh | 2
+Tiêu chí 2: Phân tích hình tượng người lính | 4
+Tiêu chí 3: Nghệ thuật ngôn từ | 2
+Tiêu chí 4: Liên hệ thực tiễn | 2
+Giải thích: Tổng 10 điểm. Học sinh viết bài tự luận, giáo viên chấm tay theo rubric.
+
+
+# Câu 14
+Dạng: ESSAY
+Độ khó: Trung bình
+Đề bài: Hãy miêu tả cảnh làng quê em vào buổi sáng.
+Số từ tối thiểu: 150
+Số từ tối đa: 400
+Tiêu chí 1: Bố cục bài viết | 2
+Tiêu chí 2: Hình ảnh sinh động | 4
+Tiêu chí 3: Ngữ pháp & chính tả | 2
+Tiêu chí 4: Cảm xúc | 2
+
+
+===== HẾT MẪU =====
+
+GỢI Ý:
+- Có thể soạn câu hỏi bằng Word, sau đó lưu thành .docx và upload.
+- Hoặc copy phần text này vào ô "Dán văn bản trực tiếp" để test trước.
+- Hệ thống chấp nhận cả chữ thường/HOA cho tên dạng (mcq-single, MCQ-SINGLE).
+- Công thức toán dùng $...$ cho inline, $$...$$ cho block.
+- Cảnh báo parser sẽ hiển thị nếu thiếu thông tin — fix theo gợi ý.

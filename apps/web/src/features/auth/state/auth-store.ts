@@ -1,0 +1,142 @@
+"use client";
+
+import { create } from "zustand";
+
+import { useUsersStore } from "@/features/admin/users/users-store";
+import {
+  signInWithEmail,
+  signOut as fbSignOut,
+  subscribeAuth,
+} from "@/features/auth/lib/firebase-auth";
+import { isFirebaseConfigured } from "@/lib/firebase";
+
+export type Role =
+  | "superadmin"
+  | "academic-director"
+  | "campus-admin"
+  | "subject-lead"
+  | "teacher"
+  | "student";
+
+export interface AuthSession {
+  userId: string;
+  email: string;
+  name: string;
+  role: Role;
+  /** Cross-campus roles (superadmin) have null. Everyone else is bound. */
+  campusId: string | null;
+  /** Compatibility with the existing exam API. */
+  studentId: string;
+  signedInAt: number;
+}
+
+export type SignInResult =
+  | { ok: true; session: AuthSession }
+  | { ok: false; reason: "not_found" | "invalid_password" | "suspended" | "network" };
+
+interface AuthState {
+  session: AuthSession | null;
+  recentAttemptIds: string[];
+  /**
+   * `true` once the initial Firebase Auth state has been resolved. UI
+   * waits on this before showing "signed out" so we don't flash the
+   * login screen during page refresh.
+   */
+  hydrated: boolean;
+}
+
+interface AuthActions {
+  /**
+   * Sign in via Firebase Auth (email + password). Returns a tagged
+   * result so the UI can show a specific cause. On success, the
+   * `session` field is populated by the subscribeAuth listener that
+   * fires immediately after.
+   */
+  signIn(input: { identifier: string; password: string }): Promise<SignInResult>;
+  signOut(): Promise<void>;
+  rememberAttempt(id: string): void;
+  forgetAttempt(id: string): void;
+  /** Internal — called by the auth subscription. */
+  _applySession(session: AuthSession | null): void;
+}
+
+const MAX_REMEMBERED = 20;
+
+export const useAuthStore = create<AuthState & AuthActions>()((set, get) => ({
+  session: null,
+  recentAttemptIds: [],
+  hydrated: false,
+
+  async signIn({ identifier, password }) {
+    // Demo / offline mode — when Firebase isn't configured, validate
+    // against the seed users so the UI is usable for preview without a
+    // backend. Replaced by real Firebase Auth once `.env.local` is set.
+    if (!isFirebaseConfigured()) {
+      const users = useUsersStore.getState();
+      const user = users.findByIdentifier(identifier);
+      if (!user) return { ok: false, reason: "not_found" };
+      if (user.password !== password)
+        return { ok: false, reason: "invalid_password" };
+      if (user.status !== "active")
+        return { ok: false, reason: "suspended" };
+      const session: AuthSession = {
+        userId: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        campusId: user.campusId,
+        studentId: user.id,
+        signedInAt: Date.now(),
+      };
+      set({ session, hydrated: true });
+      return { ok: true, session };
+    }
+
+    const result = await signInWithEmail(identifier, password);
+    if (result.ok) {
+      // The subscribeAuth listener will set session, but apply it eagerly
+      // so navigations right after signIn() see the session immediately.
+      set({ session: result.session });
+      return { ok: true, session: result.session };
+    }
+    return result;
+  },
+
+  async signOut() {
+    if (isFirebaseConfigured()) {
+      await fbSignOut();
+    }
+    set({ session: null, recentAttemptIds: [] });
+  },
+
+  rememberAttempt(id) {
+    const next = [id, ...get().recentAttemptIds.filter((x) => x !== id)].slice(
+      0,
+      MAX_REMEMBERED,
+    );
+    set({ recentAttemptIds: next });
+  },
+
+  forgetAttempt(id) {
+    set({ recentAttemptIds: get().recentAttemptIds.filter((x) => x !== id) });
+  },
+
+  _applySession(session) {
+    set({ session, hydrated: true });
+  },
+}));
+
+/**
+ * Initialise the auth subscription. Call once on the client (the
+ * authenticated layout does this via `<AuthBootstrap />`). Returns the
+ * unsubscribe fn for cleanup.
+ */
+export function startAuthSubscription(): () => void {
+  return subscribeAuth((session) => {
+    useAuthStore.getState()._applySession(session);
+  });
+}
+
+export function isSuperadmin(session: AuthSession | null): boolean {
+  return session?.role === "superadmin";
+}

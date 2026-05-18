@@ -1,0 +1,31 @@
+{
+  "name": "fsc-exam-platform",
+  "private": true,
+  "packageManager": "npm@10.8.2",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+
+    "dev:api": "npm run dev --workspace @fsc/api",
+    "dev:worker": "npm run dev --workspace @fsc/worker",
+
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.20.0",
+    "prisma": "^6.8.2",
+    "tsx": "^4.0.0",
+    "turbo": "^2.0.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.8.2",
+    "dotenv": "^17.4.2"
+  }
+}

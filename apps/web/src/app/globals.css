@@ -1,0 +1,244 @@
+@import "tailwindcss";
+@import "katex/dist/katex.min.css";
+@import "mathlive/fonts.css";
+
+/*
+ * ─────────────────────────────────────────────────────────────────────────
+ *  FSC Exam Platform — Design System Tokens
+ *
+ *  Source: docs/FSC_Design_System.md (Modern Minimal SaaS Dashboard)
+ *  Inspirations: Linear · Notion · Stripe Dashboard · Canvas LMS
+ *
+ *  - White cards on cool gray (#F5F7FA) background
+ *  - Inter + tabular-nums for all numerics (no monospace fonts anywhere)
+ *  - Single primary blue (#2563EB) for actions / links / active states
+ *  - Pastel + bordered status pills (uppercase, 999px radius)
+ *  - Borders for separation — shadows reserved for modals & dropdowns
+ * ─────────────────────────────────────────────────────────────────────────
+ */
+@theme {
+  /* === Surfaces === */
+  --color-background: #f5f7fa;
+  --color-surface: #ffffff;
+  --color-surface-2: #f9fafb;
+  --color-card: #ffffff;
+  --color-card-foreground: #0f172a;
+  --color-popover: #ffffff;
+  --color-popover-foreground: #0f172a;
+  --color-muted: #f1f5f9;
+  --color-muted-foreground: #64748b;
+  --color-accent: #f1f5f9;
+  --color-accent-foreground: #0f172a;
+  --color-secondary: #f1f5f9;
+  --color-secondary-foreground: #0f172a;
+
+  /* === Text hierarchy (4 levels) === */
+  --color-foreground: #0f172a;
+  --color-text-2: #334155;
+  --color-text-muted: #64748b;
+  --color-text-subtle: #94a3b8;
+
+  /* === Borders === */
+  --color-border: #e5e7eb;
+  --color-border-soft: #f1f5f9;
+  --color-border-hover: #cbd5e1;
+  --color-input: #e5e7eb;
+
+  /* === Primary accent (blue-600) === */
+  --color-primary: #2563eb;
+  --color-primary-foreground: #ffffff;
+  --color-primary-dark: #1d4ed8;
+  --color-primary-soft: #dbeafe;
+  --color-primary-text: #1e40af;
+  --color-ring: #2563eb;
+  --color-brand: #2563eb;
+  --color-brand-soft: #dbeafe;
+  --color-brand-deep: #1e3a8a;
+
+  /* === Secondary accent (violet, used sparingly) === */
+  --color-purple: #7c3aed;
+  --color-purple-soft: #ede9fe;
+  --color-purple-text: #6d28d9;
+
+  /* === Status palette (pastel bg + bold text + soft border) === */
+  --color-success: #10b981;
+  --color-success-dark: #059669;
+  --color-success-soft: #d1fae5;
+  --color-success-border: #86efac;
+  --color-success-text: #166534;
+
+  --color-warning: #f59e0b;
+  --color-warning-dark: #d97706;
+  --color-warning-soft: #fef3c7;
+  --color-warning-border: #fcd34d;
+  --color-warning-text: #92400e;
+
+  --color-destructive: #ef4444;
+  --color-destructive-foreground: #ffffff;
+  --color-destructive-dark: #dc2626;
+  --color-destructive-soft: #fee2e2;
+  --color-destructive-border: #fca5a5;
+  --color-destructive-text: #991b1b;
+
+  /* === Tone palette for KPI tiles (pastel bg + saturated icon) === */
+  --color-tone-blue: #2563eb;
+  --color-tone-blue-soft: #dbeafe;
+  --color-tone-orange: #d97706;
+  --color-tone-orange-soft: #fef3c7;
+  --color-tone-green: #059669;
+  --color-tone-green-soft: #dcfce7;
+  --color-tone-violet: #7c3aed;
+  --color-tone-violet-soft: #ede9fe;
+  --color-tone-red: #dc2626;
+  --color-tone-red-soft: #fee2e2;
+
+  /* === Radii === */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.75rem;
+  --radius-full: 9999px;
+
+  /* === Typography === */
+  --font-sans:
+    var(--font-sans-loaded, "Inter"), ui-sans-serif, system-ui,
+    -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  html,
+  body {
+    height: 100%;
+  }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    line-height: 1.5;
+    font-feature-settings: "rlig" 1, "calt" 1, "cv11" 1, "ss01" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+}
+
+/*
+ * ─────────────────────────────────────────────────────────────────────────
+ *  Typography utilities — semantic, role-driven.
+ *
+ *    .text-display       48px / 800 / -0.02em
+ *    .text-page-title    24px / 800 / -0.02em
+ *    .text-section-title 16px / 700 / -0.005em
+ *    .text-card-title    14px / 700
+ *    .text-eyebrow       11px / 600 / 0.04em uppercase
+ *    .text-micro         10px / 600 / 0.04em uppercase (stat labels)
+ *    .text-kpi           28px / 800 / -0.02em tabular
+ *    .text-body          14px / 400
+ *    .text-small         13px / 400
+ *    .text-meta          12px / 400 muted
+ *    .mono               Inter + tabular-nums (never JetBrains/Roboto Mono)
+ * ─────────────────────────────────────────────────────────────────────────
+ */
+@layer components {
+  .text-display {
+    font-size: 3rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1.05;
+    color: var(--color-foreground);
+  }
+  .text-page-title {
+    font-size: 1.5rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    color: var(--color-foreground);
+  }
+  .text-section-title {
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: -0.005em;
+    line-height: 1.35;
+    color: var(--color-foreground);
+  }
+  .text-card-title {
+    font-size: 0.875rem;
+    font-weight: 700;
+    letter-spacing: -0.005em;
+    line-height: 1.35;
+    color: var(--color-foreground);
+  }
+  .text-eyebrow {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    line-height: 1.2;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+  }
+  .text-micro {
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    line-height: 1.2;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+  }
+  .text-kpi {
+    font-size: 1.75rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1.05;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-foreground);
+  }
+  .text-body {
+    font-size: 0.875rem;
+    font-weight: 400;
+    line-height: 1.5;
+    color: var(--color-foreground);
+  }
+  .text-small {
+    font-size: 0.8125rem;
+    font-weight: 400;
+    line-height: 1.45;
+    color: var(--color-foreground);
+  }
+  .text-meta {
+    font-size: 0.75rem;
+    font-weight: 400;
+    line-height: 1.4;
+    color: var(--color-text-muted);
+  }
+  .mono {
+    font-family: var(--font-sans);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+
+  /* Live status indicator — see StatusBadge variant="live" */
+  .status-live-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #dc2626;
+    animation: fsc-live-pulse 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes fsc-live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4);
+  }
+  50% {
+    opacity: 0.7;
+    box-shadow: 0 0 0 5px rgba(220, 38, 38, 0);
+  }
+}

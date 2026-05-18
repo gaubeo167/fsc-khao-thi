@@ -1,0 +1,54 @@
+# ───── Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# ───── Build outputs
+.next/
+out/
+dist/
+build/
+*.tsbuildinfo
+.turbo/
+
+# ───── Environment & secrets (NEVER commit these)
+.env
+.env.local
+.env*.local
+.env.development
+.env.production
+*.pem
+serviceAccount*.json
+firebase-debug.log
+firebase-debug.*.log
+.firebaserc.local
+
+# ───── Prisma generated
+/generated/prisma
+/prisma/migrations/dev*
+apps/*/prisma/migrations/dev*
+
+# ───── Firebase
+.firebase/
+firestore-debug.log
+ui-debug.log
+
+# ───── Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# ───── OS / Editor noise
+.DS_Store
+.idea/
+.vscode/
+*.swp
+Thumbs.db
+
+# ───── Test / coverage
+coverage/
+.nyc_output/
+
+# ───── Local Claude / IDE state (per-user, not for commit)
+.claude/
