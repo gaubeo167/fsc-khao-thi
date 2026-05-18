@@ -90,31 +90,23 @@ async function seedCatalog() {
     });
   }
 
-  const classes = [
-    { id: "class-10a1", code: "10A1", name: "10A1", gradeId: "grade-10" },
-    { id: "class-11a1", code: "11A1", name: "11A1", gradeId: "grade-11" },
-    { id: "class-12a1", code: "12A1", name: "12A1", gradeId: "grade-12" },
-  ];
-  for (const c of classes) {
-    await ensureDoc("classes", c.id, {
-      ...c,
-      campusId,
-      studentCount: 0,
-      homeroomTeacher: null,
-      homeroomTeacherId: null,
-      createdAt: new Date().toISOString(),
-    });
-  }
+  // Classes (lớp) are intentionally NOT seeded — they belong to specific
+  // campuses with specific grade tiers, and the hardcoded 10A1/11A1/12A1
+  // bled into other campuses' UI. Admin creates lớp per-campus via UI.
+  const classes = [];
 
+  const allGradeIds = Array.from({ length: 12 }, (_, i) => `grade-${i + 1}`);
   const subjects = [
-    { id: "subject-toan", name: "Toán", code: "TOAN", color: "#2563eb" },
-    { id: "subject-van", name: "Ngữ văn", code: "VAN", color: "#dc2626" },
-    { id: "subject-anh", name: "Tiếng Anh", code: "ANH", color: "#16a34a" },
+    { id: "subject-toan", name: "Toán", code: "TOAN", color: "#2563eb", description: "Toán đại số · hình học · giải tích." },
+    { id: "subject-van", name: "Ngữ văn", code: "VAN", color: "#dc2626", description: "Văn học và tiếng Việt." },
+    { id: "subject-anh", name: "Tiếng Anh", code: "ANH", color: "#16a34a", description: "Tiếng Anh." },
   ];
   for (const s of subjects) {
     await ensureDoc("subjects", s.id, {
       ...s,
+      gradeIds: allGradeIds,
       campusIds: [campusId],
+      status: "active",
       createdAt: new Date().toISOString(),
     });
   }
