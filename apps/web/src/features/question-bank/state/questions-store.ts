@@ -115,9 +115,23 @@ export function subscribeQuestions(): Unsubscribe {
     collectionName: COLLECTIONS.questions,
     fromDoc: (id, data) => ({ ...(data as Question), id }),
     onChange: (rows) => {
+      const current = useQuestionsStore.getState().questions.length;
       // Empty collection on a fresh project: don't blow away seed data.
       if (rows.length === 0 && !useQuestionsStore.getState().hydrated) {
         useQuestionsStore.setState({ hydrated: true });
+        return;
+      }
+      // Defensive: if the snapshot collapses from many → zero,
+      // that's almost always a permission-denied snapshot or a
+      // transient Firestore glitch (we've seen it after copy in
+      // strict-rule mode). Skip the clobber and warn — the next
+      // good snapshot will catch up. Real "delete all" workflows
+      // still work because they happen one delete at a time.
+      if (current > 0 && rows.length === 0) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          "[questions-store] suspicious empty snapshot after non-empty state — ignored to avoid data flash.",
+        );
         return;
       }
       useQuestionsStore.getState()._applySnapshot(rows);
