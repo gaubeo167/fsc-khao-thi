@@ -2,6 +2,7 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
+import { Toaster } from "sonner";
 
 import { DataHealer } from "@/components/data-healer";
 import { AuthBootstrap } from "@/features/auth/components/auth-bootstrap";
@@ -29,6 +30,12 @@ export function Providers({ children }: { children: ReactNode }) {
       <AuthBootstrap />
       <DataHealer />
       {children}
+      <Toaster
+        position="top-right"
+        richColors
+        closeButton
+        toastOptions={{ duration: 3500 }}
+      />
     </QueryClientProvider>
   );
 }

@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -70,26 +71,46 @@ export function CreateQuestionDialog({ open, onOpenChange, editing }: Props) {
   const isEdit = Boolean(editing);
 
   function handleSubmit(values: QuestionFormValues, finalStatus: Question["status"]) {
-    if (isEdit && editing) {
-      update(editing.id, {
-        ...(values as any),
-        status: finalStatus,
-        approvedBy:
-          finalStatus === "approved" ? session?.userId ?? null : editing.approvedBy ?? null,
-        rejectionNote: null,
-      });
-    } else {
-      create({
-        ...(values as any),
-        tocNodeId: (values as any).tocNodeId ?? null,
-        ownerId: session?.userId ?? "anonymous",
-        ownerName: session?.name ?? "—",
-        status: finalStatus,
-        approvedBy: finalStatus === "approved" ? session?.userId ?? null : null,
-        rejectionNote: null,
-      });
+    try {
+      if (isEdit && editing) {
+        update(editing.id, {
+          ...(values as any),
+          status: finalStatus,
+          approvedBy:
+            finalStatus === "approved" ? session?.userId ?? null : editing.approvedBy ?? null,
+          rejectionNote: null,
+        });
+        toast.success(
+          finalStatus === "approved"
+            ? "Đã lưu & duyệt câu hỏi"
+            : finalStatus === "pending"
+              ? "Đã gửi duyệt câu hỏi"
+              : "Đã lưu bản nháp",
+        );
+      } else {
+        const created = create({
+          ...(values as any),
+          tocNodeId: (values as any).tocNodeId ?? null,
+          ownerId: session?.userId ?? "anonymous",
+          ownerName: session?.name ?? "—",
+          status: finalStatus,
+          approvedBy: finalStatus === "approved" ? session?.userId ?? null : null,
+          rejectionNote: null,
+        });
+        toast.success(
+          finalStatus === "approved"
+            ? `Đã tạo câu hỏi ${created.id}`
+            : finalStatus === "pending"
+              ? `Đã gửi duyệt ${created.id} — chờ TBM/Admin xác nhận`
+              : `Đã lưu bản nháp ${created.id}`,
+        );
+      }
+      onOpenChange(false);
+    } catch (e) {
+      toast.error(
+        e instanceof Error ? `Lưu thất bại: ${e.message}` : "Lưu câu hỏi thất bại",
+      );
     }
-    onOpenChange(false);
   }
 
   // AI-generated questions take a completely different shape (batch + review)

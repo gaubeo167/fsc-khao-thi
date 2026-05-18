@@ -25,7 +25,7 @@ import {
   type SeedUser,
 } from "@/features/auth/data/seed-users";
 import type { Role } from "@/features/auth/state/auth-store";
-import { getAuthSafe, getDb } from "@/lib/firebase";
+import { getAuthSafe, getDb, isFirebaseConfigured } from "@/lib/firebase";
 import { COLLECTIONS } from "@/lib/firestore-collections";
 
 export interface CreateUserInput {
@@ -103,6 +103,32 @@ export const useUsersStore = create<UsersState & UsersActions>()((set, get) => (
   hydrated: false,
 
   async create(input) {
+    // Demo / offline mode: write to local Zustand only. Admins can still
+    // create accounts that work in the seed-mode signin (auth-store
+    // looks up the local users array when Firebase isn't configured).
+    if (!isFirebaseConfigured()) {
+      const now = new Date().toISOString();
+      const id = `local-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const u = {
+        id,
+        email: input.email.trim().toLowerCase(),
+        password: input.password,
+        name: input.name.trim(),
+        role: input.role,
+        campusId: input.campusId,
+        subject: input.subject,
+        className: input.className,
+        subjectIds: input.subjectIds,
+        gradeIds: input.gradeIds,
+        classIds: input.classIds,
+        permissions: input.permissions,
+        status: input.status ?? "active",
+        createdAt: now,
+      } as SeedUser;
+      set({ users: [u, ...get().users] });
+      return u;
+    }
+
     const cfg = {
       apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
       authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN!,
@@ -155,8 +181,26 @@ export const useUsersStore = create<UsersState & UsersActions>()((set, get) => (
   },
 
   async update(id, patch) {
+    // Optimistic local update — same shape regardless of Firebase mode.
+    set({
+      users: get().users.map((u) => {
+        if (u.id !== id) return u;
+        const next = { ...u };
+        for (const [k, v] of Object.entries(patch)) {
+          if (k === "password") {
+            if (v) next.password = v as string;
+            continue;
+          }
+          if (v === undefined) continue;
+          (next as Record<string, unknown>)[k] = v === null ? null : v;
+        }
+        return next;
+      }),
+    });
+    if (!isFirebaseConfigured()) {
+      return get().users.find((u) => u.id === id) ?? null;
+    }
     const ref = doc(getDb(), COLLECTIONS.users, id);
-    // Build the partial — strip undefined + ignore password (handled separately).
     const cleaned: Record<string, unknown> = { updatedAt: serverTimestamp() };
     for (const [k, v] of Object.entries(patch)) {
       if (k === "password" || v === undefined) continue;
@@ -167,6 +211,8 @@ export const useUsersStore = create<UsersState & UsersActions>()((set, get) => (
   },
 
   async remove(id) {
+    set({ users: get().users.filter((u) => u.id !== id) });
+    if (!isFirebaseConfigured()) return;
     await deleteDoc(doc(getDb(), COLLECTIONS.users, id));
     // Firestore profile gone. The Firebase Auth user still exists — admin
     // must disable/delete them in the Firebase Console (or via a Cloud
@@ -174,13 +220,27 @@ export const useUsersStore = create<UsersState & UsersActions>()((set, get) => (
   },
 
   async setStatus(id, status) {
+    set({
+      users: get().users.map((u) => (u.id === id ? { ...u, status } : u)),
+    });
+    if (!isFirebaseConfigured()) return;
     await updateDoc(doc(getDb(), COLLECTIONS.users, id), {
       status,
       updatedAt: serverTimestamp(),
     });
   },
 
-  async resetPassword(id) {
+  async resetPassword(id, newPassword) {
+    if (!isFirebaseConfigured()) {
+      // Demo mode: just overwrite the local password.
+      if (!newPassword) return;
+      set({
+        users: get().users.map((u) =>
+          u.id === id ? { ...u, password: newPassword } : u,
+        ),
+      });
+      return;
+    }
     const user = get().users.find((u) => u.id === id);
     if (!user) throw new Error(`User ${id} not found`);
     await sendPasswordResetEmail(getAuthSafe(), user.email);
@@ -217,6 +277,14 @@ export const useUsersStore = create<UsersState & UsersActions>()((set, get) => (
  * superadmin sees everyone; teachers/students see only themselves.
  */
 export function subscribeUsers(): Unsubscribe {
+  if (!isFirebaseConfigured()) {
+    // No backend to subscribe to. Mark hydrated so the rest of the app
+    // doesn't wait on a snapshot that will never arrive.
+    useUsersStore.getState()._applySnapshot(useUsersStore.getState().users);
+    return () => {
+      /* no-op */
+    };
+  }
   const q = query(collection(getDb(), COLLECTIONS.users));
   return onSnapshot(
     q,

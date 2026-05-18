@@ -30,7 +30,16 @@ import {
   type Unsubscribe,
 } from "firebase/firestore";
 
-import { getDb } from "./firebase";
+import { getDb, isFirebaseConfigured } from "./firebase";
+
+/**
+ * Idempotent no-op unsubscribe used as a safe return value when Firebase
+ * isn't configured. Lets demo-mode callers cleanly destructure
+ * `const unsub = subscribeFoo(); ... unsub();` without conditionals.
+ */
+const NOOP_UNSUB: Unsubscribe = () => {
+  /* no-op */
+};
 
 interface SubscribeArgs<T> {
   /** Firestore collection name. */
@@ -46,6 +55,9 @@ interface SubscribeArgs<T> {
 }
 
 export function subscribeCollection<T>(args: SubscribeArgs<T>): Unsubscribe {
+  // Demo / offline mode: no Firebase env → don't subscribe. Local Zustand
+  // state (seed data) is the source of truth.
+  if (!isFirebaseConfigured()) return NOOP_UNSUB;
   const q: Query<DocumentData> = args.constraints?.length
     ? query(collection(getDb(), args.collectionName), ...args.constraints)
     : query(collection(getDb(), args.collectionName));
@@ -63,12 +75,14 @@ export function subscribeCollection<T>(args: SubscribeArgs<T>): Unsubscribe {
   );
 }
 
-/** Background `setDoc` with logging on failure. Caller does not await. */
+/** Background `setDoc` with logging on failure. Caller does not await.
+ *  Silently skips when Firebase isn't configured (demo / offline mode). */
 export function writeDoc(
   collectionName: string,
   id: string,
   data: Record<string, unknown>,
 ): void {
+  if (!isFirebaseConfigured()) return;
   setDoc(doc(getDb(), collectionName, id), {
     ...data,
     updatedAt: serverTimestamp(),
@@ -78,12 +92,13 @@ export function writeDoc(
   });
 }
 
-/** Background `updateDoc` with logging. */
+/** Background `updateDoc` with logging. No-ops in demo mode. */
 export function patchDoc(
   collectionName: string,
   id: string,
   patch: Record<string, unknown>,
 ): void {
+  if (!isFirebaseConfigured()) return;
   updateDoc(doc(getDb(), collectionName, id), {
     ...patch,
     updatedAt: serverTimestamp(),
@@ -93,8 +108,9 @@ export function patchDoc(
   });
 }
 
-/** Background `deleteDoc` with logging. */
+/** Background `deleteDoc` with logging. No-ops in demo mode. */
 export function removeDoc(collectionName: string, id: string): void {
+  if (!isFirebaseConfigured()) return;
   deleteDoc(doc(getDb(), collectionName, id)).catch((e) => {
     // eslint-disable-next-line no-console
     console.warn(`[firestore] deleteDoc ${collectionName}/${id} failed`, e);
