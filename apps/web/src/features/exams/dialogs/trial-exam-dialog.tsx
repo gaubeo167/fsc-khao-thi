@@ -54,6 +54,11 @@ export function TrialExamDialog({ exam, onClose, onDelete }: Props) {
       .filter((q): q is Question => Boolean(q));
   }, [exam, allQuestions]);
 
+  // Flow: "intro" (show summary + Bắt đầu) → "doing" (timer running) →
+  // "done" (results panel + Làm lại). Re-opening the dialog returns to
+  // intro so the student can review what's in the exam before
+  // committing to a timed attempt.
+  const [stage, setStage] = useState<"intro" | "doing" | "done">("intro");
   const [cursor, setCursor] = useState(0);
   /** answers[questionId] = "raw" answer marker (depends on question type). */
   const [answers, setAnswers] = useState<Record<string, unknown>>({});
@@ -74,6 +79,7 @@ export function TrialExamDialog({ exam, onClose, onDelete }: Props) {
   // parent keeps this component mounted across exams (changes `exam` prop).
   useEffect(() => {
     if (!exam) return;
+    setStage("intro");
     setCursor(0);
     setAnswers({});
     setSecondsLeft(exam.duration * 60);
@@ -81,22 +87,31 @@ export function TrialExamDialog({ exam, onClose, onDelete }: Props) {
     setAutoSubmitted(false);
   }, [exam]);
 
-  // Countdown — pause once submitted. Auto-submit when it hits zero. We
-  // require `> 0` for the auto-submit branch (instead of `<= 0`) so a
-  // legitimate "0 remaining" only triggers via decrement, never via a
-  // stale initial render.
+  function startAttempt() {
+    if (!exam) return;
+    setStage("doing");
+    setCursor(0);
+    setAnswers({});
+    setSecondsLeft(exam.duration * 60);
+    setSubmitted(false);
+    setAutoSubmitted(false);
+  }
+
+  // Countdown — pauses outside the "doing" stage so the intro and
+  // result screens don't bleed time. Auto-submit when it hits zero.
   useEffect(() => {
-    if (!exam || submitted) return;
+    if (!exam || submitted || stage !== "doing") return;
     if (secondsLeft === 0) {
       setSubmitted(true);
       setAutoSubmitted(true);
+      setStage("done");
       return;
     }
     const id = setInterval(() => {
       setSecondsLeft((s) => Math.max(0, s - 1));
     }, 1000);
     return () => clearInterval(id);
-  }, [exam, secondsLeft, submitted]);
+  }, [exam, secondsLeft, submitted, stage]);
 
   // Grade only at submit time so the heavy comparison doesn't run every render.
   const grade: ExamGrade | null = useMemo(() => {
@@ -130,6 +145,7 @@ export function TrialExamDialog({ exam, onClose, onDelete }: Props) {
     if (submitted) return;
     setSubmitted(true);
     setAutoSubmitted(false);
+    setStage("done");
   }
 
   return (
@@ -154,17 +170,27 @@ export function TrialExamDialog({ exam, onClose, onDelete }: Props) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <span
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-mono text-[14px] font-bold tabular-nums ring-1",
-                timerCritical
-                  ? "bg-rose-500/20 text-rose-100 ring-rose-300/50 animate-pulse"
-                  : "bg-white/15 text-white ring-white/25",
-              )}
-            >
-              <Clock className="h-3.5 w-3.5" strokeWidth={2} />
-              {timerStr}
-            </span>
+            {/* Timer only visible during the active attempt. Intro and
+                results screens show a neutral pill so the student
+                isn't pressured before starting / after finishing. */}
+            {stage === "doing" ? (
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-mono text-[14px] font-bold tabular-nums ring-1",
+                  timerCritical
+                    ? "bg-rose-500/20 text-rose-100 ring-rose-300/50 animate-pulse"
+                    : "bg-white/15 text-white ring-white/25",
+                )}
+              >
+                <Clock className="h-3.5 w-3.5" strokeWidth={2} />
+                {timerStr}
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 rounded-md bg-white/15 px-3 py-1.5 text-[12px] font-semibold text-white ring-1 ring-white/25">
+                <Clock className="h-3.5 w-3.5" strokeWidth={2} />
+                {exam.duration} phút
+              </span>
+            )}
             {onDelete && (
               <button
                 type="button"
@@ -189,6 +215,15 @@ export function TrialExamDialog({ exam, onClose, onDelete }: Props) {
           </div>
         </header>
 
+        {stage === "intro" ? (
+          <IntroPanel
+            exam={exam}
+            questions={questions}
+            subjects={subjects}
+            grades={grades}
+            onStart={startAttempt}
+          />
+        ) : (
         <div className="grid min-h-0 flex-1 grid-cols-[220px_minmax(0,1fr)] overflow-hidden">
           {/* Left sidebar */}
           <aside className="overflow-y-auto border-r bg-surface-2/30 px-4 py-4">
@@ -312,6 +347,7 @@ export function TrialExamDialog({ exam, onClose, onDelete }: Props) {
                 grade={grade}
                 autoSubmitted={autoSubmitted}
                 onClose={onClose}
+                onRetry={() => setStage("intro")}
               />
             ) : (
               <>
@@ -395,8 +431,140 @@ export function TrialExamDialog({ exam, onClose, onDelete }: Props) {
             )}
           </main>
         </div>
+        )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function IntroPanel({
+  exam,
+  questions,
+  subjects,
+  grades,
+  onStart,
+}: {
+  exam: GeneratedExam;
+  questions: Question[];
+  subjects: Array<{ id: string; name: string; color?: string }>;
+  grades: Array<{ id: string; name: string }>;
+  onStart: () => void;
+}) {
+  // Type/difficulty histogram for the summary table.
+  const byType = new Map<string, number>();
+  const byDifficulty = new Map<string, number>();
+  const subjectIds = new Set<string>();
+  const gradeIds = new Set<string>();
+  for (const q of questions) {
+    byType.set(q.type, (byType.get(q.type) ?? 0) + 1);
+    byDifficulty.set(q.difficulty, (byDifficulty.get(q.difficulty) ?? 0) + 1);
+    if (q.subjectId) subjectIds.add(q.subjectId);
+    if (q.gradeId) gradeIds.add(q.gradeId);
+  }
+  const TYPE_LABEL: Record<string, string> = {
+    "mcq-single": "Trắc nghiệm 1 đáp án",
+    "mcq-multi": "Trắc nghiệm nhiều đáp án",
+    "true-false": "Đúng / Sai",
+    "multi-tf": "Đ/S nhiều câu phụ",
+    "short-answer": "Trả lời ngắn",
+    "fill-blank": "Điền chỗ trống",
+    matching: "Ghép cặp",
+    ordering: "Sắp xếp",
+    "drag-drop": "Kéo thả",
+    underline: "Gạch chân",
+    essay: "Tự luận",
+    "ai-generated": "AI sinh",
+  };
+  const DIFF_LABEL: Record<string, string> = {
+    easy: "Dễ",
+    medium: "Trung bình",
+    hard: "Khó",
+  };
+  const subjectNames = Array.from(subjectIds)
+    .map((id) => subjects.find((s) => s.id === id)?.name)
+    .filter(Boolean)
+    .join(", ");
+  const gradeNames = Array.from(gradeIds)
+    .map((id) => grades.find((g) => g.id === id)?.name)
+    .filter(Boolean)
+    .join(", ");
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <div className="mx-auto w-full max-w-3xl p-6">
+        <div className="rounded-2xl border bg-card p-6">
+          <h2 className="text-[18px] font-bold text-foreground/90">
+            📝 {exam.name}
+          </h2>
+          <p className="mt-1 text-[12.5px] text-muted-foreground">
+            Trước khi bắt đầu, xem qua thông tin bộ đề. Bấm "Bắt đầu làm thử"
+            để bộ đếm thời gian khởi chạy.
+          </p>
+
+          <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <SummaryTile label="Số câu" value={String(questions.length)} />
+            <SummaryTile label="Thời gian" value={`${exam.duration} phút`} />
+            <SummaryTile label="Môn" value={subjectNames || "—"} />
+            <SummaryTile label="Khối" value={gradeNames || "—"} />
+          </div>
+
+          <div className="mt-5 grid gap-4 sm:grid-cols-2">
+            <div>
+              <p className="text-[11.5px] font-bold uppercase tracking-[0.06em] text-foreground/60">
+                Dạng câu hỏi
+              </p>
+              <ul className="mt-2 space-y-1">
+                {[...byType.entries()].map(([type, count]) => (
+                  <li
+                    key={type}
+                    className="flex items-center justify-between rounded-md bg-surface-2/40 px-2.5 py-1.5 text-[12.5px]"
+                  >
+                    <span>{TYPE_LABEL[type] ?? type}</span>
+                    <span className="font-semibold tabular-nums">{count}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <p className="text-[11.5px] font-bold uppercase tracking-[0.06em] text-foreground/60">
+                Mức độ
+              </p>
+              <ul className="mt-2 space-y-1">
+                {[...byDifficulty.entries()].map(([diff, count]) => (
+                  <li
+                    key={diff}
+                    className="flex items-center justify-between rounded-md bg-surface-2/40 px-2.5 py-1.5 text-[12.5px]"
+                  >
+                    <span>{DIFF_LABEL[diff] ?? diff}</span>
+                    <span className="font-semibold tabular-nums">{count}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+
+          <div className="mt-6 flex items-center justify-center">
+            <Button size="lg" onClick={onStart}>
+              <Target className="h-4 w-4" />
+              Bắt đầu làm thử
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SummaryTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border bg-surface px-3 py-2.5">
+      <p className="text-[10px] font-bold uppercase tracking-[0.06em] text-foreground/55">
+        {label}
+      </p>
+      <p className="mt-0.5 text-[13.5px] font-semibold leading-tight">
+        {value}
+      </p>
+    </div>
   );
 }
 
@@ -612,12 +780,14 @@ function ResultsView({
   grade,
   autoSubmitted,
   onClose,
+  onRetry,
 }: {
   exam: GeneratedExam;
   questions: Question[];
   grade: ExamGrade;
   autoSubmitted: boolean;
   onClose(): void;
+  onRetry(): void;
 }) {
   const denom = grade.autoGradableCount;
   const percent = denom === 0 ? 0 : Math.round((grade.totalScore / denom) * 100);
@@ -761,6 +931,9 @@ function ResultsView({
       </section>
 
       <div className="flex justify-end gap-2 border-t pt-4">
+        <Button variant="outline" onClick={onRetry}>
+          🔁 Làm thử lại
+        </Button>
         <Button onClick={onClose}>Đóng kết quả</Button>
       </div>
     </div>
