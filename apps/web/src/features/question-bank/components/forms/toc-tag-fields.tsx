@@ -28,11 +28,19 @@ export function TocTagFields({ control, watch }: Props) {
   const gradeId = watch("gradeId") as string;
   const tocNodes = useSubjectsStore((s) => s.tocNodes);
 
-  const flattened = useMemo(() => {
-    if (!subjectId || !gradeId) return [];
-    const inScope = tocNodes.filter(
+  const { flattened, fallbackUsed } = useMemo(() => {
+    if (!subjectId) return { flattened: [], fallbackUsed: false };
+    // Primary: exact (subject, grade) match.
+    let inScope = tocNodes.filter(
       (n) => n.subjectId === subjectId && n.gradeId === gradeId,
     );
+    let fellBack = false;
+    // Fallback: if the admin only built TOC for one grade of this
+    // subject, reuse it for other grades so the dropdown isn't empty.
+    if (inScope.length === 0) {
+      inScope = tocNodes.filter((n) => n.subjectId === subjectId);
+      if (inScope.length > 0) fellBack = true;
+    }
     const byParent = new Map<string | null, TocNode[]>();
     for (const n of inScope) {
       const list = byParent.get(n.parentId) ?? [];
@@ -54,7 +62,7 @@ export function TocTagFields({ control, watch }: Props) {
       }
     }
     walk(null, 0);
-    return out;
+    return { flattened: out, fallbackUsed: fellBack };
   }, [subjectId, gradeId, tocNodes]);
 
   return (
@@ -70,11 +78,11 @@ export function TocTagFields({ control, watch }: Props) {
             <Select
               value={field.value ?? ""}
               onChange={(e) => field.onChange(e.target.value || null)}
-              disabled={!subjectId || !gradeId}
+              disabled={!subjectId}
             >
               <option value="">
-                {!subjectId || !gradeId
-                  ? "Chọn môn và khối trước"
+                {!subjectId
+                  ? "Chọn môn trước"
                   : "— Chọn chương / chủ đề trong mục lục —"}
               </option>
               {flattened.map((n) => {
@@ -86,9 +94,15 @@ export function TocTagFields({ control, watch }: Props) {
                 );
               })}
             </Select>
-            {subjectId && gradeId && flattened.length === 0 && (
+            {subjectId && fallbackUsed && (
+              <p className="text-[11px] text-amber-700">
+                Khối hiện tại chưa có mục lục riêng — đang hiển thị mục lục
+                được tạo cho khối khác của cùng môn này.
+              </p>
+            )}
+            {subjectId && flattened.length === 0 && (
               <p className="text-meta">
-                Môn này chưa có mục lục cho khối đã chọn. Có thể tạo ở mục{" "}
+                Môn này chưa có mục lục nào. Tạo ở mục{" "}
                 <code className="rounded bg-muted px-1">Môn học → Mục lục</code>.
               </p>
             )}
