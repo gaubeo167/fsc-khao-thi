@@ -1241,45 +1241,56 @@ function EssayArea({ values, submitted }: AreaProps) {
 function UnderlineArea({ values, submitted }: AreaProps) {
   const content: string = values.content ?? "";
 
-  // 1) Pull the correct phrases from `[u:phrase]` markers
-  const correctPhrases = useMemo(() => {
-    const out: string[] = [];
+  // Walk the source content with markers in lockstep so we tag each
+  // emitted word token with `correct: true` only when it originated
+  // INSIDE a `[u:phrase]` marker — not just because its text happens
+  // to match a marker phrase elsewhere. Position-based grading fixes
+  // the bug where "[u:10]" treated every "10" in the passage as a
+  // required answer.
+  const { tokens, plainContent } = useMemo(() => {
+    const out: Array<{
+      kind: "word" | "sep" | "br";
+      value: string;
+      correct: boolean;
+    }> = [];
+    let plain = "";
+
+    // Step 1 — split content by markers, remembering which slice is
+    // inside a `[u:...]` and which isn't.
+    type Slice = { text: string; underlined: boolean };
+    const slices: Slice[] = [];
     const re = /\[u:([^\]\n]+)\]/g;
+    let lastIdx = 0;
     let m: RegExpExecArray | null;
-    while ((m = re.exec(content)) !== null) out.push(m[1]);
-    return out;
-  }, [content]);
-
-  // 2) Strip markers to get the "plain" passage student sees
-  const plainContent = useMemo(
-    () => content.replace(/\[u:([^\]\n]+)\]/g, "$1"),
-    [content],
-  );
-
-  // 3) Tokenise plain content: word | non-word | newline
-  const tokens = useMemo(() => {
-    const out: Array<{ kind: "word" | "sep" | "br"; value: string }> = [];
-    const re = /(\n)|([\p{L}\p{N}]+(?:['']\p{L}+)?)|([^\p{L}\p{N}\n]+)/gu;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(plainContent)) !== null) {
-      if (m[1] !== undefined) out.push({ kind: "br", value: "\n" });
-      else if (m[2] !== undefined) out.push({ kind: "word", value: m[2] });
-      else if (m[3] !== undefined) out.push({ kind: "sep", value: m[3] });
+    while ((m = re.exec(content)) !== null) {
+      if (m.index > lastIdx) {
+        slices.push({ text: content.slice(lastIdx, m.index), underlined: false });
+      }
+      slices.push({ text: m[1]!, underlined: true });
+      lastIdx = m.index + m[0].length;
     }
-    return out;
-  }, [plainContent]);
+    if (lastIdx < content.length) {
+      slices.push({ text: content.slice(lastIdx), underlined: false });
+    }
 
-  // 4) Build the set of correct word strings (case-insensitive)
-  const correctWordSet = useMemo(() => {
-    const set = new Set<string>();
-    for (const phrase of correctPhrases) {
-      for (const w of phrase.split(/\s+/)) {
-        const norm = w.replace(/[^\p{L}\p{N}']+/gu, "").toLowerCase();
-        if (norm) set.add(norm);
+    // Step 2 — tokenise each slice; tag word tokens with the slice's
+    // `underlined` flag.
+    const tokRe = /(\n)|([\p{L}\p{N}]+(?:['']\p{L}+)?)|([^\p{L}\p{N}\n]+)/gu;
+    for (const slice of slices) {
+      plain += slice.text;
+      let tm: RegExpExecArray | null;
+      tokRe.lastIndex = 0;
+      while ((tm = tokRe.exec(slice.text)) !== null) {
+        if (tm[1] !== undefined)
+          out.push({ kind: "br", value: "\n", correct: false });
+        else if (tm[2] !== undefined)
+          out.push({ kind: "word", value: tm[2], correct: slice.underlined });
+        else if (tm[3] !== undefined)
+          out.push({ kind: "sep", value: tm[3], correct: false });
       }
     }
-    return set;
-  }, [correctPhrases]);
+    return { tokens: out, plainContent: plain };
+  }, [content]);
 
   const [selected, setSelected] = useState<Set<number>>(new Set());
 
@@ -1293,22 +1304,23 @@ function UnderlineArea({ values, submitted }: AreaProps) {
     });
   }
 
-  // Verdict: count correct vs missed vs wrongly-picked
+  // Verdict: count correct vs missed vs wrongly-picked. `tk.correct`
+  // is now position-derived, not value-derived, so the question
+  // "underline numbers between 1 and 10" doesn't require the student
+  // to underline the "10" appearing in the prompt text.
   const stats = useMemo(() => {
     let truePos = 0;
     let falsePos = 0;
     let falseNeg = 0;
     tokens.forEach((tk, i) => {
       if (tk.kind !== "word") return;
-      const norm = tk.value.toLowerCase();
-      const isCorrect = correctWordSet.has(norm);
       const isPicked = selected.has(i);
-      if (isCorrect && isPicked) truePos++;
-      else if (!isCorrect && isPicked) falsePos++;
-      else if (isCorrect && !isPicked) falseNeg++;
+      if (tk.correct && isPicked) truePos++;
+      else if (!tk.correct && isPicked) falsePos++;
+      else if (tk.correct && !isPicked) falseNeg++;
     });
     return { truePos, falsePos, falseNeg };
-  }, [tokens, selected, correctWordSet]);
+  }, [tokens, selected]);
 
   const totalCorrect = stats.truePos + stats.falseNeg;
   const verdict: Verdict = !submitted
@@ -1334,8 +1346,9 @@ function UnderlineArea({ values, submitted }: AreaProps) {
           if (tk.kind === "br") return <br key={i} />;
           if (tk.kind === "sep") return <span key={i}>{tk.value}</span>;
           const isPicked = selected.has(i);
-          const norm = tk.value.toLowerCase();
-          const isAnswer = correctWordSet.has(norm);
+          // Use position-derived correctness (set during tokenisation)
+          // so repeated values across the passage aren't all flagged.
+          const isAnswer = tk.correct;
           const tone = !submitted
             ? isPicked
               ? "underline decoration-2 decoration-primary text-primary font-semibold cursor-pointer rounded px-0.5 bg-primary/10"
