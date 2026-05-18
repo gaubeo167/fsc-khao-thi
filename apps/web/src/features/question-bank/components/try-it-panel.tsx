@@ -1597,17 +1597,43 @@ function DragDropArea({ values, submitted }: AreaProps) {
           {poolRemaining.length === 0 ? (
             <span className="text-meta italic">— đã kéo hết —</span>
           ) : (
-            poolRemaining.map((p) => (
-              <DraggableChip
-                key={p.chipId}
-                chipId={p.chipId}
-                onDragStart={() => setDragging(p.chipId)}
-                onDragEnd={() => setDragging(null)}
-                disabled={submitted}
-              >
-                <RenderedContent inline content={p.content} />
-              </DraggableChip>
-            ))
+            // Group remaining chips by content so duplicate answers
+            // (e.g. three zones requiring "<") show as ONE chip with a
+            // × N badge instead of three identical-looking copies.
+            // Each drag uses the first available chipId in the group.
+            (() => {
+              const groups = new Map<
+                string,
+                { content: string; chipIds: string[] }
+              >();
+              for (const p of poolRemaining) {
+                const g = groups.get(p.content) ?? {
+                  content: p.content,
+                  chipIds: [],
+                };
+                g.chipIds.push(p.chipId);
+                groups.set(p.content, g);
+              }
+              return Array.from(groups.values()).map((g) => {
+                const headChipId = g.chipIds[0]!;
+                return (
+                  <DraggableChip
+                    key={g.content}
+                    chipId={headChipId}
+                    onDragStart={() => setDragging(headChipId)}
+                    onDragEnd={() => setDragging(null)}
+                    disabled={submitted}
+                  >
+                    <RenderedContent inline content={g.content} />
+                    {g.chipIds.length > 1 && (
+                      <span className="ml-1 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary/15 px-1 text-[10px] font-bold text-primary">
+                        × {g.chipIds.length}
+                      </span>
+                    )}
+                  </DraggableChip>
+                );
+              });
+            })()
           )}
         </div>
       </div>
