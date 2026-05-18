@@ -103,7 +103,17 @@ export async function POST(request: Request) {
         { status: 502 },
       );
     }
-    return NextResponse.json({ questions: parsed, provider });
+    // Enforce the requested count: cap at `body.count` so the AI can't
+    // accidentally over-deliver, and surface the requested vs received
+    // numbers so the UI can warn when AI under-delivered (e.g. some
+    // questions failed validation and got dropped during parse).
+    const final = parsed.slice(0, body.count);
+    return NextResponse.json({
+      questions: final,
+      requestedCount: body.count,
+      receivedCount: final.length,
+      provider,
+    });
   } catch (err) {
     if (err instanceof AiProviderError) {
       return NextResponse.json(

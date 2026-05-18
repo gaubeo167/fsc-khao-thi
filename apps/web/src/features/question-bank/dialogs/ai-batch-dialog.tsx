@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -146,6 +147,18 @@ export function AiBatchDialog({ open, onOpenChange, onBack }: Props) {
           message: "AI không sinh được câu hỏi nào với mô tả trên — hãy thử mô tả cụ thể hơn.",
         });
         return;
+      }
+      // Warn when AI under-delivered (e.g. some invalid items got dropped
+      // during parse). User sees the actual count vs requested before
+      // committing to save.
+      const received = Number(data.receivedCount ?? questions.length);
+      const requested = Number(data.requestedCount ?? count);
+      if (received < requested) {
+        toast.warning(
+          `AI chỉ sinh được ${received}/${requested} câu hợp lệ. Bấm "Tạo thêm" để bổ sung, hoặc lưu số đã có.`,
+        );
+      } else {
+        toast.success(`Đã sinh ${received} câu hỏi — kiểm tra rồi lưu.`);
       }
       setState({ kind: "review", questions });
     } catch (err) {
