@@ -120,9 +120,7 @@ export default function ExamBlueprintsPage() {
     if (!operatingCampus) return subjects;
     return subjects.filter((s) => {
       const inCampus =
-        !s.campusIds ||
-        s.campusIds.length === 0 ||
-        s.campusIds.includes(operatingCampus.id);
+        Array.isArray(s.campusIds) && s.campusIds.includes(operatingCampus.id);
       if (!inCampus) return false;
       return s.gradeIds.some((gid) =>
         operatingCampus.gradeIds.includes(gid),

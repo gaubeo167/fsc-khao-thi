@@ -275,19 +275,24 @@ export function UserFormFields({
             Môn dạy & khối phụ trách
           </p>
 
-          {/* Subjects multi-select */}
+          {/* Subjects multi-select — strictly scoped: only subjects
+              whose `campusIds` explicitly include the selected campus.
+              (Subjects without a campusIds list are legacy / mis-imported
+              and shouldn't bleed into other campuses' rosters.) */}
           {(() => {
-            const eligibleSubjects = (
-              selectedCampus
-                ? allSubjects.filter((s) => {
-                    if (s.status !== "active") return false;
-                    return (
-                      !s.campusIds ||
-                      s.campusIds.length === 0 ||
-                      s.campusIds.includes(selectedCampus.id)
-                    );
-                  })
-                : allSubjects.filter((s) => s.status === "active")
+            const rawEligible = selectedCampus
+              ? allSubjects.filter(
+                  (s) =>
+                    s.status === "active" &&
+                    Array.isArray(s.campusIds) &&
+                    s.campusIds.includes(selectedCampus.id),
+                )
+              : [];
+            // Dedupe by id so accidental duplicate docs in Firestore
+            // (different ids but same content) don't render twice. We
+            // pick the first occurrence.
+            const eligibleSubjects = Array.from(
+              new Map(rawEligible.map((s) => [s.id, s])).values(),
             ).sort((a, b) => a.name.localeCompare(b.name, "vi"));
             return (
               <div>

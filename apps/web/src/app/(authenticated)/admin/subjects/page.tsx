@@ -118,12 +118,12 @@ export default function SubjectsAdminPage() {
       if (statusFilter !== "all" && s.status !== statusFilter) return false;
       if (gradeFilter !== "all" && !s.gradeIds.includes(gradeFilter)) return false;
       // Campus scope: a subject must explicitly include the operating
-      // campus in its `campusIds` list (empty list = legacy/all-campus).
+      // campus in its `campusIds` list. Legacy "all-campus" (empty
+      // list) treatment is gone — every subject must be explicitly
+      // assigned to a campus to appear in that campus's view.
       if (operatingCampusId) {
         const inCampus =
-          !s.campusIds ||
-          s.campusIds.length === 0 ||
-          s.campusIds.includes(operatingCampusId);
+          Array.isArray(s.campusIds) && s.campusIds.includes(operatingCampusId);
         if (!inCampus) return false;
       }
       // When no campus is pinned (cross-campus view) we further trim by
