@@ -12,6 +12,7 @@ import {
   UserPlus,
 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -277,14 +278,25 @@ function AddAdminDialog({
         password,
         status: "active",
       });
+      toast.success(`Đã tạo admin "${trimmedEmail}" cho ${campus.name}`);
       setName("");
       setEmail(defaultEmail);
       setPassword("fpt2026");
       onClose();
     } catch (e) {
-      setError(
-        e instanceof Error ? e.message : "Tạo tài khoản thất bại.",
-      );
+      const code = (e as { code?: string }).code ?? "";
+      const msg =
+        code === "auth/email-already-in-use"
+          ? "Email đã có người dùng — chọn email khác."
+          : code === "auth/weak-password"
+            ? "Password chưa đủ mạnh — dùng ít nhất 8 ký tự."
+            : code === "auth/invalid-email"
+              ? "Email không hợp lệ."
+              : e instanceof Error
+                ? e.message
+                : "Tạo tài khoản thất bại.";
+      setError(msg);
+      toast.error(`Tạo admin thất bại: ${msg}`);
     }
   }
 

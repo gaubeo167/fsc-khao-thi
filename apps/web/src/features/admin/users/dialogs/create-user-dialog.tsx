@@ -3,6 +3,7 @@
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
+import { toast } from "sonner";
 
 import { zodResolverSafe } from "@/lib/zod-resolver";
 
@@ -96,12 +97,25 @@ export function CreateUserDialog({ open, onOpenChange, onCreated }: Props) {
         password: values.password,
         status: values.status,
       });
+      toast.success(`Đã tạo tài khoản "${created.email}"`);
       onCreated?.(created.id);
       onOpenChange(false);
     } catch (err) {
-      setSubmitError(
-        err instanceof Error ? err.message : "Lỗi không xác định khi tạo user.",
-      );
+      const code = (err as { code?: string }).code ?? "";
+      const msg =
+        code === "auth/email-already-in-use"
+          ? "Email đã có người dùng — dùng email khác."
+          : code === "auth/weak-password"
+            ? "Password chưa đủ mạnh (Firebase yêu cầu ≥6 ký tự, khuyến nghị ≥8 + chữ-số)."
+            : code === "auth/invalid-email"
+              ? "Email không hợp lệ."
+              : code === "permission-denied"
+                ? "Không có quyền tạo user (cần superadmin / campus-admin)."
+                : err instanceof Error
+                  ? err.message
+                  : "Lỗi không xác định khi tạo user.";
+      setSubmitError(msg);
+      toast.error(`Tạo tài khoản thất bại: ${msg}`);
     }
   }
 

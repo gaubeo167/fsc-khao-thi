@@ -11,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -123,6 +124,7 @@ export function CampusDialog({ open, onOpenChange, editing }: Props) {
         phone: phone.trim() || undefined,
         status,
       });
+      toast.success(`Đã cập nhật campus "${name.trim()}"`);
       onOpenChange(false);
       return;
     }
@@ -136,6 +138,7 @@ export function CampusDialog({ open, onOpenChange, editing }: Props) {
       phone: phone.trim() || undefined,
       status,
     });
+    toast.success(`Đã tạo campus "${campus.name}"`);
 
     // Then auto-create a default admin account for that campus. Email +
     // password are deterministic and shown to the operator in the success
@@ -149,7 +152,9 @@ export function CampusDialog({ open, onOpenChange, editing }: Props) {
       email = `admin.${slug}-${suffix}@fpt.edu.vn`;
       suffix++;
     }
-    const password = "fpt2026";
+    // Random 10-char password: easier to satisfy Firebase Auth strength
+    // policy and avoids the predictable "fpt2026" default.
+    const password = randomPassword();
     try {
       await createUser({
         name: `Admin ${campus.name}`,
@@ -160,13 +165,39 @@ export function CampusDialog({ open, onOpenChange, editing }: Props) {
         status: "active",
       });
       setIssued({ campusName: campus.name, email, password });
+      toast.success(`Đã cấp tài khoản admin cho ${campus.name}`);
     } catch (e) {
-      setError(
-        e instanceof Error
-          ? `Tạo admin campus thất bại: ${e.message}`
-          : "Tạo admin campus thất bại.",
-      );
+      const msg = friendlyAuthError(e);
+      setError(`Tạo admin campus thất bại: ${msg}`);
+      toast.error(`Tạo admin campus thất bại: ${msg}`);
     }
+  }
+
+  /** 10-char random password with mixed case + digits — meets Firebase
+   *  default strength policy. */
+  function randomPassword(): string {
+    const chars =
+      "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+    let out = "";
+    for (let i = 0; i < 10; i++) {
+      out += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return out;
+  }
+
+  /** Translate Firebase Auth error codes to Vietnamese hints. */
+  function friendlyAuthError(e: unknown): string {
+    if (!(e instanceof Error)) return "Lỗi không xác định";
+    const code = (e as { code?: string }).code ?? "";
+    if (code === "auth/email-already-in-use" || e.message.includes("email-already"))
+      return "Email này đã có người dùng — chọn mã campus khác.";
+    if (code === "auth/weak-password" || e.message.includes("weak-password"))
+      return "Password chưa đủ mạnh — thử lại để sinh password khác.";
+    if (code === "auth/invalid-email")
+      return "Email không hợp lệ.";
+    if (code === "permission-denied")
+      return "Tài khoản hiện tại không có quyền tạo người dùng (cần superadmin / admin).";
+    return e.message;
   }
 
   async function copy(value: string, kind: "email" | "password") {
