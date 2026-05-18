@@ -12,6 +12,8 @@ import {
 } from "@/components/ui/table";
 import type { SeedUser } from "@/features/auth/data/seed-users";
 import { useCampusesStore } from "@/features/campus/state/campuses-store";
+import { useGradesStore } from "@/features/grades/state/grades-store";
+import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import { cn } from "@/lib/utils";
 
 import { ROLE_LABEL, ROLE_TONE } from "./role-labels";
@@ -43,6 +45,9 @@ export function UsersTable({
   onDelete,
 }: Props) {
   const campuses = useCampusesStore((s) => s.campuses);
+  const subjects = useSubjectsStore((s) => s.subjects);
+  const grades = useGradesStore((s) => s.grades);
+  const classes = useGradesStore((s) => s.classes);
   if (users.length === 0) {
     return (
       <div className="rounded-xl border bg-card p-10 text-center">
@@ -115,7 +120,9 @@ export function UsersTable({
                   )}
                 </TableCell>
                 <TableCell>
-                  <span className="text-foreground/85">{u.subject ?? u.className ?? "—"}</span>
+                  <span className="text-foreground/85 text-[12.5px]">
+                    {formatScopeCell(u, { subjects, grades, classes })}
+                  </span>
                 </TableCell>
                 <TableCell>
                   <StatusBadge variant={u.status}>{STATUS_LABEL[u.status]}</StatusBadge>
@@ -147,4 +154,52 @@ export function UsersTable({
       </Table>
     </div>
   );
+}
+
+/**
+ * Render a compact "Bộ môn / Lớp" summary depending on the user's role:
+ *
+ *   - Học sinh         → "Lớp 1A1"  (className)
+ *   - GV / TBM         → "Toán · Tiếng Việt" + " · K1-K9"
+ *                        (subjectIds → subject.name + gradeIds → range)
+ *   - Còn lại          → "—"
+ */
+function formatScopeCell(
+  u: SeedUser,
+  catalog: {
+    subjects: ReturnType<typeof useSubjectsStore.getState>["subjects"];
+    grades: ReturnType<typeof useGradesStore.getState>["grades"];
+    classes: ReturnType<typeof useGradesStore.getState>["classes"];
+  },
+): React.ReactNode {
+  if (u.role === "student") {
+    if (u.className) return `Lớp ${u.className}`;
+    return "—";
+  }
+
+  if (u.role === "teacher" || u.role === "subject-lead") {
+    const ids = u.subjectIds ?? [];
+    const names = ids
+      .map((id) => catalog.subjects.find((s) => s.id === id)?.name)
+      .filter((n): n is string => !!n);
+    // Legacy single-subject text fallback.
+    const legacy = !names.length && u.subject ? [u.subject] : [];
+    const all = names.length ? names : legacy;
+    const subjectsLabel = all.length
+      ? all.slice(0, 3).join(" · ") + (all.length > 3 ? ` +${all.length - 3}` : "")
+      : "Chưa phân môn";
+    const gradeIds = u.gradeIds ?? [];
+    const gradeNames = gradeIds
+      .map((gid) => catalog.grades.find((g) => g.id === gid)?.code)
+      .filter((n): n is string => !!n);
+    const gradeLabel =
+      gradeNames.length === 0
+        ? ""
+        : gradeNames.length <= 3
+          ? ` · ${gradeNames.join(", ")}`
+          : ` · ${gradeNames.length} khối`;
+    return subjectsLabel + gradeLabel;
+  }
+
+  return "—";
 }
