@@ -713,10 +713,36 @@ function MatchingArea({ values, submitted, onSubmit }: AreaProps) {
     [values.pairs],
   );
 
-  // Right-side shuffled chips. Identified by `pair.id` of the pair they
-  // originally belong to — student doesn't see this.
-  const [shuffled, setShuffled] = useState<MatchingPair[]>(() =>
-    shuffle(pairs),
+  // Distractor chips — extra right-side options that don't match any
+  // pair. Mixed into the pool alongside real chips to make the
+  // question harder.
+  const distractors: Array<{ id: string; right: string }> = useMemo(
+    () =>
+      (values.distractors ?? [])
+        .filter((d: { right?: string }) => d.right)
+        .map((d: { id: string; right: string }) => ({
+          id: d.id,
+          right: d.right,
+        })),
+    [values.distractors],
+  );
+
+  // Combined pool item shape. `kind === "pair"` chips carry the
+  // original pair.id (used as the correct row id). Distractor chips
+  // use their own id and don't belong to any row.
+  type PoolChip =
+    | { kind: "pair"; id: string; right: string }
+    | { kind: "distractor"; id: string; right: string };
+
+  const [shuffled, setShuffled] = useState<PoolChip[]>(() =>
+    shuffle([
+      ...pairs.map<PoolChip>((p) => ({ kind: "pair", id: p.id, right: p.right })),
+      ...distractors.map<PoolChip>((d) => ({
+        kind: "distractor",
+        id: d.id,
+        right: d.right,
+      })),
+    ]),
   );
   // assignments[pair.id] = which chip is currently dropped on this row
   const [assigned, setAssigned] = useState<Record<string, string | null>>({});
@@ -724,10 +750,26 @@ function MatchingArea({ values, submitted, onSubmit }: AreaProps) {
 
   // Resync shuffle on values change (e.g., user edits while testing)
   useEffect(() => {
-    setShuffled(shuffle(pairs));
+    setShuffled(
+      shuffle([
+        ...pairs.map<PoolChip>((p) => ({
+          kind: "pair",
+          id: p.id,
+          right: p.right,
+        })),
+        ...distractors.map<PoolChip>((d) => ({
+          kind: "distractor",
+          id: d.id,
+          right: d.right,
+        })),
+      ]),
+    );
     setAssigned({});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pairs.map((p) => p.id).join("|")]);
+  }, [
+    pairs.map((p) => p.id).join("|"),
+    distractors.map((d) => d.id).join("|"),
+  ]);
 
   // Chips still in the pool (not yet assigned to any row)
   const poolIds = useMemo(() => {

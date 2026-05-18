@@ -723,6 +723,11 @@ function MatchingPairsField({
   errors: Record<string, any>;
 }) {
   const { fields, append, remove } = useFieldArray({ control, name: "pairs" });
+  const {
+    fields: distractorFields,
+    append: appendDistractor,
+    remove: removeDistractor,
+  } = useFieldArray({ control, name: "distractors" });
 
   return (
     <div className="space-y-3">
@@ -817,6 +822,76 @@ function MatchingPairsField({
         <Plus className="h-3.5 w-3.5" />
         Thêm cặp
       </Button>
+
+      {/* ───── Đáp án gây nhiễu (distractors) ──────────────────────────
+          Right-side options without a matching left. Shuffled into the
+          right column to make the question harder; student should NOT
+          map any pair to them. */}
+      <div className="space-y-2 rounded-xl border border-amber-200/70 bg-amber-50/30 p-3">
+        <div className="flex items-center justify-between">
+          <p className="inline-flex items-center gap-2 text-[13px] font-semibold text-amber-900">
+            <span aria-hidden>🎭</span>
+            Đáp án gây nhiễu (tuỳ chọn)
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() =>
+              appendDistractor(
+                {
+                  id: `d-${Date.now()}-${distractorFields.length}`,
+                  right: "",
+                } as never,
+              )
+            }
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Thêm
+          </Button>
+        </div>
+        <p className="text-[11.5px] text-amber-900/75">
+          Là các lựa chọn nhiễu xuất hiện ở cột phải để gây khó cho học sinh.
+          Học sinh không nên ghép cặp với chúng.
+        </p>
+
+        {distractorFields.length === 0 ? (
+          <p className="rounded-md border border-dashed bg-card px-3 py-2 text-[12px] text-muted-foreground">
+            Chưa có đáp án nhiễu nào. Bấm "Thêm" để thêm.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {distractorFields.map((f, idx) => (
+              <li key={f.id}>
+                <div className="grid grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-2 rounded-lg border bg-card p-2.5">
+                  <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-amber-100 text-[12px] font-bold tabular-nums text-amber-800">
+                    {idx + 1}
+                  </span>
+                  <Controller
+                    control={control}
+                    name={`distractors.${idx}.right`}
+                    render={({ field }) => (
+                      <input
+                        {...field}
+                        placeholder={`Lựa chọn nhiễu ${idx + 1}`}
+                        className="block w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                      />
+                    )}
+                  />
+                  <IconButton
+                    variant="destructive"
+                    size="sm"
+                    title="Xoá lựa chọn nhiễu"
+                    onClick={() => removeDistractor(idx)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" strokeWidth={1.75} />
+                  </IconButton>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       <McqExplanationField control={control} />
     </div>

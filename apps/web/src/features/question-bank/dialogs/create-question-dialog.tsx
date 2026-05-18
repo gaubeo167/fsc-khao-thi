@@ -1020,6 +1020,7 @@ function defaultsForType(type: QuestionType, _campusId: string | null): any {
           { id: "p-2", left: "", right: "" },
           { id: "p-3", left: "", right: "" },
         ],
+        distractors: [],
       };
     case "ordering":
       return {
@@ -1080,7 +1081,7 @@ function defaultsFromExisting(q: Question): any {
     case "fill-blank":
       return { ...shared, blanks: q.blanks };
     case "matching":
-      return { ...shared, pairs: q.pairs };
+      return { ...shared, pairs: q.pairs, distractors: q.distractors ?? [] };
     case "ordering":
       return { ...shared, items: q.items };
     case "drag-drop":

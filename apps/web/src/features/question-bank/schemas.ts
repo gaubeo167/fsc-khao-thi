@@ -130,9 +130,15 @@ const MatchingPairSchema = z.object({
   right: z.string().trim().min(1, "Cột B không được trống").max(500),
 });
 
+const MatchingDistractorSchema = z.object({
+  id: z.string(),
+  right: z.string().trim().min(1, "Đáp án nhiễu không được trống").max(500),
+});
+
 export const MatchingSchema = BaseFields.extend({
   type: z.literal("matching"),
   pairs: z.array(MatchingPairSchema).min(2, "Cần ít nhất 2 cặp").max(20),
+  distractors: z.array(MatchingDistractorSchema).max(20).optional().default([]),
 });
 
 export const FillBlankSchema = BaseFields.extend({

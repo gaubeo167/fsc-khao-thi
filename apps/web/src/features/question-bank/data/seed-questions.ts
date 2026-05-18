@@ -75,9 +75,20 @@ export interface MatchingPair {
   left: string;
   right: string;
 }
+/** Distractor item shown alongside the real `right` options to make the
+ *  matching question harder. Has no corresponding `left`, so picking it
+ *  for any pair counts as wrong. */
+export interface MatchingDistractor {
+  id: string;
+  right: string;
+}
 export interface MatchingQuestion extends BaseQuestion {
   type: "matching";
   pairs: MatchingPair[];
+  /** Extra right-side options without a matching left. Optional for
+   *  back-compat: existing questions without distractors render as
+   *  before. */
+  distractors?: MatchingDistractor[];
 }
 
 export interface OrderingItem {
