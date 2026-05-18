@@ -92,7 +92,17 @@ export const useAuthStore = create<AuthState & AuthActions>()((set, get) => ({
       return { ok: true, session };
     }
 
-    const result = await signInWithEmail(identifier, password);
+    // If the user typed a username / studentCode (not an email), look
+    // it up in the local users-store mirror to find the synthetic
+    // Firebase Auth email this account actually signs in with.
+    let loginIdentifier = identifier.trim();
+    if (!loginIdentifier.includes("@")) {
+      const u = useUsersStore.getState().findByIdentifier(loginIdentifier);
+      if (u && u.email) loginIdentifier = u.email;
+      // If we can't resolve (mirror not loaded yet), Firebase Auth will
+      // reject and the UI shows "invalid credentials" — caller retries.
+    }
+    const result = await signInWithEmail(loginIdentifier, password);
     if (result.ok) {
       // The subscribeAuth listener will set session, but apply it eagerly
       // so navigations right after signIn() see the session immediately.

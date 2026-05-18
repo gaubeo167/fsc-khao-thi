@@ -31,7 +31,8 @@ import { sanitizeForFirestore } from "@/lib/firestore-sync";
 
 export interface CreateUserInput {
   name: string;
-  email: string;
+  /** For staff: required. For students: optional (contact only). */
+  email?: string;
   role: Role;
   campusId: string | null;
   subject?: string;
@@ -42,6 +43,11 @@ export interface CreateUserInput {
   permissions?: SeedUser["permissions"];
   password: string;
   status?: SeedUser["status"];
+  // Student profile
+  studentCode?: string;
+  username?: string;
+  parentPhone?: string;
+  parentEmail?: string;
 }
 
 export interface UpdateUserPatch {
@@ -58,6 +64,10 @@ export interface UpdateUserPatch {
   /** Ignored — passwords are managed by Firebase Auth, not stored in Firestore. */
   password?: string;
   status?: SeedUser["status"];
+  studentCode?: string | null;
+  username?: string | null;
+  parentPhone?: string | null;
+  parentEmail?: string | null;
 }
 
 interface UsersState {
@@ -107,6 +117,9 @@ export const useUsersStore = create<UsersState & UsersActions>()((set, get) => (
   hydrated: false,
 
   async create(input) {
+    // For students, resolve username + login email up-front so both
+    // demo-mode and Firebase-mode paths see the same generated values.
+    const resolved = resolveStudentAccount(input, get().users);
     // Demo / offline mode: write to local Zustand only. Admins can still
     // create accounts that work in the seed-mode signin (auth-store
     // looks up the local users array when Firebase isn't configured).
@@ -115,7 +128,7 @@ export const useUsersStore = create<UsersState & UsersActions>()((set, get) => (
       const id = `local-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       const u = {
         id,
-        email: input.email.trim().toLowerCase(),
+        email: resolved.loginEmail,
         password: input.password,
         name: input.name.trim(),
         role: input.role,
@@ -127,6 +140,10 @@ export const useUsersStore = create<UsersState & UsersActions>()((set, get) => (
         classIds: input.classIds,
         permissions: input.permissions,
         status: input.status ?? "active",
+        studentCode: resolved.studentCode,
+        username: resolved.username,
+        parentPhone: input.parentPhone,
+        parentEmail: input.parentEmail,
         createdAt: now,
       } as SeedUser;
       set({ users: [u, ...get().users] });
@@ -147,7 +164,7 @@ export const useUsersStore = create<UsersState & UsersActions>()((set, get) => (
     try {
       const cred = await createUserWithEmailAndPassword(
         secondaryAuth,
-        input.email.trim().toLowerCase(),
+        resolved.loginEmail,
         input.password,
       );
       const uid = cred.user.uid;
@@ -157,7 +174,7 @@ export const useUsersStore = create<UsersState & UsersActions>()((set, get) => (
         updatedAt: ReturnType<typeof serverTimestamp>;
       } = {
         id: uid,
-        email: input.email.trim().toLowerCase(),
+        email: resolved.loginEmail,
         name: input.name.trim(),
         role: input.role,
         campusId: input.campusId,
@@ -168,6 +185,10 @@ export const useUsersStore = create<UsersState & UsersActions>()((set, get) => (
         classIds: input.classIds,
         permissions: input.permissions,
         status: input.status ?? "active",
+        studentCode: resolved.studentCode,
+        username: resolved.username,
+        parentPhone: input.parentPhone,
+        parentEmail: input.parentEmail,
         createdAt: now,
         updatedAt: serverTimestamp(),
       };
@@ -263,7 +284,11 @@ export const useUsersStore = create<UsersState & UsersActions>()((set, get) => (
   findByIdentifier(identifier) {
     const q = identifier.trim().toLowerCase();
     return get().users.find(
-      (u) => u.email.toLowerCase() === q || u.id.toLowerCase() === q,
+      (u) =>
+        u.email.toLowerCase() === q ||
+        u.id.toLowerCase() === q ||
+        (u.username && u.username.toLowerCase() === q) ||
+        (u.studentCode && u.studentCode.toLowerCase() === q),
     );
   },
 
@@ -328,4 +353,86 @@ export function generatePassword(length = 10): string {
     out += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return out;
+}
+
+/** Internal slug for synthetic Firebase Auth emails. Strips Vietnamese
+ *  diacritics + non-alphanumerics so the resulting email is valid. */
+function slug(input: string): string {
+  return input
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/đ/gi, "d")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+interface ResolvedAccount {
+  /** Email used as the Firebase Auth identity. For staff = input.email
+   *  verbatim. For students = either a real email, the supplied
+   *  username, or an auto-generated `{username}@students.fsc.local`. */
+  loginEmail: string;
+  username?: string;
+  studentCode?: string;
+}
+
+/**
+ * Resolve the login email + username + studentCode for a user-create
+ * input. Staff are passed through. Students get auto-generated
+ * studentCode + username when not supplied; the login email collapses
+ * onto a synthetic `…@students.fsc.local` so Firebase Auth (which
+ * requires email) can store the account without exposing a real one.
+ */
+function resolveStudentAccount(
+  input: CreateUserInput,
+  existing: SeedUser[],
+): ResolvedAccount {
+  if (input.role !== "student") {
+    if (!input.email) {
+      throw new Error("Nhân viên / giáo viên cần email.");
+    }
+    return { loginEmail: input.email.trim().toLowerCase() };
+  }
+
+  // Determine studentCode — prefer supplied, fall back to
+  // `{campusCode || HS}-{seq4}` where seq4 is the highest existing
+  // matching code +1.
+  let studentCode = input.studentCode?.trim();
+  if (!studentCode) {
+    const prefix = slug(input.campusId ?? "hs").slice(0, 8) || "hs";
+    const re = new RegExp(`^${prefix}-(\\d+)$`, "i");
+    const max = existing.reduce((acc, u) => {
+      const m = re.exec(u.studentCode ?? "");
+      return m ? Math.max(acc, Number.parseInt(m[1]!, 10)) : acc;
+    }, 0);
+    studentCode = `${prefix}-${String(max + 1).padStart(4, "0")}`.toUpperCase();
+  }
+
+  // Username — prefer supplied, fall back to studentCode lowercased.
+  let username = input.username?.trim().toLowerCase();
+  if (!username) {
+    username = studentCode.toLowerCase();
+  }
+  // Uniqueness check — collide with existing username, studentCode, or
+  // synthetic login email.
+  const conflict = existing.find(
+    (u) =>
+      u.username?.toLowerCase() === username ||
+      u.studentCode?.toLowerCase() === username ||
+      u.email.toLowerCase() === `${username}@students.fsc.local`,
+  );
+  if (conflict) {
+    throw new Error(
+      `Tài khoản "${username}" đã tồn tại — chọn tên khác hoặc để trống để hệ thống tự sinh.`,
+    );
+  }
+
+  // Login email = supplied email (if real) OR synthetic. The real
+  // contact email goes through input.email when admin gave one;
+  // otherwise it stays null and we use the synthetic for Firebase Auth.
+  const loginEmail =
+    input.email && input.email.trim()
+      ? input.email.trim().toLowerCase()
+      : `${username}@students.fsc.local`;
+
+  return { loginEmail, username, studentCode };
 }

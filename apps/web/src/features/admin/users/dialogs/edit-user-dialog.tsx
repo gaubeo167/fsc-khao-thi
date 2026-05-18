@@ -50,7 +50,13 @@ export function EditUserDialog({ user, onClose }: Props) {
     if (user) {
       form.reset({
         name: user.name,
-        email: user.email,
+        // Hide the synthetic `…@students.fsc.local` email from the form
+        // so admins don't accidentally see / edit it. Real contact
+        // emails are kept as-is.
+        email:
+          user.role === "student" && user.email.endsWith("@students.fsc.local")
+            ? ""
+            : user.email,
         role: user.role as EditUserValues["role"],
         campusId: user.campusId ?? "",
         subject: user.subject ?? "",
@@ -59,6 +65,10 @@ export function EditUserDialog({ user, onClose }: Props) {
         gradeIds: user.gradeIds ?? [],
         classIds: user.classIds ?? [],
         permissions: user.permissions,
+        studentCode: user.studentCode ?? "",
+        username: user.username ?? "",
+        parentPhone: user.parentPhone ?? "",
+        parentEmail: user.parentEmail ?? "",
         password: "",
         status: user.status,
       });
@@ -70,7 +80,10 @@ export function EditUserDialog({ user, onClose }: Props) {
     if (!user) return;
     await update(user.id, {
       name: values.name,
-      email: values.email,
+      // Only overwrite email when admin actually typed one. Empty
+      // value would clobber the synthetic Firebase Auth address used
+      // by students.
+      ...(values.email ? { email: values.email } : {}),
       role: values.role,
       campusId: values.campusId || null,
       subject: values.subject || null,
@@ -79,6 +92,10 @@ export function EditUserDialog({ user, onClose }: Props) {
       gradeIds: values.gradeIds ?? [],
       classIds: values.classIds ?? [],
       permissions: values.permissions,
+      studentCode: values.studentCode || null,
+      username: values.username || null,
+      parentPhone: values.parentPhone || null,
+      parentEmail: values.parentEmail || null,
       // Pass password only when actually provided so the store keeps the
       // existing one otherwise.
       ...(values.password ? { password: values.password } : {}),

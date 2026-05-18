@@ -85,7 +85,7 @@ export function CreateUserDialog({ open, onOpenChange, onCreated }: Props) {
     try {
       const created = await create({
         name: values.name,
-        email: values.email,
+        email: values.email || undefined,
         role: values.role,
         campusId: values.campusId || null,
         subject: values.subject || undefined,
@@ -96,8 +96,16 @@ export function CreateUserDialog({ open, onOpenChange, onCreated }: Props) {
         permissions: values.permissions,
         password: values.password,
         status: values.status,
+        studentCode: values.studentCode || undefined,
+        username: values.username || undefined,
+        parentPhone: values.parentPhone || undefined,
+        parentEmail: values.parentEmail || undefined,
       });
-      toast.success(`Đã tạo tài khoản "${created.email}"`);
+      toast.success(
+        created.role === "student"
+          ? `Đã tạo HS "${created.name}" — tài khoản: ${created.username ?? created.email}`
+          : `Đã tạo tài khoản "${created.email}"`,
+      );
       onCreated?.(created.id);
       onOpenChange(false);
     } catch (err) {

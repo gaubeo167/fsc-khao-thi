@@ -183,13 +183,28 @@ export function UserFormFields({
         />
       </Field>
 
-      <Field label="Email" error={errors.email?.message as string | undefined}>
+      <Field
+        label={
+          role === "student" ? "Email liên lạc (tuỳ chọn)" : "Email"
+        }
+        error={errors.email?.message as string | undefined}
+      >
         <Input
           type="email"
-          placeholder="vd: lan.nh@example.com"
+          placeholder={
+            role === "student"
+              ? "Bỏ trống nếu chưa có"
+              : "vd: lan.nh@example.com"
+          }
           aria-invalid={Boolean(errors.email)}
           {...register("email")}
         />
+        {role === "student" && (
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            Email cá nhân của học sinh — chỉ dùng nhận thông báo. Đăng nhập
+            bằng tài khoản học sinh phía dưới.
+          </p>
+        )}
       </Field>
 
       <Field label="Vai trò" error={errors.role?.message as string | undefined}>
@@ -639,6 +654,56 @@ export function UserFormFields({
                 xếp lớp ở trang "Khối · lớp" sau.
               </p>
             ) : null}
+          </Field>
+
+          {/* ───── Student-specific fields ─────────────────────────────── */}
+          <Field
+            label="Mã học sinh (tuỳ chọn)"
+            error={errors.studentCode?.message as string | undefined}
+          >
+            <Input
+              placeholder="vd: FSCCG-2024-001"
+              {...register("studentCode")}
+            />
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Mã định danh để tìm kiếm / báo cáo. Để trống → hệ thống tự sinh
+              theo mã campus.
+            </p>
+          </Field>
+
+          <Field
+            label="Tài khoản đăng nhập (tuỳ chọn)"
+            error={errors.username?.message as string | undefined}
+          >
+            <Input
+              placeholder="vd: lan.nh"
+              {...register("username")}
+            />
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Để trống → tự sinh từ mã học sinh. Hệ thống tự check trùng.
+            </p>
+          </Field>
+
+          <Field
+            label="SĐT phụ huynh"
+            error={errors.parentPhone?.message as string | undefined}
+          >
+            <Input
+              type="tel"
+              placeholder="vd: 0912345678"
+              {...register("parentPhone")}
+            />
+          </Field>
+
+          <Field
+            label="Email phụ huynh"
+            error={errors.parentEmail?.message as string | undefined}
+          >
+            <Input
+              type="email"
+              placeholder="vd: phuhuynh@gmail.com"
+              {...register("parentEmail")}
+            />
           </Field>
         </>
       )}

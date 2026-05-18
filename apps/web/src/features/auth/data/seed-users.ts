@@ -53,6 +53,17 @@ export interface SeedUser {
     canCreatePackage?: boolean;
     canCreateShift?: boolean;
   };
+  // ───── Student-only profile fields ────────────────────────────────
+  /** Mã học sinh — human-readable id used for search / report joins.
+   *  Auto-generated as `{campusCode}-{seq4}` if admin doesn't supply
+   *  one at create time. Unique within the campus. */
+  studentCode?: string;
+  /** Tài khoản đăng nhập (username) shown to the student. We map this
+   *  to a Firebase Auth email like `{username}@students.fsc.local`
+   *  under the hood. Falls back to `studentCode` when not provided. */
+  username?: string;
+  parentPhone?: string;
+  parentEmail?: string;
   status: "active" | "suspended" | "invited";
   createdAt: string;
 }
