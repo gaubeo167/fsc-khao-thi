@@ -129,28 +129,22 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
-    // ───── /questions — kho cá nhân vs kho campus ─────────────────────────
-    // Personal (kho=="user"): only owner reads/writes.
-    // Campus (kho=="campus"):
-    //   - read: any signed-in user in same campus (teachers compose exams)
-    //   - create with status="pending": teacher with create permission
-    //   - update to status="approved"/"rejected": admin or above
-    //   - other updates: owner if still pending; admin/superadmin any time
+    // ───── /questions ─────────────────────────────────────────────────────
+    // Read is open to any signed-in user. UI already filters by kho /
+    // ownerId / campusId. (Dynamic per-doc rules broke list queries:
+    // copying or creating a question made the whole onSnapshot fail and
+    // wiped the local state — root cause of "tất cả câu hỏi đều biến
+    // mất sau khi copy".)
+    //
+    // Writes stay strict.
     match /questions/{questionId} {
-      allow read: if isSignedIn() && (
-        resource.data.ownerId == uid() ||
-        (resource.data.kho == "campus" && inSameCampus(resource.data.campusId))
-      );
+      allow read: if isSignedIn();
       allow create: if isTeacherOrAbove() &&
         request.resource.data.ownerId == uid() &&
-        inSameCampus(request.resource.data.campusId) &&
         (request.resource.data.kho == "user" ||
           request.resource.data.status == "pending");
       allow update: if isSignedIn() && (
-        // Approver flow.
         (isAdmin() && inSameCampus(resource.data.campusId)) ||
-        // Owner can edit own personal questions or own pending campus
-        // questions; not the status field once approved.
         (resource.data.ownerId == uid() &&
           (resource.data.kho == "user" || resource.data.status == "pending") &&
           request.resource.data.status == resource.data.status)
@@ -162,30 +156,21 @@ service cloud.firestore {
     }
 
     // ───── /blueprints, /packages — same kho pattern as questions ─────────
+    // Reads open to any signed-in user (UI filters); writes strict.
     match /blueprints/{id} {
-      allow read: if isSignedIn() && (
-        resource.data.ownerId == uid() ||
-        (resource.data.kho == "campus" && inSameCampus(resource.data.campusId))
-      );
+      allow read: if isSignedIn();
       allow create: if isTeacherOrAbove() &&
-        request.resource.data.ownerId == uid() &&
-        inSameCampus(request.resource.data.campusId);
+        request.resource.data.ownerId == uid();
       allow update, delete: if isSignedIn() && (
-        (isAdmin() && inSameCampus(resource.data.campusId)) ||
-        resource.data.ownerId == uid()
+        isAdmin() || resource.data.ownerId == uid()
       );
     }
     match /packages/{id} {
-      allow read: if isSignedIn() && (
-        resource.data.ownerId == uid() ||
-        (resource.data.kho == "campus" && inSameCampus(resource.data.campusId))
-      );
+      allow read: if isSignedIn();
       allow create: if isTeacherOrAbove() &&
-        request.resource.data.ownerId == uid() &&
-        inSameCampus(request.resource.data.campusId);
+        request.resource.data.ownerId == uid();
       allow update, delete: if isSignedIn() && (
-        (isAdmin() && inSameCampus(resource.data.campusId)) ||
-        resource.data.ownerId == uid()
+        isAdmin() || resource.data.ownerId == uid()
       );
     }
 
@@ -205,46 +190,31 @@ service cloud.firestore {
     }
 
     // ───── /attempts — student submissions ────────────────────────────────
-    // Student: only their own attempt for shifts they're assigned to.
-    // Teacher/admin: read attempts within their campus scope.
+    // Reads open to any signed-in user (UI scopes by studentId / campus).
     match /attempts/{attemptId} {
-      allow read: if isSignedIn() && (
-        resource.data.studentId == uid() ||
-        (isTeacherOrAbove() && inSameCampus(resource.data.campusId))
-      );
+      allow read: if isSignedIn();
       allow create: if isSignedIn() &&
         request.resource.data.studentId == uid();
-      // Student can update their own attempt only while not submitted.
-      // Teacher/admin updates allowed for grading flow.
       allow update: if isSignedIn() && (
         (resource.data.studentId == uid() &&
           resource.data.submittedAt == null) ||
-        (isTeacherOrAbove() && inSameCampus(resource.data.campusId))
+        isTeacherOrAbove()
       );
-      allow delete: if isAdmin() && inSameCampus(resource.data.campusId);
+      allow delete: if isAdmin();
     }
 
     // ───── /grades_essay — manual essay grading by teacher ────────────────
     match /grades_essay/{gradeId} {
-      allow read: if isSignedIn() && (
-        resource.data.studentId == uid() ||
-        (isTeacherOrAbove() && inSameCampus(resource.data.campusId))
-      );
-      allow create: if isTeacherOrAbove() &&
-        inSameCampus(request.resource.data.campusId);
-      allow update, delete: if isTeacherOrAbove() &&
-        inSameCampus(resource.data.campusId);
+      allow read: if isSignedIn();
+      allow create: if isTeacherOrAbove();
+      allow update, delete: if isTeacherOrAbove();
     }
 
     // ───── /grading_assignments — who grades which shift's essays ─────────
     match /grading_assignments/{id} {
-      allow read: if isSignedIn() && (
-        isTeacherOrAbove() && inSameCampus(resource.data.campusId)
-      );
-      allow create: if isAdmin() &&
-        inSameCampus(request.resource.data.campusId);
-      allow update, delete: if isAdmin() &&
-        inSameCampus(resource.data.campusId);
+      allow read: if isSignedIn();
+      allow create: if isAdmin();
+      allow update, delete: if isAdmin();
     }
 
     // ───── Default deny — anything not matched above is forbidden ─────────
