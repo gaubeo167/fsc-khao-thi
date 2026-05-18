@@ -27,6 +27,7 @@ import {
 import type { Role } from "@/features/auth/state/auth-store";
 import { getAuthSafe, getDb, isFirebaseConfigured } from "@/lib/firebase";
 import { COLLECTIONS } from "@/lib/firestore-collections";
+import { sanitizeForFirestore } from "@/lib/firestore-sync";
 
 export interface CreateUserInput {
   name: string;
@@ -167,7 +168,13 @@ export const useUsersStore = create<UsersState & UsersActions>()((set, get) => (
         createdAt: now,
         updatedAt: serverTimestamp(),
       };
-      await setDoc(doc(getDb(), COLLECTIONS.users, uid), profile);
+      // Strip undefined fields — Firestore SDK throws on them. Common
+      // case: caller (campus dialog) only sets a subset of optional
+      // fields (`subject`, `className`, `subjectIds`, …).
+      await setDoc(
+        doc(getDb(), COLLECTIONS.users, uid),
+        sanitizeForFirestore(profile as unknown as Record<string, unknown>),
+      );
       // Sign out from secondary so it doesn't keep a stale session locally.
       await fbSignOut(secondaryAuth);
       // Return the SeedUser-shaped projection callers expect. Password is
