@@ -178,14 +178,18 @@ service cloud.firestore {
     // Anyone in the same campus can READ a shift. Per-student eligibility
     // (rooms[].studentIds) is checked in the UI on top of this gate — the
     // shift metadata is non-sensitive (name, time, status).
+    // Reads open to any signed-in user — UI filters by campus / role.
+    // Dynamic per-doc rules block collection-level onSnapshot which
+    // wiped the local mirror to [] on every reload (root cause of
+    // "mỗi lần đẩy code lại mất ca thi": writes that fell through to
+    // the strict create rule silently failed → state empty on next
+    // load).
     match /shifts/{shiftId} {
-      allow read: if isSignedIn() && inSameCampus(resource.data.campusId);
+      allow read: if isSignedIn();
       allow create: if isTeacherOrAbove() &&
-        inSameCampus(request.resource.data.campusId) &&
         request.resource.data.ownerId == uid();
       allow update, delete: if isSignedIn() && (
-        (isAdmin() && inSameCampus(resource.data.campusId)) ||
-        (resource.data.ownerId == uid() && inSameCampus(resource.data.campusId))
+        isAdmin() || resource.data.ownerId == uid()
       );
     }
 
