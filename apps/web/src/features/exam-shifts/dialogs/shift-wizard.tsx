@@ -22,12 +22,41 @@ import {
   Wand2,
   X,
 } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import type { Question } from "@/features/question-bank/data/seed-questions";
+
+// Heavy dialog — lazy-load so the wizard mount stays light.
+const ViewQuestionDialog = dynamic(
+  () =>
+    import("@/features/question-bank/dialogs/view-question-dialog").then(
+      (m) => m.ViewQuestionDialog,
+    ),
+  { ssr: false },
+);
+
+/** Pretty one-line preview of a question content for tables / lists.
+ *  Strips authoring markers ([u:...], [zone:N], [blank:N], media, math
+ *  delimiters) so the snippet reads like prose. */
+function questionSnippet(content: string): string {
+  return content
+    .replace(/\[u:([^\]\n]+)\]/g, "$1")
+    .replace(/\[zone:\d+\]/g, "___")
+    .replace(/\[blank:\d+\]/g, "___")
+    .replace(/!\[[^\]]*\]\([^)]+\)/g, "[ảnh]")
+    .replace(/\[(video|audio):[^\]]+\]/g, "[$1]")
+    .replace(/\$\$([\s\S]*?)\$\$/g, "$1")
+    .replace(/\$([^$\n]+)\$/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 import { useUserScope } from "@/features/auth/lib/use-scope";
 import { useAuthStore } from "@/features/auth/state/auth-store";
 import { useCampusStore } from "@/features/campus/state/campus-store";
@@ -1078,6 +1107,10 @@ function ScoringPanel({
 
   const diffCounts = countByDifficulty(pool);
   const scoring = state.scoring;
+  // Which question (if any) is currently being viewed in the detail
+  // dialog. Click the eye icon on a row → set to that question →
+  // ViewQuestionDialog opens with full content.
+  const [viewing, setViewing] = useState<Question | null>(null);
 
   function patchScoring(next: Partial<ScoringConfig>) {
     setState((s) => ({ ...s, scoring: { ...s.scoring, ...next } }));
@@ -1338,9 +1371,24 @@ function ScoringPanel({
                         ? "TB"
                         : "Khó"}
                   </span>
-                  <p className="min-w-0 flex-1 truncate text-[11.5px] text-foreground/85">
-                    {q.content.replace(/\n+/g, " ")}
+                  <p
+                    className="min-w-0 flex-1 truncate text-[11.5px] text-foreground/85"
+                    title={questionSnippet(q.content)}
+                  >
+                    {questionSnippet(q.content) || (
+                      <span className="italic text-muted-foreground">
+                        (chưa có nội dung)
+                      </span>
+                    )}
                   </p>
+                  <button
+                    type="button"
+                    onClick={() => setViewing(q)}
+                    title="Xem chi tiết câu hỏi"
+                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border bg-card text-muted-foreground hover:bg-accent hover:text-foreground"
+                  >
+                    <Eye className="h-3.5 w-3.5" strokeWidth={1.85} />
+                  </button>
                   <Input
                     type="number"
                     min={0}
@@ -1406,6 +1454,10 @@ function ScoringPanel({
           </div>
         )}
       </div>
+      <ViewQuestionDialog
+        question={viewing}
+        onClose={() => setViewing(null)}
+      />
     </section>
   );
 }
