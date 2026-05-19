@@ -11,6 +11,7 @@ import type {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { useUsersStore } from "@/features/admin/users/users-store";
 import type { Role } from "@/features/auth/state/auth-store";
 import { useAuthStore } from "@/features/auth/state/auth-store";
 import { useCampusStore } from "@/features/campus/state/campus-store";
@@ -43,6 +44,12 @@ interface Props {
   withOptionalPassword?: boolean;
   /** Hide the status field on create mode. */
   withStatus?: boolean;
+  /** Student username field is locked + read-only — typical for the
+   *  edit dialog where the username is immutable after creation. */
+  lockUsername?: boolean;
+  /** If editing an existing user, pass their id so the uniqueness
+   *  check skips their own record. */
+  editingUserId?: string;
 }
 
 const ASSIGNABLE_FOR_SUPERADMIN: Role[] = [
@@ -62,9 +69,12 @@ export function UserFormFields({
   withPassword,
   withOptionalPassword,
   withStatus,
+  lockUsername,
+  editingUserId,
 }: Props) {
   const session = useAuthStore((s) => s.session);
   const campuses = useCampusesStore((s) => s.campuses);
+  const allUsers = useUsersStore((s) => s.users);
   const grades = useGradesStore((s) => s.grades);
   const allClasses = useGradesStore((s) => s.classes);
   const allSubjects = useSubjectsStore((s) => s.subjects);
@@ -665,25 +675,14 @@ export function UserFormFields({
           </div>
 
           {/* ───── Section: Tài khoản đăng nhập ──────────────────────── */}
-          <div className="sm:col-span-2 space-y-3 rounded-xl border border-amber-200/70 bg-amber-50/40 p-4">
-            <p className="inline-flex items-center gap-2 text-[13px] font-semibold text-amber-900">
-              <span aria-hidden className="text-base">🔑</span>
-              Tài khoản đăng nhập
-            </p>
-
-            <Field
-              label="Tài khoản (tuỳ chọn)"
-              error={errors.username?.message as string | undefined}
-            >
-              <Input
-                placeholder="vd: lan.nh"
-                {...register("username")}
-              />
-              <p className="mt-1 text-[11px] text-amber-800/70">
-                Bỏ trống → hệ thống tự sinh từ mã học sinh. Tự check trùng.
-              </p>
-            </Field>
-          </div>
+          <UsernameSection
+            register={register}
+            watch={watch}
+            errors={errors}
+            lockUsername={lockUsername}
+            editingUserId={editingUserId}
+            allUsers={allUsers}
+          />
 
           {/* ───── Section: Phụ huynh ────────────────────────────────── */}
           <div className="sm:col-span-2 space-y-3 rounded-xl border border-violet-200/70 bg-violet-50/40 p-4">
@@ -802,6 +801,96 @@ function Field({
       </Label>
       {children}
       {error ? <p className="text-[12px] text-destructive">{error}</p> : null}
+    </div>
+  );
+}
+
+/* ───────── Username section with inline uniqueness check + lock ─────────
+   Displays a green ✓ / red ✗ indicator below the username input as the
+   admin types. Skips the editing user themselves (their current
+   username is OK). When `lockUsername` is true (edit dialog), the
+   input is readOnly + disabled so usernames stay stable after
+   creation. */
+
+function UsernameSection({
+  register,
+  watch,
+  errors,
+  lockUsername,
+  editingUserId,
+  allUsers,
+}: {
+  register: UseFormRegister<any>;
+  watch: UseFormWatch<any>;
+  errors: FieldErrors<any>;
+  lockUsername?: boolean;
+  editingUserId?: string;
+  allUsers: Array<{
+    id: string;
+    username?: string;
+    studentCode?: string;
+    email: string;
+  }>;
+}) {
+  const username = (watch("username") as string | undefined)?.trim() ?? "";
+  const status = useMemo<
+    "empty" | "available" | "taken" | "self"
+  >(() => {
+    if (!username) return "empty";
+    const lower = username.toLowerCase();
+    const collision = allUsers.find((u) => {
+      if (u.id === editingUserId) return false;
+      return (
+        u.username?.toLowerCase() === lower ||
+        u.studentCode?.toLowerCase() === lower ||
+        u.email.toLowerCase() === `${lower}@students.fsc.local`
+      );
+    });
+    if (collision) return "taken";
+    return "available";
+  }, [username, editingUserId, allUsers]);
+
+  return (
+    <div className="sm:col-span-2 space-y-3 rounded-xl border border-amber-200/70 bg-amber-50/40 p-4">
+      <p className="inline-flex items-center gap-2 text-[13px] font-semibold text-amber-900">
+        <span aria-hidden className="text-base">🔑</span>
+        Tài khoản đăng nhập
+        {lockUsername && (
+          <span className="rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-bold text-amber-900">
+            🔒 Cố định
+          </span>
+        )}
+      </p>
+
+      <Field
+        label={lockUsername ? "Tài khoản" : "Tài khoản (tuỳ chọn)"}
+        error={errors.username?.message as string | undefined}
+      >
+        <Input
+          placeholder="vd: lan.nh"
+          readOnly={lockUsername}
+          disabled={lockUsername}
+          {...register("username")}
+        />
+        {lockUsername ? (
+          <p className="mt-1 text-[11px] text-amber-800/70">
+            Tài khoản đăng nhập đã được khoá sau khi tạo. Liên hệ
+            superadmin nếu cần đổi.
+          </p>
+        ) : status === "available" ? (
+          <p className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700">
+            ✓ Tên đăng nhập khả dụng
+          </p>
+        ) : status === "taken" ? (
+          <p className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700">
+            ✗ Tên đăng nhập đã có người dùng — chọn tên khác
+          </p>
+        ) : (
+          <p className="mt-1 text-[11px] text-amber-800/70">
+            Bỏ trống → hệ thống tự sinh từ mã học sinh. Tự check trùng khi gõ.
+          </p>
+        )}
+      </Field>
     </div>
   );
 }

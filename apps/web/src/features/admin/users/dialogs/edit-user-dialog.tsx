@@ -126,6 +126,8 @@ export function EditUserDialog({ user, onClose }: Props) {
             setValue={form.setValue}
             withStatus
             withOptionalPassword
+            lockUsername
+            editingUserId={user?.id}
           />
 
           <DialogFooter>

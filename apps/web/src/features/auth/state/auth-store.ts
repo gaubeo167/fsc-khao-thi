@@ -32,7 +32,15 @@ export interface AuthSession {
 
 export type SignInResult =
   | { ok: true; session: AuthSession }
-  | { ok: false; reason: "not_found" | "invalid_password" | "suspended" | "network" };
+  | {
+      ok: false;
+      reason:
+        | "not_found"
+        | "invalid_password"
+        | "suspended"
+        | "network"
+        | "role_mismatch";
+    };
 
 interface AuthState {
   session: AuthSession | null;
@@ -51,8 +59,17 @@ interface AuthActions {
    * result so the UI can show a specific cause. On success, the
    * `session` field is populated by the subscribeAuth listener that
    * fires immediately after.
+   *
+   * `expectedRole` (optional) lets the login UI gate the result so a
+   * student can't accidentally sign in via the staff tab and vice
+   * versa. Mismatch returns `reason: "role_mismatch"` and signs back
+   * out.
    */
-  signIn(input: { identifier: string; password: string }): Promise<SignInResult>;
+  signIn(input: {
+    identifier: string;
+    password: string;
+    expectedRole?: "staff" | "student";
+  }): Promise<SignInResult>;
   signOut(): Promise<void>;
   rememberAttempt(id: string): void;
   forgetAttempt(id: string): void;
@@ -67,7 +84,13 @@ export const useAuthStore = create<AuthState & AuthActions>()((set, get) => ({
   recentAttemptIds: [],
   hydrated: false,
 
-  async signIn({ identifier, password }) {
+  async signIn({ identifier, password, expectedRole }) {
+    function roleMatches(role: AuthSession["role"]): boolean {
+      if (!expectedRole) return true;
+      if (expectedRole === "student") return role === "student";
+      return role !== "student"; // staff tab → anyone non-student
+    }
+
     // Demo / offline mode — when Firebase isn't configured, validate
     // against the seed users so the UI is usable for preview without a
     // backend. Replaced by real Firebase Auth once `.env.local` is set.
@@ -79,6 +102,8 @@ export const useAuthStore = create<AuthState & AuthActions>()((set, get) => ({
         return { ok: false, reason: "invalid_password" };
       if (user.status !== "active")
         return { ok: false, reason: "suspended" };
+      if (!roleMatches(user.role))
+        return { ok: false, reason: "role_mismatch" };
       const session: AuthSession = {
         userId: user.id,
         email: user.email,
@@ -103,13 +128,17 @@ export const useAuthStore = create<AuthState & AuthActions>()((set, get) => ({
       // reject and the UI shows "invalid credentials" — caller retries.
     }
     const result = await signInWithEmail(loginIdentifier, password);
-    if (result.ok) {
-      // The subscribeAuth listener will set session, but apply it eagerly
-      // so navigations right after signIn() see the session immediately.
-      set({ session: result.session });
-      return { ok: true, session: result.session };
+    if (!result.ok) return result;
+    if (!roleMatches(result.session.role)) {
+      // Auth succeeded but the wrong tab was used — sign back out so
+      // the listener doesn't keep them on a half-rejected session.
+      await fbSignOut();
+      return { ok: false, reason: "role_mismatch" };
     }
-    return result;
+    // The subscribeAuth listener will set session, but apply it eagerly
+    // so navigations right after signIn() see the session immediately.
+    set({ session: result.session });
+    return { ok: true, session: result.session };
   },
 
   async signOut() {

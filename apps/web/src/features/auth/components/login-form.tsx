@@ -25,6 +25,10 @@ export function LoginForm() {
   const [submitting, setSubmitting] = useState(false);
   const [showPwd, setShowPwd] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  // Two parallel sign-in flows that gate which identifier format is
+  // accepted. Staff = email; HS = username / mã học sinh. The split is
+  // pure UX — auth-store enforces the actual rule below.
+  const [role, setRole] = useState<"staff" | "student">("staff");
 
   const form = useForm<LoginFormValues>({
     resolver: zodResolverSafe(LoginFormSchema),
@@ -34,24 +38,48 @@ export function LoginForm() {
 
   async function onSubmit(values: LoginFormValues) {
     setAuthError(null);
+    const identifier = values.identifier.trim();
+
+    // Role-based identifier validation. Staff must use a real email;
+    // student must use username / mã HS (never an email).
+    const looksLikeEmail = identifier.includes("@");
+    if (role === "staff" && !looksLikeEmail) {
+      setAuthError(
+        "Tài khoản giáo viên / admin đăng nhập bằng email. Vui lòng nhập email hợp lệ.",
+      );
+      return;
+    }
+    if (role === "student" && looksLikeEmail) {
+      setAuthError(
+        "Học sinh đăng nhập bằng TÊN ĐĂNG NHẬP hoặc MÃ HỌC SINH, không phải email.",
+      );
+      return;
+    }
     setSubmitting(true);
 
     // Trim both fields — most "I can't login" reports come from leading /
     // trailing spaces accidentally copied with the password.
     const result = await signIn({
-      identifier: values.identifier.trim(),
+      identifier,
       password: values.password.trim(),
+      expectedRole: role,
     });
 
     if (!result.ok) {
       const msg =
         result.reason === "not_found"
-          ? "Không tìm thấy tài khoản với email này. Liên hệ Admin campus nếu bạn nghĩ tài khoản đã được tạo."
+          ? role === "student"
+            ? "Không tìm thấy học sinh với tên đăng nhập / mã này."
+            : "Không tìm thấy tài khoản với email này."
           : result.reason === "invalid_password"
-            ? "Email hoặc mật khẩu không đúng. Vui lòng kiểm tra lại."
+            ? "Tên đăng nhập / email hoặc mật khẩu không đúng."
             : result.reason === "network"
               ? "Không kết nối được tới máy chủ. Kiểm tra mạng và thử lại."
-              : "Tài khoản đã bị tạm khoá. Liên hệ admin để mở khoá.";
+              : result.reason === "role_mismatch"
+                ? role === "student"
+                  ? "Tài khoản này không phải tài khoản học sinh. Chuyển sang tab 'Giáo viên / Admin' để đăng nhập."
+                  : "Tài khoản này là học sinh, không thể đăng nhập từ tab nhân viên. Chuyển sang tab 'Học sinh'."
+                : "Tài khoản đã bị tạm khoá. Liên hệ admin để mở khoá.";
       setAuthError(msg);
       form.setValue("password", "");
       setSubmitting(false);
@@ -70,6 +98,42 @@ export function LoginForm() {
       noValidate
       aria-describedby={authError ? "auth-error" : undefined}
     >
+      {/* Role tabs — chooses which identifier format the form expects. */}
+      <div className="grid grid-cols-2 gap-2 rounded-lg border bg-card p-1.5">
+        {(
+          [
+            { v: "staff", label: "Giáo viên / Admin", hint: "Đăng nhập bằng email" },
+            { v: "student", label: "Học sinh", hint: "Đăng nhập bằng tài khoản" },
+          ] as const
+        ).map((opt) => {
+          const active = role === opt.v;
+          return (
+            <button
+              key={opt.v}
+              type="button"
+              onClick={() => {
+                setRole(opt.v);
+                setAuthError(null);
+              }}
+              className={`flex flex-col items-center gap-0.5 rounded-md px-3 py-2 text-[12.5px] font-semibold transition-colors ${
+                active
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-foreground/70 hover:bg-accent"
+              }`}
+            >
+              <span>{opt.label}</span>
+              <span
+                className={`text-[10.5px] font-normal ${
+                  active ? "text-primary-foreground/80" : "text-muted-foreground"
+                }`}
+              >
+                {opt.hint}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
       {authError ? (
         <div
           id="auth-error"
@@ -84,7 +148,10 @@ export function LoginForm() {
         </div>
       ) : null}
 
-      <Field label="Email hoặc Mã người dùng" error={form.formState.errors.identifier?.message}>
+      <Field
+        label={role === "staff" ? "Email" : "Tên đăng nhập hoặc mã học sinh"}
+        error={form.formState.errors.identifier?.message}
+      >
         <div className="relative">
           <AtSign
             className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
@@ -95,7 +162,11 @@ export function LoginForm() {
             id="identifier"
             autoComplete="username"
             autoFocus
-            placeholder="email hoặc mã người dùng"
+            placeholder={
+              role === "staff"
+                ? "vd: gv.toan.minh@fpt.edu.vn"
+                : "vd: lan.nh hoặc FSCCG-2024-001"
+            }
             aria-invalid={Boolean(form.formState.errors.identifier)}
             className="h-11 pl-9"
             disabled={submitting}
