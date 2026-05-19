@@ -64,6 +64,7 @@ import { useGradesStore } from "@/features/grades/state/grades-store";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import { useUsersStore } from "@/features/admin/users/users-store";
 import { useBlueprintsStore } from "@/features/exams/state/blueprints-store";
+import { useGeneratedStore } from "@/features/exams/state/generated-store";
 import { usePackagesStore } from "@/features/exams/state/packages-store";
 import { useQuestionsStore } from "@/features/question-bank/state/questions-store";
 import { cn } from "@/lib/utils";
@@ -1097,13 +1098,39 @@ function ScoringPanel({
 
   const pkg = packages.find((p) => p.id === state.packageId);
   const bp = pkg ? blueprints.find((b) => b.id === pkg.blueprintId) : null;
+  // Generated exams (đề 001 / 002 …) for this package. The user wants
+  // to set điểm per đề so each variant must show only its own
+  // questions. Falls back to the blueprint pool if no đề has been
+  // generated yet (the wizard can still be configured pre-generation).
+  const generated = useGeneratedStore((s) => s.generated);
+  const variants = useMemo(() => {
+    if (!pkg) return [];
+    return generated
+      .filter((g) => g.packageId === pkg.id)
+      .sort((a, b) => a.name.localeCompare(b.name, "vi", { numeric: true }));
+  }, [generated, pkg]);
+  const [activeVariantId, setActiveVariantId] = useState<string>("");
+  useEffect(() => {
+    if (variants.length > 0 && !variants.some((v) => v.id === activeVariantId)) {
+      setActiveVariantId(variants[0]!.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [variants.map((v) => v.id).join("|")]);
+  const activeVariant = variants.find((v) => v.id === activeVariantId) ?? null;
+
+  // Pool = the questions actually answered by the student for the
+  // selected đề. When no đề exists yet, fall back to the blueprint
+  // pool so the wizard is still usable.
   const pool = useMemo(() => {
-    if (!bp) return [];
-    const ids = bp.topics.flatMap((t) => t.pickedQuestionIds);
+    const ids = activeVariant
+      ? activeVariant.questionIds
+      : bp
+        ? bp.topics.flatMap((t) => t.pickedQuestionIds)
+        : [];
     return ids
       .map((id) => allQuestions.find((q) => q.id === id))
       .filter((q): q is NonNullable<typeof q> => !!q);
-  }, [bp, allQuestions]);
+  }, [activeVariant, bp, allQuestions]);
 
   const diffCounts = countByDifficulty(pool);
   const scoring = state.scoring;
@@ -1134,6 +1161,9 @@ function ScoringPanel({
   }
 
   const preview = difficultyScorePreview(scoring, pool);
+  // Manual mode: sum the per-question scores ONLY for the currently-
+  // visible đề (or the blueprint pool if no đề generated). Tổng của
+  // mỗi đề phải = maxScore — tabs above show per-variant validity.
   const manualSum =
     scoring.mode === "manual" ? sumManualPerQuestion(scoring, pool.map((q) => q.id)) : 0;
   const manualValid =
@@ -1148,6 +1178,64 @@ function ScoringPanel({
           Đặt tổng điểm tối đa của ca thi và cách phân bổ cho từng câu.
         </p>
       </header>
+
+      {/* Variant picker — when the package has generated đề, the user
+          picks each one and sets điểm for it. Câu trùng giữa các đề tự
+          dùng chung điểm (perQuestion là 1 map shared) — admin chỉ cần
+          setup câu mới ở đề kế tiếp. */}
+      {variants.length > 0 && (
+        <div className="mb-3 rounded-lg border bg-card p-2">
+          <div className="mb-1.5 flex items-center justify-between">
+            <p className="text-[11px] font-bold uppercase tracking-[0.06em] text-foreground/65">
+              Chọn đề để chấm điểm
+            </p>
+            <p className="text-[11px] text-muted-foreground">
+              {variants.length} đề · điểm câu trùng tự share giữa các đề
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {variants.map((v) => {
+              const variantSum = v.questionIds.reduce(
+                (acc, qid) => acc + (scoring.perQuestion?.[qid] ?? 0),
+                0,
+              );
+              const variantValid =
+                scoring.mode !== "manual" ||
+                Math.abs(variantSum - scoring.maxScore) < 0.001;
+              const isActive = v.id === activeVariantId;
+              return (
+                <button
+                  key={v.id}
+                  type="button"
+                  onClick={() => setActiveVariantId(v.id)}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[12px] font-semibold transition",
+                    isActive
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border bg-card hover:bg-accent/30",
+                  )}
+                >
+                  {v.name}
+                  {scoring.mode === "manual" && (
+                    <span
+                      className={cn(
+                        "inline-flex h-4 min-w-[1.25rem] items-center justify-center rounded-full px-1 text-[9.5px] font-bold",
+                        isActive
+                          ? "bg-white/25 text-white"
+                          : variantValid
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-rose-100 text-rose-700",
+                      )}
+                    >
+                      {variantValid ? "✓" : "✗"}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Max score — preset 10 / 100 / Khác (custom input). */}
       <div className="grid gap-3 sm:grid-cols-[1fr_2fr]">
@@ -1348,11 +1436,20 @@ function ScoringPanel({
         {scoring.mode === "manual" && (
           <div className="space-y-2">
             <p className="rounded-md border border-blue-200 bg-blue-50/60 px-3 py-2 text-[11.5px] text-blue-900">
-              <b>💡 Pool gồm {pool.length} câu</b> — đây là toàn bộ ngân hàng
-              của blueprint. Mỗi đề học sinh nhận được sinh từ pool này (có
-              thể chỉ chứa một phần). <b>Điểm của mỗi câu áp dụng cho mọi đề
-              chứa nó</b> — đảm bảo công bằng giữa các bản đề khác nhau.{" "}
-              <b>Tổng pool phải = {formatScore(scoring.maxScore)} đ</b>.
+              {activeVariant ? (
+                <>
+                  <b>📋 Đang chấm điểm {activeVariant.name}</b> ({pool.length}{" "}
+                  câu). Câu trùng với đề khác đã có điểm từ trước —{" "}
+                  <b>tự fill</b>, chỉ cần setup câu mới.{" "}
+                  <b>Tổng đề này phải = {formatScore(scoring.maxScore)} đ</b>.
+                </>
+              ) : (
+                <>
+                  <b>💡 Pool gồm {pool.length} câu</b> — bộ đề chưa sinh đề cụ
+                  thể, đang setup điểm trên toàn ngân hàng blueprint.{" "}
+                  <b>Tổng phải = {formatScore(scoring.maxScore)} đ</b>.
+                </>
+              )}
             </p>
             <ul className="max-h-[300px] space-y-1.5 overflow-y-auto rounded-md border bg-muted/20 p-2">
               {pool.map((q, idx) => (
