@@ -279,19 +279,57 @@ export function gradeQuestion(question: Question, answer: unknown): GradeResult 
       };
     }
     case "underline": {
-      const picked = Array.isArray(answer) ? (answer as string[]) : [];
-      const re = /\[u:([^\]\n]+)\]/g;
-      const correctPhrases: string[] = [];
-      let m: RegExpExecArray | null;
-      while ((m = re.exec(question.content)) !== null) {
-        correctPhrases.push(m[1]!);
+      // Value = number[] of selected token indices (position-based).
+      // Re-tokenize content same way the trial UI does so we can map
+      // each index → its correct flag + its underlying word value.
+      const picked = Array.isArray(answer) ? (answer as number[]) : [];
+      const slices: Array<{ text: string; isMarker: boolean }> = [];
+      const reMark = /\[u:([^\]\n]+)\]/g;
+      let lastIdx = 0;
+      let mm: RegExpExecArray | null;
+      while ((mm = reMark.exec(question.content)) !== null) {
+        if (mm.index > lastIdx)
+          slices.push({
+            text: question.content.slice(lastIdx, mm.index),
+            isMarker: false,
+          });
+        slices.push({ text: mm[1]!, isMarker: true });
+        lastIdx = mm.index + mm[0].length;
       }
-      const pickedSet = new Set(picked.map((s) => s.trim().toLowerCase()));
-      const correctSet = new Set(correctPhrases.map((s) => s.trim().toLowerCase()));
+      if (lastIdx < question.content.length)
+        slices.push({
+          text: question.content.slice(lastIdx),
+          isMarker: false,
+        });
+      const tokens: Array<{ kind: "word" | "sep"; value: string; correct: boolean }> = [];
+      const tokRe = /([\p{L}\p{N}]+(?:['']\p{L}+)?)|([^\p{L}\p{N}]+)/gu;
+      for (const slice of slices) {
+        tokRe.lastIndex = 0;
+        let tm: RegExpExecArray | null;
+        while ((tm = tokRe.exec(slice.text)) !== null) {
+          if (tm[1] !== undefined)
+            tokens.push({ kind: "word", value: tm[1]!, correct: slice.isMarker });
+          else if (tm[2] !== undefined)
+            tokens.push({ kind: "sep", value: tm[2]!, correct: false });
+        }
+      }
       let truePos = 0;
-      for (const p of correctSet) if (pickedSet.has(p)) truePos++;
-      const exactMatch =
-        pickedSet.size === correctSet.size && truePos === correctSet.size;
+      let falsePos = 0;
+      let falseNeg = 0;
+      tokens.forEach((tk, i) => {
+        if (tk.kind !== "word") return;
+        const isPicked = picked.includes(i);
+        if (tk.correct && isPicked) truePos++;
+        else if (!tk.correct && isPicked) falsePos++;
+        else if (tk.correct && !isPicked) falseNeg++;
+      });
+      const exactMatch = falsePos === 0 && falseNeg === 0;
+      const studentLabels = picked
+        .map((i) => tokens[i]?.value)
+        .filter((s): s is string => !!s);
+      const correctLabels = tokens
+        .filter((t) => t.kind === "word" && t.correct)
+        .map((t) => t.value);
       return {
         verdict:
           picked.length === 0
@@ -302,8 +340,8 @@ export function gradeQuestion(question: Question, answer: unknown): GradeResult 
                 ? "partial"
                 : "wrong",
         score: exactMatch ? 1 : 0,
-        correctText: correctPhrases.join(", "),
-        studentText: picked.length === 0 ? "(chưa làm)" : picked.join(", "),
+        correctText: correctLabels.join(", "),
+        studentText: studentLabels.length === 0 ? "(chưa làm)" : studentLabels.join(", "),
       };
     }
     default:

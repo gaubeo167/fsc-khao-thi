@@ -371,9 +371,20 @@ export function TrialExamDialog({ exam, onClose, onDelete }: Props) {
                     nav row below stays pinned to the bottom and the area
                     doesn't visually shrink when the question is short. */}
                 <div className="flex flex-1 flex-col gap-4 min-h-[420px]">
-                  <div className="rounded-xl border bg-card p-4 text-[14px]">
-                    <RenderedContent content={current.content} />
-                  </div>
+                  {/* Hide `[u:phrase]` and `[zone:N]` markers from the
+                      question header for types that consume them in
+                      their own interactive area below — otherwise the
+                      answer leaks into the prompt (green underline
+                      for [u:], chip for [zone:]). */}
+                  {current.type !== "underline" &&
+                    current.type !== "drag-drop" && (
+                      <div className="rounded-xl border bg-card p-4 text-[14px]">
+                        <RenderedContent
+                          content={current.content}
+                          hideUnderlineMarks
+                        />
+                      </div>
+                    )}
                   <div>
                     <AnswerArea
                       question={current}
@@ -833,94 +844,31 @@ function AnswerArea({
       const ids = Array.isArray(value)
         ? (value as string[])
         : question.items.map((it) => it.id);
-      function move(idx: number, dir: -1 | 1) {
-        const next = [...ids];
-        const swap = idx + dir;
-        if (swap < 0 || swap >= next.length) return;
-        [next[idx], next[swap]] = [next[swap]!, next[idx]!];
-        onChange(next);
-      }
       return (
-        <ol className="space-y-2">
-          {ids.map((id, idx) => {
-            const item = question.items.find((it) => it.id === id);
-            return (
-              <li
-                key={id}
-                className="flex items-center gap-2 rounded-lg border bg-card p-2.5"
-              >
-                <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-primary text-[11px] font-bold text-white">
-                  {idx + 1}
-                </span>
-                <span className="flex-1 text-[13px]">{item?.content}</span>
-                <button
-                  type="button"
-                  onClick={() => move(idx, -1)}
-                  disabled={idx === 0}
-                  className="rounded-md border px-2 py-1 text-[12px] disabled:opacity-40"
-                  title="Lên"
-                >
-                  ↑
-                </button>
-                <button
-                  type="button"
-                  onClick={() => move(idx, 1)}
-                  disabled={idx === ids.length - 1}
-                  className="rounded-md border px-2 py-1 text-[12px] disabled:opacity-40"
-                  title="Xuống"
-                >
-                  ↓
-                </button>
-              </li>
-            );
-          })}
-        </ol>
+        <OrderingArea
+          ids={ids}
+          items={question.items}
+          onChange={onChange}
+        />
       );
     }
     case "drag-drop": {
       const arr = Array.isArray(value) ? (value as string[]) : [];
-      const options = [
-        ...question.zones.map((z) => z.correctContent),
-        ...(question.distractors ?? []).map((d) => d.content),
-      ];
       return (
-        <div className="space-y-2">
-          {question.zones.map((_, i) => (
-            <div
-              key={i}
-              className="flex items-center gap-2 rounded-lg border bg-card p-2.5"
-            >
-              <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-amber-500 text-[11px] font-bold text-white">
-                {i + 1}
-              </span>
-              <select
-                value={arr[i] ?? ""}
-                onChange={(e) => {
-                  const next = [...arr];
-                  next[i] = e.target.value;
-                  onChange(next);
-                }}
-                className="flex-1 rounded-md border bg-background px-2 py-1.5 text-[13px]"
-              >
-                <option value="">— chọn cụm từ —</option>
-                {options.map((opt) => (
-                  <option key={opt} value={opt}>
-                    {opt}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ))}
-        </div>
+        <DragDropArea
+          question={question}
+          values={arr}
+          onChange={onChange}
+        />
       );
     }
     case "underline": {
-      const selected = Array.isArray(value)
-        ? new Set(value as string[])
-        : new Set<string>();
-      // Walk content + markers in lockstep so each word knows whether
-      // it sits inside a `[u:...]` (the answer) — only those are
-      // clickable / counted. Other "10"s in the prompt won't trigger.
+      // Value shape = number[] of selected token indices (positions in
+      // the plain content). Position-based so clicking one "10" doesn't
+      // highlight every other "10" in the prompt.
+      const selectedIdx = Array.isArray(value)
+        ? new Set(value as number[])
+        : new Set<number>();
       const slices: Array<{ text: string; isMarker: boolean }> = [];
       const reMark = /\[u:([^\]\n]+)\]/g;
       let lastIdx = 0;
@@ -965,10 +913,10 @@ function AnswerArea({
         }
       }
 
-      function toggle(word: string) {
-        const next = new Set(selected);
-        if (next.has(word)) next.delete(word);
-        else next.add(word);
+      function toggle(idx: number) {
+        const next = new Set(selectedIdx);
+        if (next.has(idx)) next.delete(idx);
+        else next.add(idx);
         onChange(Array.from(next));
       }
 
@@ -980,10 +928,10 @@ function AnswerArea({
             ) : (
               <span
                 key={i}
-                onClick={() => toggle(t.value)}
+                onClick={() => toggle(i)}
                 className={cn(
                   "cursor-pointer rounded px-0.5 transition-colors",
-                  selected.has(t.value)
+                  selectedIdx.has(i)
                     ? "bg-primary/15 text-primary underline decoration-2 underline-offset-2"
                     : "hover:bg-muted",
                 )}
@@ -1305,4 +1253,343 @@ function verdictDetailBorderClass(v: Verdict): string {
     case "skipped":
       return "border-slate-200";
   }
+}
+
+/* ───────── OrderingArea — drag-and-drop reorderable list ─────────
+   HTML5 drag API. Drop ON a target item inserts the dragged item
+   BEFORE that target. The up/down arrows remain available for
+   keyboard-only users (a11y fallback). */
+
+function OrderingArea({
+  ids,
+  items,
+  onChange,
+}: {
+  ids: string[];
+  items: Array<{ id: string; content: string }>;
+  onChange(next: string[]): void;
+}) {
+  const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
+  const [overIdx, setOverIdx] = useState<number | null>(null);
+
+  function move(idx: number, dir: -1 | 1) {
+    const next = [...ids];
+    const swap = idx + dir;
+    if (swap < 0 || swap >= next.length) return;
+    [next[idx], next[swap]] = [next[swap]!, next[idx]!];
+    onChange(next);
+  }
+
+  function handleDrop(targetIdx: number) {
+    if (draggedIdx === null || draggedIdx === targetIdx) {
+      setDraggedIdx(null);
+      setOverIdx(null);
+      return;
+    }
+    const next = [...ids];
+    const [moved] = next.splice(draggedIdx, 1);
+    // If we removed from before the target, target index shifts left.
+    const insertAt = draggedIdx < targetIdx ? targetIdx - 1 : targetIdx;
+    next.splice(insertAt, 0, moved!);
+    onChange(next);
+    setDraggedIdx(null);
+    setOverIdx(null);
+  }
+
+  return (
+    <ol className="space-y-2">
+      {ids.map((id, idx) => {
+        const item = items.find((it) => it.id === id);
+        const isDragging = draggedIdx === idx;
+        const isOver = overIdx === idx && draggedIdx !== null && draggedIdx !== idx;
+        return (
+          <li
+            key={id}
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.effectAllowed = "move";
+              setDraggedIdx(idx);
+            }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+              setOverIdx(idx);
+            }}
+            onDragLeave={() => {
+              if (overIdx === idx) setOverIdx(null);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              handleDrop(idx);
+            }}
+            onDragEnd={() => {
+              setDraggedIdx(null);
+              setOverIdx(null);
+            }}
+            className={cn(
+              "flex items-center gap-2 rounded-lg border bg-card p-2.5 cursor-grab active:cursor-grabbing transition-all",
+              isDragging && "opacity-40",
+              isOver && "border-primary bg-primary/8 -translate-y-px shadow-sm",
+            )}
+          >
+            <span aria-hidden className="text-foreground/40">⋮⋮</span>
+            <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-primary text-[11px] font-bold text-white">
+              {idx + 1}
+            </span>
+            <span className="flex-1 text-[13px]">{item?.content}</span>
+            <button
+              type="button"
+              onClick={() => move(idx, -1)}
+              disabled={idx === 0}
+              className="rounded-md border px-2 py-1 text-[12px] disabled:opacity-40"
+              title="Lên"
+            >
+              ↑
+            </button>
+            <button
+              type="button"
+              onClick={() => move(idx, 1)}
+              disabled={idx === ids.length - 1}
+              className="rounded-md border px-2 py-1 text-[12px] disabled:opacity-40"
+              title="Xuống"
+            >
+              ↓
+            </button>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+/* ───────── DragDropArea — real drag-and-drop chips into [zone:N] ─────────
+   Walk the question content, render text inline and replace `[zone:N]`
+   markers with drop zones. Pool below contains chips for each correct
+   zone (one per zone — duplicates allowed because each chip has its
+   own id) plus distractor chips. Drop a chip onto a zone to fill it. */
+
+function DragDropArea({
+  question,
+  values,
+  onChange,
+}: {
+  question: Extract<Question, { type: "drag-drop" }>;
+  values: string[];
+  onChange(next: string[]): void;
+}) {
+  type PoolChip = { chipId: string; content: string };
+  const initialPool = useMemo<PoolChip[]>(() => {
+    const correct = question.zones.map((z, i) => ({
+      chipId: `c-${i}`,
+      content: z.correctContent,
+    }));
+    const wrong = (question.distractors ?? []).map((d, i) => ({
+      chipId: `d-${i}`,
+      content: d.content,
+    }));
+    // Shuffle deterministically per question id so re-renders don't
+    // reorder mid-attempt.
+    const list = [...correct, ...wrong];
+    let seed = 0;
+    for (const ch of question.id) seed = (seed * 31 + ch.charCodeAt(0)) >>> 0;
+    for (let i = list.length - 1; i > 0; i--) {
+      seed = (seed * 1103515245 + 12345) >>> 0;
+      const j = seed % (i + 1);
+      [list[i], list[j]] = [list[j]!, list[i]!];
+    }
+    return list;
+  }, [question.id, question.zones, question.distractors]);
+
+  const [dragging, setDragging] = useState<string | null>(null);
+
+  // Assignments[zoneIndex] = chipId currently dropped. Derived from
+  // values (content array) by matching content + position. We track
+  // chipId so dropping the "same content" duplicate chip into multiple
+  // zones works.
+  const assigned = useMemo(() => {
+    const map = new Map<number, string>();
+    const used = new Set<string>();
+    values.forEach((content, idx) => {
+      if (!content) return;
+      const chip = initialPool.find(
+        (c) => c.content === content && !used.has(c.chipId),
+      );
+      if (chip) {
+        map.set(idx, chip.chipId);
+        used.add(chip.chipId);
+      }
+    });
+    return map;
+  }, [values, initialPool]);
+
+  const usedChipIds = new Set(assigned.values());
+  const remainingPool = initialPool.filter((p) => !usedChipIds.has(p.chipId));
+
+  function handleDrop(zoneIdx: number, chipId: string) {
+    const chip = initialPool.find((c) => c.chipId === chipId);
+    if (!chip) return;
+    const next = [...values];
+    // Pad to zone count so indices line up.
+    while (next.length < question.zones.length) next.push("");
+    next[zoneIdx] = chip.content;
+    onChange(next);
+    setDragging(null);
+  }
+
+  function handleClear(zoneIdx: number) {
+    const next = [...values];
+    while (next.length < question.zones.length) next.push("");
+    next[zoneIdx] = "";
+    onChange(next);
+  }
+
+  // Parse content into lines, each line split by [zone:N] markers.
+  const lines = useMemo(() => {
+    const out: Array<
+      Array<{ kind: "text" | "zone"; value: string; zoneIdx?: number }>
+    > = [];
+    for (const rawLine of question.content.split("\n")) {
+      const segs: Array<{ kind: "text" | "zone"; value: string; zoneIdx?: number }> = [];
+      const re = /\[zone:(\d+)\]/g;
+      let last = 0;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(rawLine)) !== null) {
+        if (m.index > last)
+          segs.push({ kind: "text", value: rawLine.slice(last, m.index) });
+        segs.push({ kind: "zone", value: "", zoneIdx: Number(m[1]) - 1 });
+        last = m.index + m[0].length;
+      }
+      if (last < rawLine.length)
+        segs.push({ kind: "text", value: rawLine.slice(last) });
+      out.push(segs);
+    }
+    return out;
+  }, [question.content]);
+
+  // Pool grouped by content with × N badge (matches the editor preview UX).
+  const poolGroups = useMemo(() => {
+    const groups = new Map<string, { content: string; chipIds: string[] }>();
+    for (const p of remainingPool) {
+      const g = groups.get(p.content) ?? { content: p.content, chipIds: [] };
+      g.chipIds.push(p.chipId);
+      groups.set(p.content, g);
+    }
+    return Array.from(groups.values());
+  }, [remainingPool]);
+
+  return (
+    <div className="space-y-3">
+      <div className="space-y-1.5 rounded-lg border bg-surface p-4 text-[14px] leading-loose">
+        {lines.map((segs, lineIdx) => (
+          <div
+            key={lineIdx}
+            className="flex flex-wrap items-baseline gap-x-1 gap-y-1.5 min-h-[1.6em]"
+          >
+            {segs.map((seg, i) =>
+              seg.kind === "text" ? (
+                <RenderedContent inline key={i} content={seg.value} />
+              ) : (
+                <DropZoneInline
+                  key={`zone-${seg.zoneIdx}`}
+                  zoneIdx={seg.zoneIdx!}
+                  filled={assigned.get(seg.zoneIdx!)}
+                  poolLookup={initialPool}
+                  isHotTarget={Boolean(dragging)}
+                  onDropChip={handleDrop}
+                  onClear={() => handleClear(seg.zoneIdx!)}
+                />
+              ),
+            )}
+          </div>
+        ))}
+      </div>
+      <div>
+        <p className="text-eyebrow mb-2">Cụm từ để kéo</p>
+        <div className="flex min-h-[48px] flex-wrap gap-2 rounded-lg border border-dashed bg-surface-2 p-3">
+          {poolGroups.length === 0 ? (
+            <span className="text-meta italic">— đã kéo hết —</span>
+          ) : (
+            poolGroups.map((g) => {
+              const head = g.chipIds[0]!;
+              return (
+                <span
+                  key={g.content}
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData("text/plain", head);
+                    e.dataTransfer.effectAllowed = "move";
+                    setDragging(head);
+                  }}
+                  onDragEnd={() => setDragging(null)}
+                  className="inline-flex cursor-grab items-center rounded-lg border bg-surface px-3 py-1.5 text-[13px] shadow-sm transition-all active:cursor-grabbing hover:border-primary/50 hover:-translate-y-px"
+                >
+                  <RenderedContent inline content={g.content} />
+                  {g.chipIds.length > 1 && (
+                    <span className="ml-1 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary/15 px-1 text-[10px] font-bold text-primary">
+                      × {g.chipIds.length}
+                    </span>
+                  )}
+                </span>
+              );
+            })
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DropZoneInline({
+  zoneIdx,
+  filled,
+  poolLookup,
+  isHotTarget,
+  onDropChip,
+  onClear,
+}: {
+  zoneIdx: number;
+  filled?: string;
+  poolLookup: Array<{ chipId: string; content: string }>;
+  isHotTarget: boolean;
+  onDropChip(zoneIdx: number, chipId: string): void;
+  onClear(): void;
+}) {
+  const [isOver, setIsOver] = useState(false);
+  const chip = filled ? poolLookup.find((c) => c.chipId === filled) : null;
+  return (
+    <span
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        setIsOver(true);
+      }}
+      onDragLeave={() => setIsOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        const chipId = e.dataTransfer.getData("text/plain");
+        if (chipId) onDropChip(zoneIdx, chipId);
+        setIsOver(false);
+      }}
+      onClick={() => filled && onClear()}
+      className={cn(
+        "inline-flex min-w-[80px] items-center justify-center gap-1 rounded-md border-2 px-2 py-0.5 align-middle text-[13px] font-semibold transition-colors",
+        chip
+          ? "border-primary bg-primary/10 text-primary cursor-pointer hover:bg-primary/15"
+          : isOver
+            ? "border-primary bg-primary/8 text-primary"
+            : isHotTarget
+              ? "border-dashed border-primary/60 bg-primary/4 text-primary/70"
+              : "border-dashed border-muted-foreground/40 text-muted-foreground",
+      )}
+    >
+      <span className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-500 text-[9px] font-bold text-white">
+        {zoneIdx + 1}
+      </span>
+      {chip ? (
+        <RenderedContent inline content={chip.content} />
+      ) : (
+        <span className="italic opacity-70">…</span>
+      )}
+    </span>
+  );
 }
