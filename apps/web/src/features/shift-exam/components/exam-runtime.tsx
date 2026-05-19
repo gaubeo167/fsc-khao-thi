@@ -98,18 +98,9 @@ export function ExamRuntime({ shift, questions, durationMin }: Props) {
     return () => clearInterval(id);
   }, [hasStarted]);
 
-  // Cross-tab sync: pick up proctor messages a teacher sent from another
-  // tab. Zustand `persist` writes to localStorage but doesn't broadcast.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    function onStorage(e: StorageEvent) {
-      if (e.key === "fsc-proctor-events") {
-        useProctorStore.persist.rehydrate();
-      }
-    }
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, []);
+  // Proctor messages now sync via Firestore onSnapshot — no
+  // localStorage hook needed. The subscription is started once by
+  // AuthBootstrap.
 
   // Anti-cheat: tab-switch detection.
   useEffect(() => {

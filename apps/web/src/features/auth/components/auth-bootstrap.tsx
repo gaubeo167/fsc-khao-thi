@@ -11,6 +11,7 @@ import { subscribeGradesCatalog } from "@/features/grades/state/grades-store";
 import { subscribeGrading } from "@/features/grading/state/grading-store";
 import { subscribeQuestions } from "@/features/question-bank/state/questions-store";
 import { subscribeAttempts } from "@/features/shift-exam/state/attempts-store";
+import { subscribeProctorEvents } from "@/features/shift-exam/state/proctor-store";
 import { subscribeSubjects } from "@/features/subjects/state/subjects-store";
 import { subscribeTeaching } from "@/features/teaching/state/teaching-store";
 import { isFirebaseConfigured } from "@/lib/firebase";
@@ -83,6 +84,7 @@ export function AuthBootstrap() {
           subscribePackages(),
           subscribeShifts(),
           subscribeAttempts(),
+          subscribeProctorEvents(),
           subscribeGrading(),
         ];
       } catch (e) {
@@ -106,6 +108,7 @@ export function AuthBootstrap() {
           subscribePackages(),
           subscribeShifts(),
           subscribeAttempts(),
+          subscribeProctorEvents(),
           subscribeGrading(),
         ];
       } catch (e) {

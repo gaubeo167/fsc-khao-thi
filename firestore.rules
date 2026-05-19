@@ -129,6 +129,19 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
+    // ───── /proctor_events — warnings + violations sent to students ───────
+    // Proctor (teacher / admin) writes events; student acknowledges
+    // them. Both sides need read access so the student's toast and
+    // the proctor's queue stay in sync.
+    match /proctor_events/{id} {
+      allow read: if isSignedIn();
+      allow create: if isTeacherOrAbove();
+      // Acknowledge = student updates their own row; teacher can edit/
+      // delete anything they sent.
+      allow update: if isSignedIn();
+      allow delete: if isTeacherOrAbove();
+    }
+
     // ───── /questions ─────────────────────────────────────────────────────
     // Read is open to any signed-in user. UI already filters by kho /
     // ownerId / campusId. (Dynamic per-doc rules broke list queries:

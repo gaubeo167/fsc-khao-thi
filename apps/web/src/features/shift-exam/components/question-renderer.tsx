@@ -797,132 +797,240 @@ function DragDropAnswer({
   disabled?: boolean;
   seed?: string;
 }) {
-  // Pool = correct contents + distractors, shuffled deterministically.
-  const pool = useMemo(() => {
-    const correct = q.zones.map((z) => z.correctContent);
-    const fillers = q.distractors.map((d) => d.content);
-    return stableShuffle([...correct, ...fillers], `${seed ?? ""}-dd`);
-  }, [q.zones, q.distractors, seed]);
+  // Pool: one chip per zone (correct content) + one chip per distractor.
+  // We keep chipId + content so duplicates can be told apart while
+  // grading still matches by content. Shuffled deterministically so
+  // re-renders mid-attempt don't reshuffle the pool.
+  type Chip = { chipId: string; content: string };
+  const initialPool = useMemo<Chip[]>(() => {
+    const correct = q.zones.map((z, i) => ({
+      chipId: `c-${i}`,
+      content: z.correctContent,
+    }));
+    const wrong = q.distractors.map((d, i) => ({
+      chipId: `d-${i}`,
+      content: d.content,
+    }));
+    const list: Chip[] = [...correct, ...wrong];
+    // Cheap stable shuffle using `seed` so each student sees the same
+    // order on retry but different students may see different orders.
+    let s = 0;
+    const tag = `${seed ?? ""}-dd-${q.id}`;
+    for (const ch of tag) s = (s * 31 + ch.charCodeAt(0)) >>> 0;
+    for (let i = list.length - 1; i > 0; i--) {
+      s = (s * 1103515245 + 12345) >>> 0;
+      const j = s % (i + 1);
+      [list[i], list[j]] = [list[j]!, list[i]!];
+    }
+    return list;
+  }, [q.id, q.zones, q.distractors, seed]);
 
   const zoneValues =
     answer && answer.kind === "drag-drop"
       ? answer.zones
       : (q.zones.map(() => "") as string[]);
 
-  function setZone(i: number, value: string) {
+  // assigned[zoneIndex] = chipId. Derived from zoneValues by matching
+  // content + position so dragging a "duplicate" chip into another
+  // zone consumes a different chipId than the first drop.
+  const assigned = useMemo(() => {
+    const map = new Map<number, string>();
+    const used = new Set<string>();
+    zoneValues.forEach((content, idx) => {
+      if (!content) return;
+      const chip = initialPool.find(
+        (c) => c.content === content && !used.has(c.chipId),
+      );
+      if (chip) {
+        map.set(idx, chip.chipId);
+        used.add(chip.chipId);
+      }
+    });
+    return map;
+  }, [zoneValues, initialPool]);
+  const usedChipIds = new Set(assigned.values());
+  const remainingPool = initialPool.filter((p) => !usedChipIds.has(p.chipId));
+
+  const [dragging, setDragging] = useState<string | null>(null);
+
+  function handleDropZone(zoneIdx: number, chipId: string) {
+    if (disabled) return;
+    const chip = initialPool.find((c) => c.chipId === chipId);
+    if (!chip) return;
     const next = [...zoneValues];
     while (next.length < q.zones.length) next.push("");
-    next[i] = value;
+    next[zoneIdx] = chip.content;
+    onChange({ kind: "drag-drop", zones: next });
+    setDragging(null);
+  }
+  function handleClearZone(zoneIdx: number) {
+    if (disabled) return;
+    const next = [...zoneValues];
+    while (next.length < q.zones.length) next.push("");
+    next[zoneIdx] = "";
     onChange({ kind: "drag-drop", zones: next });
   }
 
-  // Render content with [zone:N] markers replaced by inline select dropdowns.
-  const segments = useMemo(() => {
-    const parts: Array<{ kind: "text" | "zone"; value: string; index?: number }> = [];
-    const re = /\[zone:(\d+)\]/g;
-    let last = 0;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(q.content)) != null) {
-      if (m.index > last)
-        parts.push({ kind: "text", value: q.content.slice(last, m.index) });
-      parts.push({ kind: "zone", value: m[0], index: Number(m[1]) - 1 });
-      last = m.index + m[0].length;
+  // Parse content into lines, each line split by [zone:N] markers so
+  // text + drop zones share each row of the original prompt.
+  const lines = useMemo(() => {
+    const out: Array<
+      Array<{ kind: "text" | "zone"; value: string; zoneIdx?: number }>
+    > = [];
+    for (const rawLine of q.content.split("\n")) {
+      const segs: Array<{ kind: "text" | "zone"; value: string; zoneIdx?: number }> = [];
+      const re = /\[zone:(\d+)\]/g;
+      let last = 0;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(rawLine)) !== null) {
+        if (m.index > last)
+          segs.push({ kind: "text", value: rawLine.slice(last, m.index) });
+        segs.push({ kind: "zone", value: "", zoneIdx: Number(m[1]) - 1 });
+        last = m.index + m[0].length;
+      }
+      if (last < rawLine.length)
+        segs.push({ kind: "text", value: rawLine.slice(last) });
+      out.push(segs);
     }
-    if (last < q.content.length)
-      parts.push({ kind: "text", value: q.content.slice(last) });
-    return parts;
+    return out;
   }, [q.content]);
+
+  // Group chips in pool by content with × N badge.
+  const poolGroups = useMemo(() => {
+    const groups = new Map<string, { content: string; chipIds: string[] }>();
+    for (const p of remainingPool) {
+      const g = groups.get(p.content) ?? { content: p.content, chipIds: [] };
+      g.chipIds.push(p.chipId);
+      groups.set(p.content, g);
+    }
+    return Array.from(groups.values());
+  }, [remainingPool]);
 
   return (
     <div className="space-y-3">
       <p className="text-[11px] font-medium text-muted-foreground">
-        Chọn cụm từ phù hợp điền vào mỗi ô{" "}
-        <code className="rounded bg-muted px-1">[…]</code>.
+        Kéo các cụm từ ở dưới và thả vào các ô trong đề bài.
       </p>
-      <p className="rounded-lg border bg-card px-3 py-2.5 text-[14px] leading-relaxed">
-        {segments.length === 0 || segments.every((s) => s.kind === "text") ? (
-          <>
-            {q.content}
-            <span className="text-rose-700">
-              {" "}
-              (Câu hỏi không có dấu [zone:N] — chọn cụm theo thứ tự bên dưới.)
-            </span>
-          </>
-        ) : (
-          segments.map((seg, i) =>
-            seg.kind === "text" ? (
-              <span key={i}>{seg.value}</span>
-            ) : (
-              <select
-                key={i}
-                value={zoneValues[seg.index!] ?? ""}
-                disabled={disabled}
-                onChange={(e) => setZone(seg.index!, e.target.value)}
-                className="mx-1 inline-block h-7 rounded-md border bg-primary/5 px-2 align-middle text-[12.5px] font-semibold"
-              >
-                <option value="">— chọn —</option>
-                {pool.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
-              </select>
-            ),
-          )
-        )}
-      </p>
-      {/* Fallback: if content has no [zone:N], render numbered selects. */}
-      {segments.every((s) => s.kind === "text") && (
-        <ul className="space-y-1.5">
-          {q.zones.map((_, i) => (
-            <li
-              key={i}
-              className="flex items-center gap-2 rounded-md border bg-card px-3 py-2"
-            >
-              <span className="text-[12px] font-bold uppercase text-foreground/65">
-                Ô {i + 1}.
-              </span>
-              <select
-                value={zoneValues[i] ?? ""}
-                disabled={disabled}
-                onChange={(e) => setZone(i, e.target.value)}
-                className="h-8 flex-1 rounded-md border bg-card px-2 text-[12.5px]"
-              >
-                <option value="">— chọn —</option>
-                {pool.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
-              </select>
-            </li>
-          ))}
-        </ul>
-      )}
-      <div className="rounded-lg bg-muted/20 px-3 py-2">
+      <div className="space-y-1.5 rounded-lg border bg-card p-4 text-[14px] leading-loose">
+        {lines.map((segs, lineIdx) => (
+          <div
+            key={lineIdx}
+            className="flex flex-wrap items-baseline gap-x-1 gap-y-1.5 min-h-[1.6em]"
+          >
+            {segs.map((seg, i) =>
+              seg.kind === "text" ? (
+                <span key={i}>{seg.value}</span>
+              ) : (
+                <DropZoneChip
+                  key={`zone-${seg.zoneIdx}`}
+                  zoneIdx={seg.zoneIdx!}
+                  filledChipId={assigned.get(seg.zoneIdx!)}
+                  poolLookup={initialPool}
+                  isHotTarget={Boolean(dragging) && !disabled}
+                  onDropChip={handleDropZone}
+                  onClear={() => handleClearZone(seg.zoneIdx!)}
+                />
+              ),
+            )}
+          </div>
+        ))}
+      </div>
+      <div>
         <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.06em] text-foreground/65">
-          Pool chip
+          Cụm từ để kéo {!disabled && "(kéo lên đề bài bên trên)"}
         </p>
-        <ul className="flex flex-wrap gap-1.5">
-          {pool.map((p) => {
-            const used = zoneValues.includes(p);
-            return (
-              <li
-                key={p}
-                className={cn(
-                  "rounded-full border px-2 py-0.5 text-[11px]",
-                  used
-                    ? "border-emerald-200 bg-emerald-50 text-emerald-800 line-through"
-                    : "border-border bg-card text-foreground/80",
-                )}
-              >
-                {p}
-              </li>
-            );
-          })}
-        </ul>
+        <div className="flex min-h-[44px] flex-wrap gap-2 rounded-lg border border-dashed bg-muted/20 p-3">
+          {poolGroups.length === 0 ? (
+            <span className="text-[12px] italic text-muted-foreground">
+              — đã kéo hết —
+            </span>
+          ) : (
+            poolGroups.map((g) => {
+              const head = g.chipIds[0]!;
+              return (
+                <span
+                  key={g.content}
+                  draggable={!disabled}
+                  onDragStart={(e) => {
+                    if (disabled) return;
+                    e.dataTransfer.setData("text/plain", head);
+                    e.dataTransfer.effectAllowed = "move";
+                    setDragging(head);
+                  }}
+                  onDragEnd={() => setDragging(null)}
+                  className={cn(
+                    "inline-flex items-center rounded-lg border bg-card px-3 py-1.5 text-[13px] shadow-sm transition-all",
+                    disabled
+                      ? "opacity-60"
+                      : "cursor-grab hover:border-primary/50 hover:-translate-y-px active:cursor-grabbing",
+                  )}
+                >
+                  {g.content}
+                  {g.chipIds.length > 1 && (
+                    <span className="ml-1 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary/15 px-1 text-[10px] font-bold text-primary">
+                      × {g.chipIds.length}
+                    </span>
+                  )}
+                </span>
+              );
+            })
+          )}
+        </div>
       </div>
     </div>
+  );
+}
+
+function DropZoneChip({
+  zoneIdx,
+  filledChipId,
+  poolLookup,
+  isHotTarget,
+  onDropChip,
+  onClear,
+}: {
+  zoneIdx: number;
+  filledChipId?: string;
+  poolLookup: Array<{ chipId: string; content: string }>;
+  isHotTarget: boolean;
+  onDropChip(zoneIdx: number, chipId: string): void;
+  onClear(): void;
+}) {
+  const [isOver, setIsOver] = useState(false);
+  const chip = filledChipId
+    ? poolLookup.find((c) => c.chipId === filledChipId)
+    : null;
+  return (
+    <span
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        setIsOver(true);
+      }}
+      onDragLeave={() => setIsOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        const chipId = e.dataTransfer.getData("text/plain");
+        if (chipId) onDropChip(zoneIdx, chipId);
+        setIsOver(false);
+      }}
+      onClick={() => chip && onClear()}
+      className={cn(
+        "inline-flex min-w-[80px] items-center justify-center gap-1 rounded-md border-2 px-2 py-0.5 align-middle text-[13px] font-semibold transition-colors",
+        chip
+          ? "border-primary bg-primary/10 text-primary cursor-pointer hover:bg-primary/15"
+          : isOver
+            ? "border-primary bg-primary/8 text-primary"
+            : isHotTarget
+              ? "border-dashed border-primary/60 bg-primary/4 text-primary/70"
+              : "border-dashed border-muted-foreground/40 text-muted-foreground",
+      )}
+    >
+      <span className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-500 text-[9px] font-bold text-white">
+        {zoneIdx + 1}
+      </span>
+      {chip ? chip.content : <span className="italic opacity-70">…</span>}
+    </span>
   );
 }
 

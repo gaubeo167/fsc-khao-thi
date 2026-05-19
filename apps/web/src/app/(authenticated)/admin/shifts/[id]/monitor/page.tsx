@@ -261,19 +261,8 @@ export default function MonitorPage() {
     return () => clearInterval(id);
   }, []);
 
-  useEffect(() => {
-    // Attempts + shifts are now synced via Firestore onSnapshot —
-    // cross-tab updates are automatic. Only the (still-local) proctor
-    // events store needs the localStorage event hook.
-    if (typeof window === "undefined") return;
-    function onStorage(e: StorageEvent) {
-      if (e.key === "fsc-proctor-events") {
-        useProctorStore.persist.rehydrate();
-      }
-    }
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, []);
+  // Cross-tab / cross-device sync is now via Firestore onSnapshot for
+  // attempts, shifts, and proctor events — no localStorage hook needed.
 
   // UI state
   const [proctorTarget, setProctorTarget] = useState<{

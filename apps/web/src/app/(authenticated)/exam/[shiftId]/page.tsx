@@ -151,6 +151,28 @@ export default function ExamPage() {
     );
   }
 
+  // Late-join cutoff: once `startAt + lateJoinMinutes` has passed,
+  // students who haven't started yet cannot enter. Existing attempts
+  // (already in-progress) can still continue until endAt.
+  if (!existingAttempt) {
+    const lateMin = shift.lateJoinMinutes ?? 0;
+    const cutoff =
+      new Date(shift.startAt).getTime() + lateMin * 60_000;
+    if (Date.now() > cutoff) {
+      const cutoffStr = new Date(cutoff).toLocaleTimeString("vi-VN", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      return (
+        <Gate
+          title="Đã hết giờ vào muộn"
+          hint={`Ca thi cho phép vào muộn tối đa ${lateMin} phút (đến ${cutoffStr}). Bạn không thể vào ca thi này nữa. Liên hệ giáo viên giám sát để được hỗ trợ.`}
+          backHref="/my-exams"
+        />
+      );
+    }
+  }
+
   if (questions.length === 0) {
     return (
       <Gate
