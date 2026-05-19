@@ -178,6 +178,7 @@ export function ShiftWizard({ open, onOpenChange, editing }: Props) {
   const subjects = useSubjectsStore((s) => s.subjects);
   const packages = usePackagesStore((s) => s.packages);
   const blueprints = useBlueprintsStore((s) => s.blueprints);
+  const generated = useGeneratedStore((s) => s.generated);
   const users = useUsersStore((s) => s.users);
   const createShift = useShiftsStore((s) => s.create);
   const updateShift = useShiftsStore((s) => s.update);
@@ -337,17 +338,35 @@ export function ShiftWizard({ open, onOpenChange, editing }: Props) {
         return "Điểm tối đa phải > 0.";
       }
       if (state.scoring.mode === "manual") {
-        // Resolve blueprint pool to validate sum.
+        // Validate sum PER VARIANT — each generated đề must sum to
+        // maxScore. (Older code summed the whole blueprint pool, which
+        // gave a false negative when the package had multiple đề and
+        // each was independently balanced.)
         const pkg = packages.find((p) => p.id === state.packageId);
-        const bp = pkg
-          ? blueprints.find((b) => b.id === pkg.blueprintId)
-          : null;
-        if (bp) {
-          const ids = bp.topics.flatMap((t) => t.pickedQuestionIds);
-          const sum = sumManualPerQuestion(state.scoring, ids);
-          const diff = Math.abs(sum - state.scoring.maxScore);
-          if (diff > 0.001) {
-            return `Tổng điểm thủ công (${formatScore(sum)}) phải bằng điểm tối đa (${formatScore(state.scoring.maxScore)}).`;
+        const variants = pkg
+          ? generated.filter((g) => g.packageId === pkg.id)
+          : [];
+        if (variants.length > 0) {
+          for (const v of variants) {
+            const sum = sumManualPerQuestion(state.scoring, v.questionIds);
+            const diff = Math.abs(sum - state.scoring.maxScore);
+            if (diff > 0.001) {
+              return `${v.name}: tổng điểm thủ công (${formatScore(sum)}) phải bằng điểm tối đa (${formatScore(state.scoring.maxScore)}).`;
+            }
+          }
+        } else {
+          // No đề generated yet → fall back to the blueprint pool
+          // check so legacy / pre-generation flows still validate.
+          const bp = pkg
+            ? blueprints.find((b) => b.id === pkg.blueprintId)
+            : null;
+          if (bp) {
+            const ids = bp.topics.flatMap((t) => t.pickedQuestionIds);
+            const sum = sumManualPerQuestion(state.scoring, ids);
+            const diff = Math.abs(sum - state.scoring.maxScore);
+            if (diff > 0.001) {
+              return `Tổng điểm thủ công trên pool (${formatScore(sum)}) phải bằng điểm tối đa (${formatScore(state.scoring.maxScore)}). Sinh đề trước để validate theo từng đề.`;
+            }
           }
         }
       }
