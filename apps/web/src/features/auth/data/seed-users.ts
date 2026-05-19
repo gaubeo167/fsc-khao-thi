@@ -64,6 +64,11 @@ export interface SeedUser {
   username?: string;
   parentPhone?: string;
   parentEmail?: string;
+  /** Personal contact email of the student — admin's optional input
+   *  at create time. Firebase Auth uses the synthetic `{username}@…`
+   *  address; this field is just for notifications / password reset
+   *  workflows. Staff don't use this — their `email` is real. */
+  contactEmail?: string;
   status: "active" | "suspended" | "invited";
   createdAt: string;
 }

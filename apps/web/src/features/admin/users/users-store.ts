@@ -142,6 +142,13 @@ export const useUsersStore = create<UsersState & UsersActions>()((set, get) => (
         status: input.status ?? "active",
         studentCode: resolved.studentCode,
         username: resolved.username,
+        // For students, the synthetic email IS the Firebase Auth
+        // identity. Admin's typed `input.email` becomes the contact
+        // email used for password-reset / notifications.
+        contactEmail:
+          input.role === "student" && input.email?.trim()
+            ? input.email.trim().toLowerCase()
+            : undefined,
         parentPhone: input.parentPhone,
         parentEmail: input.parentEmail,
         createdAt: now,
@@ -187,6 +194,13 @@ export const useUsersStore = create<UsersState & UsersActions>()((set, get) => (
         status: input.status ?? "active",
         studentCode: resolved.studentCode,
         username: resolved.username,
+        // For students, the synthetic email IS the Firebase Auth
+        // identity. Admin's typed `input.email` becomes the contact
+        // email used for password-reset / notifications.
+        contactEmail:
+          input.role === "student" && input.email?.trim()
+            ? input.email.trim().toLowerCase()
+            : undefined,
         parentPhone: input.parentPhone,
         parentEmail: input.parentEmail,
         createdAt: now,
@@ -426,13 +440,11 @@ function resolveStudentAccount(
     );
   }
 
-  // Login email = supplied email (if real) OR synthetic. The real
-  // contact email goes through input.email when admin gave one;
-  // otherwise it stays null and we use the synthetic for Firebase Auth.
-  const loginEmail =
-    input.email && input.email.trim()
-      ? input.email.trim().toLowerCase()
-      : `${username}@students.fsc.local`;
-
+  // Firebase Auth always uses the synthetic email for students so the
+  // login flow can construct it directly from the typed username —
+  // NO Firestore lookup needed, NO mirror race. The real contact
+  // email (if admin provided one) lives separately on the profile
+  // doc for password-reset / notification purposes.
+  const loginEmail = `${username}@students.fsc.local`;
   return { loginEmail, username, studentCode };
 }

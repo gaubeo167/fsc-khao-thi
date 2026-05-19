@@ -117,17 +117,32 @@ export const useAuthStore = create<AuthState & AuthActions>()((set, get) => ({
       return { ok: true, session };
     }
 
-    // If the user typed a username / studentCode (not an email), look
-    // it up in the local users-store mirror to find the synthetic
-    // Firebase Auth email this account actually signs in with.
+    // Student login path: identifier is a username / studentCode.
+    // Two-shot strategy that doesn't depend on the users-store mirror
+    // (which may not be hydrated yet on first navigation):
+    //
+    //   1. Try the SYNTHETIC email pattern first
+    //      `{lowercased-identifier}@students.fsc.local`. Every HS
+    //      created after this change uses this address for Firebase
+    //      Auth, regardless of the contact email admin entered.
+    //   2. If that fails (legacy HS or staff typo), fall back to the
+    //      mirror lookup so existing accounts with real emails still
+    //      work.
     let loginIdentifier = identifier.trim();
+    let result;
     if (!loginIdentifier.includes("@")) {
-      const u = useUsersStore.getState().findByIdentifier(loginIdentifier);
-      if (u && u.email) loginIdentifier = u.email;
-      // If we can't resolve (mirror not loaded yet), Firebase Auth will
-      // reject and the UI shows "invalid credentials" — caller retries.
+      const synthetic = `${loginIdentifier.toLowerCase()}@students.fsc.local`;
+      result = await signInWithEmail(synthetic, password);
+      if (!result.ok) {
+        // Fallback: try real email resolved from the mirror.
+        const u = useUsersStore.getState().findByIdentifier(loginIdentifier);
+        if (u && u.email && u.email !== synthetic) {
+          result = await signInWithEmail(u.email, password);
+        }
+      }
+    } else {
+      result = await signInWithEmail(loginIdentifier, password);
     }
-    const result = await signInWithEmail(loginIdentifier, password);
     if (!result.ok) return result;
     if (!roleMatches(result.session.role)) {
       // Auth succeeded but the wrong tab was used — sign back out so
