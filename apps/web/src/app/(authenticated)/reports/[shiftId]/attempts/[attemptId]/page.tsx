@@ -463,8 +463,12 @@ function renderStudentAnswer(q: Question, ans: Answer | undefined) {
       if (ans.kind !== q.type || !ans.text.trim()) {
         return <span className="italic text-muted-foreground">Không có bài viết</span>;
       }
+      // Essay text contains markdown (images, math, formatting) the
+      // student typed in the rich editor. Render via RenderedContent
+      // so embedded ![alt](data:…) images, $math$, **bold**, etc.
+      // display instead of the raw source.
       return (
-        <p className="whitespace-pre-wrap text-[12.5px]">{ans.text}</p>
+        <RenderedContent content={ans.text} className="text-[12.5px]" />
       );
     default:
       return <span className="italic text-muted-foreground">—</span>;
