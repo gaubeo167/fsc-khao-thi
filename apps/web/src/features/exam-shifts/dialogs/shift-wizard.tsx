@@ -1149,14 +1149,14 @@ function ScoringPanel({
         </p>
       </header>
 
-      {/* Max score */}
+      {/* Max score — preset 10 / 100 / Khác (custom input). */}
       <div className="grid gap-3 sm:grid-cols-[1fr_2fr]">
         <div>
           <Label className="text-[11px] font-bold uppercase tracking-[0.06em] text-foreground/65">
             Điểm tối đa
           </Label>
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
-            {[10, 20, 100].map((preset) => (
+            {[10, 100].map((preset) => (
               <button
                 key={preset}
                 type="button"
@@ -1171,18 +1171,23 @@ function ScoringPanel({
                 {preset}
               </button>
             ))}
-            <Input
-              type="number"
-              min={1}
-              max={1000}
-              step={0.5}
-              value={scoring.maxScore}
-              onChange={(e) => {
-                const v = Number(e.target.value);
-                if (Number.isFinite(v) && v > 0) patchScoring({ maxScore: v });
-              }}
-              className="h-8 w-20 text-center"
-            />
+            <span className="flex items-center gap-1 rounded-md border bg-card px-2 py-1">
+              <span className="text-[11px] font-semibold text-muted-foreground">
+                Khác
+              </span>
+              <Input
+                type="number"
+                min={1}
+                max={1000}
+                step={0.5}
+                value={scoring.maxScore}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  if (Number.isFinite(v) && v > 0) patchScoring({ maxScore: v });
+                }}
+                className="h-7 w-20 text-center text-[12px]"
+              />
+            </span>
           </div>
         </div>
 
@@ -1326,25 +1331,28 @@ function ScoringPanel({
                 </li>
               ))}
             </ul>
-            <p className="text-[11.5px] text-muted-foreground">
-              Tổng:{" "}
-              <span className="font-semibold text-foreground">
+            <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] text-emerald-900">
+              ✓ Tổng:{" "}
+              <span className="font-bold">
                 {formatScore(scoring.maxScore)} điểm
               </span>{" "}
-              ({diffCounts.easy} dễ + {diffCounts.medium} TB +{" "}
-              {diffCounts.hard} khó = {pool.length} câu)
+              ({diffCounts.easy} dễ × {formatScore(preview.easy)} đ +{" "}
+              {diffCounts.medium} TB × {formatScore(preview.medium)} đ +{" "}
+              {diffCounts.hard} khó × {formatScore(preview.hard)} đ
+              {" "}= {pool.length} câu){" "}
+              <span className="font-semibold">— đủ thang điểm</span>
             </p>
           </div>
         )}
 
         {scoring.mode === "manual" && (
           <div className="space-y-2">
-            <p className="text-[11px] text-muted-foreground">
-              Đặt điểm cho từng câu trong pool ({pool.length} câu).{" "}
-              <b>
-                Tổng phải = {formatScore(scoring.maxScore)} điểm
-              </b>
-              .
+            <p className="rounded-md border border-blue-200 bg-blue-50/60 px-3 py-2 text-[11.5px] text-blue-900">
+              <b>💡 Pool gồm {pool.length} câu</b> — đây là toàn bộ ngân hàng
+              của blueprint. Mỗi đề học sinh nhận được sinh từ pool này (có
+              thể chỉ chứa một phần). <b>Điểm của mỗi câu áp dụng cho mọi đề
+              chứa nó</b> — đảm bảo công bằng giữa các bản đề khác nhau.{" "}
+              <b>Tổng pool phải = {formatScore(scoring.maxScore)} đ</b>.
             </p>
             <ul className="max-h-[300px] space-y-1.5 overflow-y-auto rounded-md border bg-muted/20 p-2">
               {pool.map((q, idx) => (
