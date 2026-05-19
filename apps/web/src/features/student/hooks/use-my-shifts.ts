@@ -24,14 +24,16 @@ export interface MyShift {
 /**
  * Resolve every shift the currently signed-in *student* is eligible for.
  *
- * A student belongs to a shift when either:
- *   1. They are listed explicitly in `room.studentIds` (new wizard), or
- *   2. They aren't listed anywhere yet but the shift's `classIds` covers
- *      a class whose `code` matches the student's `className` — this is
- *      the legacy fallback for shifts created before Step 4 saved
- *      student-level assignments.
+ * Strict roster rule: the student MUST be listed explicitly in
+ * `room.studentIds` for the shift. This freezes the roster at shift
+ * creation time — adding a student to a class AFTER the shift was
+ * created doesn't auto-grant them entry. Admin must add the student
+ * to a room via the wizard's edit flow.
  *
- * Campus scoping is enforced via `shift.campusId === session.campusId`.
+ * (Previously there was a legacy `className`-join fallback that
+ * auto-included anyone whose className matched a shift's classIds.
+ * Per requirement "Học sinh tạo mới được gán vào lớp sau khi ca thi
+ * đã tạo sẽ không được vào thi", that fallback is gone.)
  */
 export function useMyShifts(): MyShift[] {
   const session = useAuthStore((s) => s.session);
@@ -51,38 +53,24 @@ export function useMyShifts(): MyShift[] {
     for (const sh of shifts) {
       if (sh.campusId !== session.campusId) continue;
 
-      // Find the room (if any) listing the student explicitly.
+      // Find the room listing the student explicitly. Without one,
+      // the student is NOT eligible — roster is frozen at create time.
       const explicitRoom = sh.rooms.find((r) =>
         (r.studentIds ?? []).includes(studentId),
       );
-      let classId: string | null = null;
-      if (!explicitRoom) {
-        // Legacy: derive eligibility from shift.classIds + className join.
-        const codes = new Set(
-          myClasses
-            .filter((c) => sh.classIds.includes(c.id))
-            .map((c) => c.code),
-        );
-        const matched = className && codes.has(className);
-        if (!matched) continue;
-        classId =
-          myClasses.find(
-            (c) => c.code === className && sh.classIds.includes(c.id),
-          )?.id ?? null;
-      } else {
-        // The room's classIds may carry one or more classes — pick the
-        // one matching this student's className if possible.
-        classId =
-          (className
-            ? myClasses.find(
-                (c) =>
-                  c.code === className &&
-                  explicitRoom.classIds.includes(c.id),
-              )?.id
-            : null) ??
-          explicitRoom.classIds[0] ??
-          null;
-      }
+      if (!explicitRoom) continue;
+      // The room's classIds may carry one or more classes — pick the
+      // one matching this student's className if possible.
+      const classId: string | null =
+        (className
+          ? myClasses.find(
+              (c) =>
+                c.code === className &&
+                explicitRoom.classIds.includes(c.id),
+            )?.id
+          : null) ??
+        explicitRoom.classIds[0] ??
+        null;
 
       out.push({
         shift: sh,
