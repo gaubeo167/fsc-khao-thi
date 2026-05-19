@@ -1132,8 +1132,41 @@ function ScoringPanel({
       .filter((q): q is NonNullable<typeof q> => !!q);
   }, [activeVariant, bp, allQuestions]);
 
-  const diffCounts = countByDifficulty(pool);
+  // Difficulty counts. With a generated đề active, count its actual
+  // questions. Otherwise project from the package matrix so the
+  // weights table reflects the "câu / đề" the student will see, not
+  // the entire blueprint pool.
+  const diffCounts = useMemo(() => {
+    if (activeVariant) return countByDifficulty(pool);
+    if (pkg) {
+      return pkg.matrix.reduce(
+        (acc, row) => ({
+          easy: acc.easy + row.easyCount,
+          medium: acc.medium + row.mediumCount,
+          hard: acc.hard + row.hardCount,
+        }),
+        { easy: 0, medium: 0, hard: 0 },
+      );
+    }
+    return countByDifficulty(pool);
+  }, [activeVariant, pkg, pool]);
   const scoring = state.scoring;
+  // Number of câu per đề the student actually takes. With a generated
+  // variant selected, that's exactly questionIds.length. Without a
+  // variant (pre-generation) we fall back to the package matrix sum
+  // — that's the "câu/đề" the package guarantees per generated đề.
+  const perExamCount = useMemo(() => {
+    if (activeVariant) return activeVariant.questionIds.length;
+    if (!pkg) return pool.length;
+    return pkg.matrix.reduce(
+      (acc, row) => acc + row.easyCount + row.mediumCount + row.hardCount,
+      0,
+    );
+  }, [activeVariant, pkg, pool.length]);
+  // For chia đều / theo độ khó: divide by perExamCount, not pool.length.
+  // For thủ công: pool.length when no đề (admin manages full pool) OR
+  // perExamCount when a đề is active (admin sees only that đề's 8 câu).
+  const divisorForEvenSplit = perExamCount > 0 ? perExamCount : pool.length;
   // Which question (if any) is currently being viewed in the detail
   // dialog. Click the eye icon on a row → set to that question →
   // ViewQuestionDialog opens with full content.
@@ -1325,10 +1358,11 @@ function ScoringPanel({
             <p>
               Mỗi câu trong đề ={" "}
               <span className="font-semibold text-foreground">
-                {formatScore(scoring.maxScore / Math.max(1, pool.length))}{" "}
+                {formatScore(scoring.maxScore / Math.max(1, divisorForEvenSplit))}{" "}
                 điểm
               </span>{" "}
-              · {pool.length} câu × {formatScore(scoring.maxScore / Math.max(1, pool.length))} ={" "}
+              · {divisorForEvenSplit} câu/đề ×{" "}
+              {formatScore(scoring.maxScore / Math.max(1, divisorForEvenSplit))} ={" "}
               <b>{formatScore(scoring.maxScore)} điểm</b>
             </p>
           </div>
@@ -1420,14 +1454,14 @@ function ScoringPanel({
               ))}
             </ul>
             <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] text-emerald-900">
-              ✓ Tổng:{" "}
+              ✓ Tổng mỗi đề:{" "}
               <span className="font-bold">
                 {formatScore(scoring.maxScore)} điểm
               </span>{" "}
               ({diffCounts.easy} dễ × {formatScore(preview.easy)} đ +{" "}
               {diffCounts.medium} TB × {formatScore(preview.medium)} đ +{" "}
               {diffCounts.hard} khó × {formatScore(preview.hard)} đ
-              {" "}= {pool.length} câu){" "}
+              {" "}= {diffCounts.easy + diffCounts.medium + diffCounts.hard} câu/đề){" "}
               <span className="font-semibold">— đủ thang điểm</span>
             </p>
           </div>

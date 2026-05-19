@@ -47,9 +47,14 @@ interface Props {
   /** Student username field is locked + read-only — typical for the
    *  edit dialog where the username is immutable after creation. */
   lockUsername?: boolean;
+  /** Student mã học sinh is locked + read-only — same treatment. */
+  lockStudentCode?: boolean;
   /** If editing an existing user, pass their id so the uniqueness
    *  check skips their own record. */
   editingUserId?: string;
+  /** Role the user had when the edit dialog opened. Used to restrict
+   *  role transitions: staff ↔ staff, student stays student. */
+  editingRole?: Role;
 }
 
 const ASSIGNABLE_FOR_SUPERADMIN: Role[] = [
@@ -70,7 +75,9 @@ export function UserFormFields({
   withOptionalPassword,
   withStatus,
   lockUsername,
+  lockStudentCode,
   editingUserId,
+  editingRole,
 }: Props) {
   const session = useAuthStore((s) => s.session);
   const campuses = useCampusesStore((s) => s.campuses);
@@ -87,9 +94,18 @@ export function UserFormFields({
   const gradeIds = (watch("gradeIds") as string[] | undefined) ?? [];
 
   const isSuperadmin = session?.role === "superadmin";
-  const allowedRoles = isSuperadmin
+  const baseRoles = isSuperadmin
     ? ASSIGNABLE_FOR_SUPERADMIN
     : ASSIGNABLE_FOR_CAMPUS_ADMIN;
+  // Role-transition guard for the edit flow: a student tài khoản is
+  // structurally different (login by username, parent contacts,
+  // student code) so we never let them flip into a staff role and
+  // vice-versa. Staff roles can rotate among themselves.
+  const allowedRoles = useMemo(() => {
+    if (!editingRole) return baseRoles; // create mode — any role allowed
+    if (editingRole === "student") return baseRoles.filter((r) => r === "student");
+    return baseRoles.filter((r) => r !== "student");
+  }, [baseRoles, editingRole]);
   const lockedCampus = isSuperadmin
     ? null
     : campuses.find((c) => c.id === session?.campusId);
@@ -225,6 +241,18 @@ export function UserFormFields({
             </option>
           ))}
         </Select>
+        {editingRole === "student" && (
+          <p className="mt-1 text-[11px] text-amber-700">
+            🔒 Tài khoản học sinh không thể chuyển sang vai trò khác — cấu
+            trúc dữ liệu khác hẳn. Cần thì tạo tài khoản mới.
+          </p>
+        )}
+        {editingRole && editingRole !== "student" && (
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            Chỉ chuyển đổi giữa các vai trò nhân viên (GV / TBM / Admin).
+            Không thể đổi sang học sinh.
+          </p>
+        )}
       </Field>
 
       <Field
@@ -279,16 +307,14 @@ export function UserFormFields({
       </Field>
 
       {(role === "teacher" || role === "subject-lead") && (
-        <div className="sm:col-span-2 space-y-3 rounded-xl border bg-surface-2/40 p-3">
-          <p className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-foreground/85">
-            <span aria-hidden>📚</span>
-            Môn dạy & khối phụ trách
+        <div className="sm:col-span-2 space-y-3">
+          {/* Subjects — strictly scoped: only subjects whose
+              `campusIds` include the selected campus. */}
+          <div className="space-y-2 rounded-xl border border-blue-200/70 bg-blue-50/30 p-4">
+          <p className="inline-flex items-center gap-2 text-[13px] font-semibold text-blue-900">
+            <span aria-hidden className="text-base">📚</span>
+            Môn dạy
           </p>
-
-          {/* Subjects multi-select — strictly scoped: only subjects
-              whose `campusIds` explicitly include the selected campus.
-              (Subjects without a campusIds list are legacy / mis-imported
-              and shouldn't bleed into other campuses' rosters.) */}
           {(() => {
             const rawEligible = selectedCampus
               ? allSubjects.filter(
@@ -306,8 +332,8 @@ export function UserFormFields({
             ).sort((a, b) => a.name.localeCompare(b.name, "vi"));
             return (
               <div>
-                <p className="mb-2 text-[12px] font-medium text-foreground/75">
-                  Môn dạy (tick các môn):
+                <p className="mb-2 text-[11.5px] text-blue-900/70">
+                  Tick các môn mà giáo viên này được phép giảng dạy:
                 </p>
                 {eligibleSubjects.length === 0 ? (
                   <p className="rounded-md border border-dashed bg-muted/20 px-3 py-2 text-[12px] text-muted-foreground">
@@ -362,7 +388,13 @@ export function UserFormFields({
             );
           })()}
 
-          {/* Grades multi-select */}
+          </div>
+          {/* 🎓 Khối phụ trách */}
+          <div className="space-y-2 rounded-xl border border-emerald-200/70 bg-emerald-50/30 p-4">
+          <p className="inline-flex items-center gap-2 text-[13px] font-semibold text-emerald-900">
+            <span aria-hidden className="text-base">🎓</span>
+            Khối phụ trách
+          </p>
           {(() => {
             const eligibleGrades = (
               selectedCampus
@@ -375,8 +407,8 @@ export function UserFormFields({
             );
             return (
               <div>
-                <p className="mb-2 text-[12px] font-medium text-foreground/75">
-                  Khối phụ trách:
+                <p className="mb-2 text-[11.5px] text-emerald-900/70">
+                  Tick các khối GV này quản lý học sinh:
                 </p>
                 {eligibleGrades.length === 0 ? (
                   <p className="rounded-md border border-dashed bg-muted/20 px-3 py-2 text-[12px] text-muted-foreground">
@@ -429,9 +461,13 @@ export function UserFormFields({
             );
           })()}
 
-          {/* Class-level student supervision — narrower than gradeIds.
-              If the teacher manages specific classes (not the whole
-              grade), admin picks them here. Empty = grade-level only. */}
+          </div>
+          {/* 🏫 Lớp quản lý — narrower than gradeIds. */}
+          <div className="space-y-2 rounded-xl border border-violet-200/70 bg-violet-50/30 p-4">
+          <p className="inline-flex items-center gap-2 text-[13px] font-semibold text-violet-900">
+            <span aria-hidden className="text-base">🏫</span>
+            Lớp quản lý (tuỳ chọn)
+          </p>
           {(() => {
             const classIds = (watch("classIds") as string[] | undefined) ?? [];
             const candidateClasses = (
@@ -448,13 +484,9 @@ export function UserFormFields({
               );
             return (
               <div>
-                <p className="mb-1 text-[12px] font-medium text-foreground/75">
-                  Lớp quản lý (tuỳ chọn — chi tiết hơn cấp khối):
-                </p>
-                <p className="mb-2 text-[11px] text-muted-foreground">
-                  Để trống = quản lý toàn bộ HS các <b>khối</b> đã chọn ở
-                  trên. Tick các lớp cụ thể để hẹp lại phạm vi quản lý HS
-                  (chỉ HS các lớp này thay vì toàn khối).
+                <p className="mb-2 text-[11.5px] text-violet-900/70">
+                  Để trống = quản lý toàn bộ HS các khối đã chọn. Tick lớp
+                  cụ thể để giới hạn phạm vi (chỉ HS các lớp này).
                 </p>
                 {candidateClasses.length === 0 ? (
                   <p className="rounded-md border border-dashed bg-muted/20 px-3 py-2 text-[12px] text-muted-foreground">
@@ -507,6 +539,7 @@ export function UserFormFields({
             );
           })()}
 
+          </div>
           {/* Legacy free-text label — kept for the "Bộ môn" column in users
               table where a single canonical subject is displayed. */}
           <Field
@@ -659,16 +692,29 @@ export function UserFormFields({
               </Field>
 
               <Field
-                label="Mã học sinh (tuỳ chọn)"
+                label={
+                  <span className="inline-flex items-center gap-1.5">
+                    Mã học sinh{lockStudentCode ? "" : " (tuỳ chọn)"}
+                    {lockStudentCode && (
+                      <span className="rounded-full bg-emerald-200 px-1.5 py-0.5 text-[10px] font-bold text-emerald-900">
+                        🔒 Cố định
+                      </span>
+                    )}
+                  </span>
+                }
                 error={errors.studentCode?.message as string | undefined}
                 className="sm:col-span-2"
               >
                 <Input
                   placeholder="vd: FSCCG-2024-001"
+                  readOnly={lockStudentCode}
+                  disabled={lockStudentCode}
                   {...register("studentCode")}
                 />
                 <p className="mt-1 text-[11px] text-emerald-800/70">
-                  Mã định danh để tìm kiếm / báo cáo. Để trống → tự sinh.
+                  {lockStudentCode
+                    ? "Mã học sinh đã được khoá sau khi tạo — định danh duy nhất, dùng cho báo cáo."
+                    : "Mã định danh để tìm kiếm / báo cáo. Để trống → tự sinh."}
                 </p>
               </Field>
             </div>

@@ -127,7 +127,9 @@ export function EditUserDialog({ user, onClose }: Props) {
             withStatus
             withOptionalPassword
             lockUsername
+            lockStudentCode
             editingUserId={user?.id}
+            editingRole={user?.role}
           />
 
           <DialogFooter>
