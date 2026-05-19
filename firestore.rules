@@ -61,16 +61,16 @@ service cloud.firestore {
     }
 
     // ───── /users — profile + role + scope ────────────────────────────────
-    // Read is allowed for any signed-in user so collection-level
-    // onSnapshot queries succeed. (Dynamic per-doc rules break list
-    // queries — Firestore denies them entirely.) Sensitive fields like
-    // password aren't stored in Firestore at all; emails/roles are
-    // already visible through enrollment lists elsewhere. UI does the
-    // per-campus filtering after read.
+    // Read is intentionally PUBLIC because the login page maps a typed
+    // username / mã HS to the underlying Firebase Auth email before
+    // calling signInWithEmailAndPassword — and that lookup runs BEFORE
+    // the user is signed in. Profile fields here don't include
+    // passwords or secrets; emails / roles are already exposed via
+    // enrollment lists. UI does per-campus filtering after read.
     //
     // Writes stay tightly gated.
     match /users/{userId} {
-      allow read: if isSignedIn();
+      allow read: if true;
       allow create: if isAdmin() && (
         isSuperadmin() ||
         request.resource.data.campusId == callerCampusId()

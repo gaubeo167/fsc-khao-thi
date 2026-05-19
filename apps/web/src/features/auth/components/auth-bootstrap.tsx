@@ -34,7 +34,11 @@ import { startAuthSubscription, useAuthStore } from "../state/auth-store";
 export function AuthBootstrap() {
   const dataUnsubsRef = useRef<Array<() => void>>([]);
 
-  // Auth subscription — mount once, kept alive.
+  // Auth subscription + early /users mirror.
+  // The /users mirror runs PRE-SIGNIN so the login form can map a typed
+  // username / mã HS → the underlying Firebase Auth email before
+  // calling signInWithEmailAndPassword. (Firestore rule has been
+  // relaxed to public-read on /users for this reason.)
   useEffect(() => {
     if (!isFirebaseConfigured()) {
       // eslint-disable-next-line no-console
@@ -45,8 +49,12 @@ export function AuthBootstrap() {
       useAuthStore.getState()._applySession(null);
       return;
     }
-    const unsub = startAuthSubscription();
-    return () => unsub();
+    const unsubAuth = startAuthSubscription();
+    const unsubUsers = subscribeUsers();
+    return () => {
+      unsubAuth();
+      unsubUsers();
+    };
   }, []);
 
   // Data subscriptions — start when signed in, tear down on signout.
