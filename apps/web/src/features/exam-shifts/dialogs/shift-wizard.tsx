@@ -116,6 +116,12 @@ interface WizardState {
   gradeId: string;
   subjectId: string;
   classIds: string[];
+  /** Explicit per-shift roster — uids of students who can take this
+   *  exam. Auto-seeded from "every student in selected classes" when
+   *  classes change, then admin can untick individuals in Step 1's
+   *  roster panel. Step 4 auto-distributes ONLY these students into
+   *  rooms — anyone unticked never sees the shift. */
+  selectedStudentIds: string[];
   packageId: string;
   startAt: string; // datetime-local format
   endAt: string;
@@ -145,6 +151,7 @@ function emptyState(): WizardState {
     gradeId: "",
     subjectId: "",
     classIds: [],
+    selectedStudentIds: [],
     packageId: "",
     startAt: toDatetimeLocal(start),
     endAt: toDatetimeLocal(end),
@@ -197,11 +204,18 @@ export function ShiftWizard({ open, onOpenChange, editing }: Props) {
     setError(null);
     setStep(1);
     if (editing) {
+      // Reconstruct selectedStudentIds from existing rooms so the
+      // Step 1 roster panel reflects what's actually frozen on the
+      // shift.
+      const existingStudentIds = Array.from(
+        new Set(editing.rooms.flatMap((r) => r.studentIds ?? [])),
+      );
       setState({
         name: editing.name,
         gradeId: editing.gradeId,
         subjectId: editing.subjectId,
         classIds: editing.classIds,
+        selectedStudentIds: existingStudentIds,
         packageId: editing.packageId,
         startAt: toDatetimeLocal(new Date(editing.startAt)),
         endAt: toDatetimeLocal(new Date(editing.endAt)),
@@ -901,7 +915,219 @@ function Step1Targets({
           </ul>
         )}
       </section>
+
+      {/* Roster picker — students of each selected class, tick-all by
+          default. Frozen at create time so HS thêm vào lớp sau đó
+          không tự vào được ca thi. */}
+      {state.classIds.length > 0 && (
+        <RosterPicker
+          classes={classes}
+          classIds={state.classIds}
+          selectedStudentIds={state.selectedStudentIds}
+          campusId={campusId}
+          onChange={(ids) =>
+            setState((s) => ({ ...s, selectedStudentIds: ids }))
+          }
+        />
+      )}
     </div>
+  );
+}
+
+/* ───────── Roster picker — student checklist per class ───────── */
+
+function RosterPicker({
+  classes,
+  classIds,
+  selectedStudentIds,
+  campusId,
+  onChange,
+}: {
+  classes: ReturnType<typeof useGradesStore.getState>["classes"];
+  classIds: string[];
+  selectedStudentIds: string[];
+  campusId: string | null;
+  onChange(next: string[]): void;
+}) {
+  const users = useUsersStore((s) => s.users);
+  // Group active students by class.code so the picker matches the
+  // existing `user.className === class.code` join.
+  const selectedClasses = useMemo(
+    () => classes.filter((c) => classIds.includes(c.id)),
+    [classes, classIds],
+  );
+  const studentsByClass = useMemo(() => {
+    const map = new Map<
+      string,
+      Array<{ id: string; name: string; studentCode?: string }>
+    >();
+    for (const c of selectedClasses) {
+      const list = users
+        .filter(
+          (u) =>
+            u.role === "student" &&
+            u.status === "active" &&
+            u.className === c.code &&
+            (campusId ? u.campusId === campusId : true),
+        )
+        .sort((a, b) => a.name.localeCompare(b.name, "vi"))
+        .map((u) => ({ id: u.id, name: u.name, studentCode: u.studentCode }));
+      map.set(c.id, list);
+    }
+    return map;
+  }, [selectedClasses, users, campusId]);
+
+  // Seed selectedStudentIds with "everyone in selected classes" when
+  // the selection is still empty for a class. Don't overwrite ticks
+  // the admin already adjusted.
+  useEffect(() => {
+    const allEligible = new Set<string>();
+    for (const list of studentsByClass.values())
+      for (const s of list) allEligible.add(s.id);
+    // Filter out ticked HS that left the eligible set (class was
+    // unticked) so they don't sneak back in.
+    const prunedExisting = selectedStudentIds.filter((id) =>
+      allEligible.has(id),
+    );
+    // Add anyone not yet in the picked set whose class was *newly*
+    // added. We detect "newly added" by checking if NO HS from that
+    // class is ticked yet — then auto-tick all of them.
+    const next = new Set(prunedExisting);
+    for (const [, list] of studentsByClass) {
+      const anyTicked = list.some((s) => next.has(s.id));
+      if (!anyTicked) for (const s of list) next.add(s.id);
+    }
+    const arr = Array.from(next);
+    // Only commit when something changed (avoid infinite re-render).
+    if (
+      arr.length !== selectedStudentIds.length ||
+      arr.some((id, i) => id !== selectedStudentIds[i])
+    ) {
+      onChange(arr);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [studentsByClass]);
+
+  function toggle(id: string) {
+    onChange(
+      selectedStudentIds.includes(id)
+        ? selectedStudentIds.filter((x) => x !== id)
+        : [...selectedStudentIds, id],
+    );
+  }
+  function tickAll(classId: string) {
+    const list = studentsByClass.get(classId) ?? [];
+    const next = new Set(selectedStudentIds);
+    for (const s of list) next.add(s.id);
+    onChange(Array.from(next));
+  }
+  function untickAll(classId: string) {
+    const list = studentsByClass.get(classId) ?? [];
+    const ids = new Set(list.map((s) => s.id));
+    onChange(selectedStudentIds.filter((id) => !ids.has(id)));
+  }
+
+  const totalEligible = Array.from(studentsByClass.values()).reduce(
+    (a, l) => a + l.length,
+    0,
+  );
+
+  return (
+    <section className="rounded-xl border bg-surface-2/40 p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <p className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-foreground/85">
+          👥 Học sinh được vào thi
+          <span className="text-meta font-normal">
+            — {selectedStudentIds.length} / {totalEligible} HS được chọn
+          </span>
+        </p>
+        <p className="text-[11px] text-muted-foreground">
+          Bỏ tick để loại HS khỏi ca thi này. Roster frozen — HS thêm vào lớp
+          sau khi tạo ca thi sẽ KHÔNG tự vào thi.
+        </p>
+      </div>
+
+      {selectedClasses.length === 0 ? (
+        <p className="rounded-md border border-dashed bg-muted/20 px-3 py-2 text-[12px] text-muted-foreground">
+          Chọn lớp ở trên trước.
+        </p>
+      ) : (
+        <div className="space-y-3">
+          {selectedClasses.map((c) => {
+            const list = studentsByClass.get(c.id) ?? [];
+            const tickedCount = list.filter((s) =>
+              selectedStudentIds.includes(s.id),
+            ).length;
+            return (
+              <div key={c.id} className="rounded-lg border bg-card p-3">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-[12.5px] font-semibold text-foreground/85">
+                    🏫 {c.name}{" "}
+                    <span className="text-muted-foreground font-normal">
+                      — {tickedCount} / {list.length} HS
+                    </span>
+                  </p>
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => tickAll(c.id)}
+                      className="rounded-md border bg-card px-2 py-0.5 text-[11px] font-semibold hover:bg-accent/30"
+                    >
+                      Tick all
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => untickAll(c.id)}
+                      className="rounded-md border bg-card px-2 py-0.5 text-[11px] font-semibold hover:bg-accent/30"
+                    >
+                      Bỏ tick
+                    </button>
+                  </div>
+                </div>
+                {list.length === 0 ? (
+                  <p className="rounded-md border border-dashed bg-muted/20 px-3 py-1.5 text-[11.5px] text-muted-foreground">
+                    Lớp chưa có HS active.
+                  </p>
+                ) : (
+                  <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+                    {list.map((s) => {
+                      const checked = selectedStudentIds.includes(s.id);
+                      return (
+                        <li key={s.id}>
+                          <label
+                            className={cn(
+                              "flex cursor-pointer items-center gap-2 rounded-md border px-2.5 py-1.5 transition-colors",
+                              checked
+                                ? "border-primary bg-primary/5"
+                                : "border-border bg-card hover:border-primary/40",
+                            )}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggle(s.id)}
+                              className="h-3.5 w-3.5 accent-[var(--color-primary)]"
+                            />
+                            <span className="min-w-0 flex-1 truncate text-[12.5px]">
+                              {s.name}
+                              {s.studentCode && (
+                                <span className="ml-1 text-[10.5px] text-muted-foreground">
+                                  ({s.studentCode})
+                                </span>
+                              )}
+                            </span>
+                          </label>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -1892,15 +2118,22 @@ function Step4Rooms({
         .filter((c) => state.classIds.includes(c.id))
         .map((c) => c.code),
     );
+    // Only candidates: in selected classes AND ticked in Step 1's
+    // roster picker. Anyone unticked never enters Step 4's auto-
+    // distribute or the per-room assignment UI.
+    const selectedSet = new Set(state.selectedStudentIds);
     return users.filter(
       (u) =>
         u.role === "student" &&
         u.status === "active" &&
         (campusId ? u.campusId === campusId : true) &&
         u.className != null &&
-        codes.has(u.className),
+        codes.has(u.className) &&
+        // Empty selectedStudentIds = legacy (no roster picker yet) →
+        // include everyone, otherwise respect the explicit selection.
+        (state.selectedStudentIds.length === 0 || selectedSet.has(u.id)),
     );
-  }, [users, classes, state.classIds, campusId]);
+  }, [users, classes, state.classIds, state.selectedStudentIds, campusId]);
 
   const studentById = useMemo(() => {
     const m = new Map<string, (typeof studentsInScope)[number]>();
