@@ -1,18 +1,23 @@
 import { z } from "zod";
 
-// Loose check — any reasonable email or a U-xxx system id. The legacy
-// `@fpt.edu.vn` requirement was removed so accounts with public-domain
-// emails (gmail, school admin imports, etc.) can sign in.
-const LOOSE_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const USER_ID_RE = /^U-\d{3,}$/i;
+// Three accepted shapes:
+//   - real email (staff)              `gv.toan@school.edu.vn`
+//   - legacy system id                `U-001`
+//   - username / studentCode (HS)     `vietlam167`, `FSCCG-2024-001`
+// The role tab in the login UI decides which is required; the schema
+// only checks the input is non-empty + at least 3 chars + made of
+// reasonable identifier characters.
+const IDENTIFIER_RE = /^[A-Za-z0-9._@\-+]+$/;
 
 export const LoginFormSchema = z.object({
   identifier: z
     .string()
-    .min(1, "Vui lòng nhập email hoặc mã người dùng")
+    .trim()
+    .min(3, "Tài khoản tối thiểu 3 ký tự")
+    .max(120, "Tài khoản quá dài")
     .refine(
-      (v) => LOOSE_EMAIL_RE.test(v) || USER_ID_RE.test(v),
-      "Nhập đúng định dạng email hoặc mã người dùng (U-xxx).",
+      (v) => IDENTIFIER_RE.test(v),
+      "Tài khoản chỉ gồm chữ, số, dấu chấm, gạch ngang, gạch dưới, @ hoặc +.",
     ),
   password: z
     .string()
