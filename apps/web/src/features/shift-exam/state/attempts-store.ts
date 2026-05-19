@@ -351,7 +351,42 @@ export const useAttemptsStore = create<State & Actions>()((set, get) => ({
   },
 
   _applySnapshot(rows) {
-    set({ attempts: rows, hydrated: true });
+    // IMPORTANT: Firestore snapshots fire ~50–500ms after each write.
+    // If we blindly replace the array, an in-progress essay typed
+    // BETWEEN write+snapshot gets clobbered by the older Firestore
+    // copy → the editor's value prop snaps back, contentEditable
+    // resets innerHTML, and the caret jumps to the start (caused the
+    // "đẹp rất quê Làng" reverse-typing bug).
+    //
+    // Strategy: for attempts currently being worked on (submittedAt
+    // null) keep the LOCAL copy — the local state already has every
+    // keystroke. For everyone else (submitted attempts, attempts
+    // belonging to other students viewable by staff), trust the
+    // snapshot.
+    const localById = new Map(get().attempts.map((a) => [a.id, a]));
+    const merged = rows.map((row) => {
+      const local = localById.get(row.id);
+      if (local && local.submittedAt == null) {
+        // Pull non-answer fields from snapshot (e.g. proctor flags an
+        // attempt → recentEvents grows) but keep local answers /
+        // markedForReview so in-flight edits aren't lost.
+        return {
+          ...row,
+          answers: local.answers,
+          markedForReview: local.markedForReview,
+        };
+      }
+      return row;
+    });
+    // Append local-only in-progress attempts the snapshot doesn't
+    // know about yet (just-created, write hasn't landed).
+    const seen = new Set(merged.map((a) => a.id));
+    for (const a of get().attempts) {
+      if (!seen.has(a.id) && a.submittedAt == null) {
+        merged.push(a);
+      }
+    }
+    set({ attempts: merged, hydrated: true });
   },
 }));
 
