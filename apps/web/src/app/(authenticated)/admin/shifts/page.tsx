@@ -45,6 +45,8 @@ import {
   type ShiftStatus,
 } from "@/features/exam-shifts/data/types";
 import { useShiftsStore } from "@/features/exam-shifts/state/shifts-store";
+import { toast } from "sonner";
+
 import { useAttemptsStore } from "@/features/shift-exam/state/attempts-store";
 import { useUsersStore } from "@/features/admin/users/users-store";
 import { useBlueprintsStore } from "@/features/exams/state/blueprints-store";
@@ -184,6 +186,17 @@ export default function ShiftsPage() {
   function openEdit(s: ExamShift) {
     if (effectiveShiftStatus(s) === "in-progress") {
       setForceStop({ shift: s, intent: "edit" });
+      return;
+    }
+    // Block edit when student attempt data exists — once a HS has
+    // started or submitted, the questions / scoring / roster shouldn't
+    // shift under their feet. Display banner instead of opening wizard.
+    const hasAttempts = attempts.some((a) => a.shiftId === s.id);
+    if (hasAttempts) {
+      toast.error(
+        `Không thể chỉnh sửa "${s.name}" — đã có dữ liệu làm bài của học sinh. Ca thi đã có HS thi sẽ được khoá để bảo toàn minh chứng.`,
+        { duration: 6000 },
+      );
       return;
     }
     setEditing(s);
@@ -689,16 +702,44 @@ export default function ShiftsPage() {
         title="Xoá ca thi?"
         description={
           deleting ? (
-            <>
-              <span className="font-mono">{deleting.id}</span> · {deleting.name}.
-              Hành động không thể hoàn tác.
-            </>
+            (() => {
+              const attemptCount = attempts.filter(
+                (a) => a.shiftId === deleting.id,
+              ).length;
+              if (attemptCount > 0) {
+                return (
+                  <>
+                    🔒 <b>Không thể xoá ca thi này.</b> Đã có{" "}
+                    <b>{attemptCount}</b> lượt làm bài của học sinh được ghi
+                    nhận. Dữ liệu thi của HS không được phép xoá để bảo toàn
+                    minh chứng / kết quả. Có thể đổi trạng thái sang "Đã huỷ"
+                    để ẩn ca thi khỏi danh sách hoạt động.
+                  </>
+                );
+              }
+              return (
+                <>
+                  <span className="font-mono">{deleting.id}</span> ·{" "}
+                  {deleting.name}. Hành động không thể hoàn tác.
+                </>
+              );
+            })()
           ) : (
             ""
           )
         }
         confirmLabel="Xoá ca thi"
-        onConfirm={() => deleting && removeShift(deleting.id)}
+        disableConfirm={
+          deleting
+            ? attempts.some((a) => a.shiftId === deleting.id)
+            : false
+        }
+        onConfirm={() => {
+          if (!deleting) return;
+          const hasData = attempts.some((a) => a.shiftId === deleting.id);
+          if (hasData) return;
+          removeShift(deleting.id);
+        }}
       />
 
       {gradingTarget && (

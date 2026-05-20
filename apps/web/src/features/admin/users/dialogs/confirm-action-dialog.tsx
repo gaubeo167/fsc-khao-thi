@@ -19,6 +19,9 @@ interface Props {
   description: React.ReactNode;
   confirmLabel: string;
   variant?: "default" | "destructive";
+  /** Block the confirm button — used when description renders a
+   *  "cannot proceed" notice (e.g. data integrity guard). */
+  disableConfirm?: boolean;
   onConfirm: () => void;
 }
 
@@ -29,6 +32,7 @@ export function ConfirmActionDialog({
   description,
   confirmLabel,
   variant = "default",
+  disableConfirm,
   onConfirm,
 }: Props) {
   return (
@@ -56,7 +60,9 @@ export function ConfirmActionDialog({
           </Button>
           <Button
             variant={variant === "destructive" ? "destructive" : "default"}
+            disabled={disableConfirm}
             onClick={() => {
+              if (disableConfirm) return;
               onConfirm();
               onOpenChange(false);
             }}

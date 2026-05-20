@@ -82,6 +82,7 @@ import {
   indexQuestions,
 } from "@/features/exams/lib/blueprint-stats";
 import { useBlueprintsStore } from "@/features/exams/state/blueprints-store";
+import { useShiftsStore } from "@/features/exam-shifts/state/shifts-store";
 import { useGeneratedStore } from "@/features/exams/state/generated-store";
 import { usePackagesStore } from "@/features/exams/state/packages-store";
 
@@ -98,6 +99,7 @@ export default function ExamBlueprintsPage() {
   const generated = useGeneratedStore((s) => s.generated);
   const removeGenerated = useGeneratedStore((s) => s.remove);
   const removeGeneratedByPackage = useGeneratedStore((s) => s.removeByPackage);
+  const shifts = useShiftsStore((s) => s.shifts);
   const allQuestions = useQuestionsStore((s) => s.questions);
   const subjects = useSubjectsStore((s) => s.subjects);
   const grades = useGradesStore((s) => s.grades);
@@ -488,21 +490,47 @@ export default function ExamBlueprintsPage() {
         title="Xoá gói đề?"
         description={
           deletingPackage ? (
-            <>
-              <span className="font-mono">{deletingPackage.id}</span> ·{" "}
-              {deletingPackage.name}. Tất cả đề đã sinh từ gói đề này sẽ bị xoá
-              theo.
-            </>
+            (() => {
+              const refShifts = shifts.filter(
+                (sh) => sh.packageId === deletingPackage.id,
+              );
+              if (refShifts.length > 0) {
+                return (
+                  <>
+                    🔒 <b>Không thể xoá gói đề này.</b>{" "}
+                    {refShifts.length} ca thi đang sử dụng:{" "}
+                    <span className="font-mono">
+                      {refShifts.map((s) => s.name).join(", ")}
+                    </span>
+                    . Xoá hoặc dời ca thi sang gói khác trước, sau đó mới
+                    xoá gói đề.
+                  </>
+                );
+              }
+              return (
+                <>
+                  <span className="font-mono">{deletingPackage.id}</span> ·{" "}
+                  {deletingPackage.name}. Tất cả đề đã sinh từ gói đề này sẽ bị
+                  xoá theo.
+                </>
+              );
+            })()
           ) : (
             ""
           )
         }
         confirmLabel="Xoá gói đề"
+        disableConfirm={
+          deletingPackage
+            ? shifts.some((sh) => sh.packageId === deletingPackage.id)
+            : false
+        }
         onConfirm={() => {
-          if (deletingPackage) {
-            removeGeneratedByPackage(deletingPackage.id);
-            removePackage(deletingPackage.id);
-          }
+          if (!deletingPackage) return;
+          const inUse = shifts.some((sh) => sh.packageId === deletingPackage.id);
+          if (inUse) return;
+          removeGeneratedByPackage(deletingPackage.id);
+          removePackage(deletingPackage.id);
         }}
       />
 
