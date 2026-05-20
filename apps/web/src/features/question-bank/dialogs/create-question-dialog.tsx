@@ -63,13 +63,39 @@ export function CreateQuestionDialog({ open, onOpenChange, editing }: Props) {
   const update = useQuestionsStore((s) => s.update);
 
   const [type, setType] = useState<QuestionType | null>(null);
+  // Lifted from QuestionForm so the outer Dialog can intercept outside-
+  // clicks / ESC and exit them instead of closing the whole editor.
+  const [previewing, setPreviewing] = useState(false);
+  const [tryingIt, setTryingIt] = useState(false);
 
   useEffect(() => {
     if (open && editing) setType(editing.type);
-    if (!open) setType(null);
+    if (!open) {
+      setType(null);
+      setPreviewing(false);
+      setTryingIt(false);
+    }
   }, [open, editing]);
 
   const isEdit = Boolean(editing);
+
+  /** UX rules for closing the editor:
+   *   - Overlay click never closes — too easy to lose work in a long form.
+   *   - ESC: if in preview/try-it, exit those (back to editor); else
+   *     also blocked (force user to click ✕ or "Quay lại").
+   * Returns true when an inner overlay panel was exited and the close
+   * gesture should be swallowed. */
+  function exitOverlayIfAny(): boolean {
+    if (previewing) {
+      setPreviewing(false);
+      return true;
+    }
+    if (tryingIt) {
+      setTryingIt(false);
+      return true;
+    }
+    return false;
+  }
 
   function handleSubmit(values: QuestionFormValues, finalStatus: Question["status"]) {
     try {
@@ -128,7 +154,25 @@ export function CreateQuestionDialog({ open, onOpenChange, editing }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto">
+      <DialogContent
+        className="max-w-3xl max-h-[92vh] overflow-y-auto"
+        onPointerDownOutside={(e) => {
+          // Always swallow the close gesture. If user was in preview /
+          // try-it, exit those panels back to the editor; otherwise
+          // do nothing — they need to click ✕ or "Quay lại" to leave.
+          e.preventDefault();
+          exitOverlayIfAny();
+        }}
+        onInteractOutside={(e) => {
+          // Same guard for non-pointer interactions (focus loss to a
+          // toast, etc.) so the dialog doesn't close itself.
+          e.preventDefault();
+        }}
+        onEscapeKeyDown={(e) => {
+          e.preventDefault();
+          exitOverlayIfAny();
+        }}
+      >
         {type === null ? (
           <TypePicker onPick={setType} onCancel={() => onOpenChange(false)} />
         ) : (
@@ -138,6 +182,10 @@ export function CreateQuestionDialog({ open, onOpenChange, editing }: Props) {
             isEdit={isEdit}
             onBack={isEdit ? undefined : () => setType(null)}
             onSubmit={handleSubmit}
+            previewing={previewing}
+            setPreviewing={setPreviewing}
+            tryingIt={tryingIt}
+            setTryingIt={setTryingIt}
           />
         )}
       </DialogContent>
@@ -217,9 +265,25 @@ interface FormProps {
   isEdit: boolean;
   onBack?: () => void;
   onSubmit: (values: QuestionFormValues, finalStatus: Question["status"]) => void;
+  /** preview / try-it state lifted to the dialog parent so outside-clicks
+   *  + ESC can exit those panels without closing the whole editor. */
+  previewing: boolean;
+  setPreviewing: (next: boolean) => void;
+  tryingIt: boolean;
+  setTryingIt: (next: boolean) => void;
 }
 
-export function QuestionForm({ type, editing, isEdit, onBack, onSubmit }: FormProps) {
+export function QuestionForm({
+  type,
+  editing,
+  isEdit,
+  onBack,
+  onSubmit,
+  previewing,
+  setPreviewing,
+  tryingIt,
+  setTryingIt,
+}: FormProps) {
   const session = useAuthStore((s) => s.session);
   const grades = useGradesStore((s) => s.grades);
   const subjects = useSubjectsStore((s) => s.subjects);
@@ -287,8 +351,6 @@ export function QuestionForm({ type, editing, isEdit, onBack, onSubmit }: FormPr
     topic: tocNodeId ? buildTocPath(tocNodes, tocNodeId) : undefined,
   };
 
-  const [previewing, setPreviewing] = useState(false);
-  const [tryingIt, setTryingIt] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [backConfirmOpen, setBackConfirmOpen] = useState(false);
 
@@ -552,7 +614,7 @@ export function QuestionForm({ type, editing, isEdit, onBack, onSubmit }: FormPr
             type="button"
             variant="outline"
             onClick={() => {
-              setPreviewing((p) => !p);
+              setPreviewing(!previewing);
               setTryingIt(false);
             }}
           >
@@ -572,7 +634,7 @@ export function QuestionForm({ type, editing, isEdit, onBack, onSubmit }: FormPr
             type="button"
             variant="outline"
             onClick={() => {
-              setTryingIt((t) => !t);
+              setTryingIt(!tryingIt);
               setPreviewing(false);
             }}
             className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"
