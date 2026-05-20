@@ -37,6 +37,8 @@ export const COLLECTIONS = {
   tocNodes: "toc_nodes",
   teachingAssignments: "teaching_assignments",
   proctorEvents: "proctor_events",
+  examForms: "exam_forms",
+  auditEvents: "audit_events",
 } as const;
 
 export function colRef<T>(name: keyof typeof COLLECTIONS): CollectionReference<WithId<T>> {

@@ -234,6 +234,49 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
+    // ───── /exam_forms — frozen snapshots of exam content ─────────────────
+    // These are the IMMUTABLE materialized versions of an exam,
+    // attached to a shift. The runtime exam page reads them so any
+    // mid-exam edit of /questions can't change what students see.
+    //
+    // Reads: any signed-in user (the variant a student receives is
+    //   computed client-side; the doc itself is non-sensitive once
+    //   the shift starts).
+    // Writes: shift owner or campus admin. Lifecycle field can flip
+    //   from "active" → "archived" but content fields must not be
+    //   mutated post-write (enforced UI-side for now; Phase D adds
+    //   field-level rule via request.resource.data.variants ==
+    //   resource.data.variants).
+    match /exam_forms/{formId} {
+      allow read: if isSignedIn();
+      allow create: if isTeacherOrAbove() &&
+        request.resource.data.materializedBy == uid();
+      allow update: if isSignedIn() && (
+        isAdmin() ||
+        // Owner of the originating shift can republish (archive old +
+        // create new) — but we still scope to teacher-or-above.
+        isTeacherOrAbove()
+      );
+      // Hard delete is forbidden — soft-archive only. Lifecycle flips
+      // to "archived" via update, never delete.
+      allow delete: if false;
+    }
+
+    // ───── /audit_events — append-only audit log ──────────────────────────
+    // Every mutation of a production entity emits one of these. The
+    // contract: create-only, never update or delete. Reads scoped to
+    // admins (or self) for now; UI will filter further.
+    //
+    // Even superadmin cannot edit or delete an audit row — that's the
+    // whole point. Production runbook: if a row is wrong, append a
+    // CORRECTING event, don't tamper.
+    match /audit_events/{eventId} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn() &&
+        request.resource.data.actorUid == uid();
+      allow update, delete: if false;
+    }
+
     // ───── Default deny — anything not matched above is forbidden ─────────
     match /{document=**} {
       allow read, write: if false;

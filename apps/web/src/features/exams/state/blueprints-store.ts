@@ -3,6 +3,7 @@
 import type { Unsubscribe } from "firebase/firestore";
 import { create } from "zustand";
 
+import { recordAudit } from "@/lib/audit/record";
 import { isFirebaseConfigured } from "@/lib/firebase";
 import { COLLECTIONS } from "@/lib/firestore-collections";
 import {
@@ -29,6 +30,21 @@ interface Actions {
   remove(id: string): void;
   findById(id: string): ExamBlueprint | undefined;
   _applySnapshot(rows: ExamBlueprint[]): void;
+}
+
+function pickBlueprintAuditFields(b: ExamBlueprint | undefined) {
+  if (!b) return null;
+  return {
+    name: b.name,
+    subjectId: b.subjectId,
+    gradeId: b.gradeId,
+    duration: b.duration,
+    topicCount: b.topics?.length ?? 0,
+    totalPickedQuestions: b.topics?.reduce(
+      (n, t) => n + (t.pickedQuestionIds?.length ?? 0),
+      0,
+    ),
+  };
 }
 
 function nextId(existing: ExamBlueprint[]): string {
@@ -88,10 +104,18 @@ export const useBlueprintsStore = create<State & Actions>()((set, get) => ({
       id,
       sanitizeForFirestore(blueprint as unknown as Record<string, unknown>),
     );
+    recordAudit({
+      entityType: "blueprint",
+      entityId: id,
+      action: "create",
+      after: pickBlueprintAuditFields(blueprint),
+      campusId: blueprint.campusId,
+    });
     return blueprint;
   },
 
   update(id, patch) {
+    const before = get().blueprints.find((b) => b.id === id);
     const sanitized = sanitizeBlueprint(patch);
     const now = new Date().toISOString();
     set({
@@ -104,11 +128,29 @@ export const useBlueprintsStore = create<State & Actions>()((set, get) => ({
       id,
       sanitizeForFirestore(sanitized as Record<string, unknown>),
     );
+    recordAudit({
+      entityType: "blueprint",
+      entityId: id,
+      action: "update",
+      before: pickBlueprintAuditFields(before),
+      after: pickBlueprintAuditFields(
+        before ? ({ ...before, ...sanitized } as ExamBlueprint) : undefined,
+      ),
+      campusId: before?.campusId ?? null,
+    });
   },
 
   remove(id) {
+    const before = get().blueprints.find((b) => b.id === id);
     set({ blueprints: get().blueprints.filter((b) => b.id !== id) });
     removeDoc(COLLECTIONS.blueprints, id);
+    recordAudit({
+      entityType: "blueprint",
+      entityId: id,
+      action: "delete",
+      before: pickBlueprintAuditFields(before),
+      campusId: before?.campusId ?? null,
+    });
   },
 
   findById(id) {

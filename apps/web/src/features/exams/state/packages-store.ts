@@ -3,6 +3,7 @@
 import type { Unsubscribe } from "firebase/firestore";
 import { create } from "zustand";
 
+import { recordAudit } from "@/lib/audit/record";
 import { isFirebaseConfigured } from "@/lib/firebase";
 import { COLLECTIONS } from "@/lib/firestore-collections";
 import {
@@ -35,6 +36,23 @@ interface Actions {
   _applySnapshot(rows: ExamPackage[]): void;
 }
 
+function pickPackageAuditFields(p: ExamPackage | undefined) {
+  if (!p) return null;
+  return {
+    name: p.name,
+    blueprintId: p.blueprintId,
+    duration: p.duration,
+    matrixRowCount: p.matrix?.length ?? 0,
+    matrixTotal: p.matrix?.reduce(
+      (n, r) => n + r.easyCount + r.mediumCount + r.hardCount,
+      0,
+    ),
+    status: p.status,
+    approvedBy: p.approvedBy,
+    rejectionNote: p.rejectionNote,
+  };
+}
+
 function nextId(existing: ExamPackage[]): string {
   const max = existing.reduce((acc, p) => {
     const m = /^PKG-(\d+)$/.exec(p.id);
@@ -59,10 +77,18 @@ export const usePackagesStore = create<State & Actions>()((set, get) => ({
       id,
       sanitizeForFirestore(pkg as unknown as Record<string, unknown>),
     );
+    recordAudit({
+      entityType: "package",
+      entityId: id,
+      action: "create",
+      after: pickPackageAuditFields(pkg),
+      campusId: pkg.campusId,
+    });
     return pkg;
   },
 
   update(id, patch) {
+    const before = get().packages.find((p) => p.id === id);
     const now = new Date().toISOString();
     set({
       packages: get().packages.map((p) =>
@@ -74,20 +100,55 @@ export const usePackagesStore = create<State & Actions>()((set, get) => ({
       id,
       sanitizeForFirestore(patch as Record<string, unknown>),
     );
+    recordAudit({
+      entityType: "package",
+      entityId: id,
+      action: "update",
+      before: pickPackageAuditFields(before),
+      after: pickPackageAuditFields(
+        before ? { ...before, ...patch } : undefined,
+      ),
+      campusId: before?.campusId ?? null,
+    });
   },
 
   remove(id) {
+    const before = get().packages.find((p) => p.id === id);
     set({ packages: get().packages.filter((p) => p.id !== id) });
     removeDoc(COLLECTIONS.packages, id);
+    recordAudit({
+      entityType: "package",
+      entityId: id,
+      action: "delete",
+      before: pickPackageAuditFields(before),
+      campusId: before?.campusId ?? null,
+    });
   },
 
   setStatus(id, status, approverId, note) {
+    const before = get().packages.find((p) => p.id === id);
     const patch: Partial<ExamPackage> = {
       status,
       approvedBy: status === "approved" ? approverId ?? null : null,
       rejectionNote: status === "rejected" ? note ?? null : null,
     };
     get().update(id, patch);
+    // Emit the higher-fidelity action AFTER update() (which already
+    // recorded a generic "update"). This second event tags it as an
+    // approve/reject so audit drawers can filter on it.
+    if (status === "approved" || status === "rejected") {
+      recordAudit({
+        entityType: "package",
+        entityId: id,
+        action: status === "approved" ? "approve" : "reject",
+        before: pickPackageAuditFields(before),
+        after: pickPackageAuditFields(
+          before ? { ...before, ...patch } : undefined,
+        ),
+        campusId: before?.campusId ?? null,
+        reason: note,
+      });
+    }
   },
 
   findById(id) {

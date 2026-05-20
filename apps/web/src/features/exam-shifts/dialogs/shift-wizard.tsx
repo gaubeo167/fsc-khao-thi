@@ -66,7 +66,13 @@ import { useUsersStore } from "@/features/admin/users/users-store";
 import { useBlueprintsStore } from "@/features/exams/state/blueprints-store";
 import { useGeneratedStore } from "@/features/exams/state/generated-store";
 import { usePackagesStore } from "@/features/exams/state/packages-store";
+import type {
+  ExamBlueprint,
+  ExamPackage,
+} from "@/features/exams/data/types";
 import { useQuestionsStore } from "@/features/question-bank/state/questions-store";
+import { materializeExamForm } from "@/features/exam-forms/lib/materialize";
+import { useExamFormsStore } from "@/features/exam-forms/state/exam-forms-store";
 import { cn } from "@/lib/utils";
 
 import {
@@ -177,6 +183,83 @@ function newRoomId(): string {
   return `room-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/**
+ * Default number of variants ("đề") to materialize when freezing an
+ * exam form. Four is the conventional VN-school cap (Đề 001-004); the
+ * Phase D version-chain UI will let admins override per-shift.
+ */
+const DEFAULT_VARIANT_COUNT = 4;
+
+interface MaterializeArgs {
+  shiftId: string;
+  pkgId: string;
+  scoring: ScoringConfig;
+  campusId: string | null;
+  actorUid: string;
+  isEdit: boolean;
+  packages: ExamPackage[];
+  blueprints: ExamBlueprint[];
+  allQuestions: Question[];
+}
+
+/**
+ * Build the immutable exam form for a shift and save it. On edits we
+ * first archive the previous active form so analytics / past attempts
+ * still resolve, but new students get the latest snapshot.
+ */
+async function materializeAndSave(args: MaterializeArgs): Promise<void> {
+  const pkg = args.packages.find((p) => p.id === args.pkgId);
+  if (!pkg) {
+    throw new Error(
+      `materializeAndSave: package ${args.pkgId} not in store`,
+    );
+  }
+  const blueprint = args.blueprints.find((b) => b.id === pkg.blueprintId);
+  if (!blueprint) {
+    throw new Error(
+      `materializeAndSave: blueprint ${pkg.blueprintId} not in store`,
+    );
+  }
+  // Filter the question pool the same way the legacy exam page did:
+  // approved + matching campus. Subject/grade filtering happens
+  // implicitly through the blueprint's pickedQuestionIds.
+  const pickedSet = new Set(
+    blueprint.topics.flatMap((t) => t.pickedQuestionIds),
+  );
+  const pool = args.allQuestions.filter(
+    (q) =>
+      pickedSet.has(q.id) &&
+      q.status === "approved" &&
+      (args.campusId ? q.campusId === args.campusId : true),
+  );
+  if (pool.length === 0) {
+    throw new Error(
+      "materializeAndSave: empty question pool after filtering",
+    );
+  }
+  const formId = `form_${args.shiftId}_${Date.now().toString(36)}`;
+  const form = materializeExamForm({
+    shiftId: args.shiftId,
+    campusId: args.campusId,
+    blueprint,
+    pkg,
+    questionPool: pool,
+    variantCount: DEFAULT_VARIANT_COUNT,
+    scoring: args.scoring,
+    actorUid: args.actorUid,
+    formId,
+  });
+
+  const store = useExamFormsStore.getState();
+  if (args.isEdit) {
+    await store.archiveForShift(
+      args.shiftId,
+      "Replaced by republish from shift wizard",
+    );
+  }
+  await store.saveForm(form);
+}
+
 export function ShiftWizard({ open, onOpenChange, editing }: Props) {
   const session = useAuthStore((s) => s.session);
   const activeCampusId = useCampusStore((s) => s.activeCampusId);
@@ -187,6 +270,7 @@ export function ShiftWizard({ open, onOpenChange, editing }: Props) {
   const blueprints = useBlueprintsStore((s) => s.blueprints);
   const generated = useGeneratedStore((s) => s.generated);
   const users = useUsersStore((s) => s.users);
+  const allQuestions = useQuestionsStore((s) => s.questions);
   const createShift = useShiftsStore((s) => s.create);
   const updateShift = useShiftsStore((s) => s.update);
 
@@ -485,8 +569,40 @@ export function ShiftWizard({ open, onOpenChange, editing }: Props) {
       ownerName: session.name ?? "—",
       status: "scheduled" as const,
     };
-    if (editing) updateShift(editing.id, payload);
-    else createShift(payload);
+    let shiftId: string;
+    if (editing) {
+      updateShift(editing.id, payload);
+      shiftId = editing.id;
+    } else {
+      const created = createShift(payload);
+      shiftId = created.id;
+    }
+
+    // Materialize the exam form (frozen snapshot of questions + scoring)
+    // so the runtime never reads live /questions for this shift. If
+    // editing, archive any old form for this shift first — Phase D will
+    // chain versions; for now the latest form wins.
+    void materializeAndSave({
+      shiftId,
+      pkgId: payload.packageId,
+      scoring: payload.scoring ?? {
+        maxScore: 10,
+        mode: "even" as const,
+        difficultyWeights: { easy: 1, medium: 1.5, hard: 2 },
+      },
+      campusId: payload.campusId,
+      actorUid: session.userId,
+      isEdit: Boolean(editing),
+      packages,
+      blueprints,
+      allQuestions,
+    }).catch((err) => {
+      // eslint-disable-next-line no-console
+      console.error("[shift-wizard] materialize failed", err);
+      // The shift itself was written successfully; the form failure
+      // doesn't roll back. The exam page falls back to live mode +
+      // shows a banner so the teacher knows to retry.
+    });
     onOpenChange(false);
   }
 

@@ -24,6 +24,7 @@ import {
   type SeedUser,
 } from "@/features/auth/data/seed-users";
 import type { Role } from "@/features/auth/state/auth-store";
+import { recordAudit } from "@/lib/audit/record";
 import { getAuthSafe, getDb, isFirebaseConfigured } from "@/lib/firebase";
 import { COLLECTIONS } from "@/lib/firestore-collections";
 import { sanitizeForFirestore } from "@/lib/firestore-sync";
@@ -214,6 +215,13 @@ export const useUsersStore = create<UsersState & UsersActions>()((set, get) => (
       );
       // Sign out from secondary so it doesn't keep a stale session locally.
       await fbSignOut(secondaryAuth);
+      recordAudit({
+        entityType: "user",
+        entityId: uid,
+        action: "create",
+        after: pickUserAuditFields({ ...profile, password: "" } as SeedUser),
+        campusId: input.campusId,
+      });
       // Return the SeedUser-shaped projection callers expect. Password is
       // managed by Firebase Auth — we return empty string for type compat.
       return { ...profile, password: "" } as SeedUser;
@@ -225,6 +233,7 @@ export const useUsersStore = create<UsersState & UsersActions>()((set, get) => (
   },
 
   async update(id, patch) {
+    const before = get().users.find((u) => u.id === id);
     // Optimistic local update — same shape regardless of Firebase mode.
     set({
       users: get().users.map((u) => {
@@ -251,13 +260,30 @@ export const useUsersStore = create<UsersState & UsersActions>()((set, get) => (
       cleaned[k] = v === null ? null : v;
     }
     await updateDoc(ref, cleaned);
-    return get().users.find((u) => u.id === id) ?? null;
+    const after = get().users.find((u) => u.id === id) ?? null;
+    recordAudit({
+      entityType: "user",
+      entityId: id,
+      action: "update",
+      before: pickUserAuditFields(before),
+      after: pickUserAuditFields(after ?? undefined),
+      campusId: before?.campusId ?? null,
+    });
+    return after;
   },
 
   async remove(id) {
+    const before = get().users.find((u) => u.id === id);
     set({ users: get().users.filter((u) => u.id !== id) });
     if (!isFirebaseConfigured()) return;
     await deleteDoc(doc(getDb(), COLLECTIONS.users, id));
+    recordAudit({
+      entityType: "user",
+      entityId: id,
+      action: "delete",
+      before: pickUserAuditFields(before),
+      campusId: before?.campusId ?? null,
+    });
     // Firestore profile gone. The Firebase Auth user still exists — admin
     // must disable/delete them in the Firebase Console (or via a Cloud
     // Function with the Admin SDK).
@@ -316,6 +342,15 @@ export const useUsersStore = create<UsersState & UsersActions>()((set, get) => (
         data.error ?? `Đặt mật khẩu thất bại (HTTP ${res.status})`,
       );
     }
+    // Audit row — we do NOT log the new password itself, only that a
+    // reset happened. The actor (current admin) is captured by
+    // recordAudit() from the session.
+    recordAudit({
+      entityType: "user",
+      entityId: id,
+      action: "reset-password",
+      campusId: user.campusId,
+    });
   },
 
   findById(id) {
@@ -387,6 +422,26 @@ export function subscribeUsers(): Unsubscribe {
  * user — they hand the generated string to the new user, who can
  * change it after first login via "Forgot password?".
  */
+/** Audit-friendly projection of a user — drops password and other
+ *  noisy fields, keeps the identifying + permission-shaped data so the
+ *  audit drawer can show "what changed". */
+function pickUserAuditFields(u: SeedUser | undefined) {
+  if (!u) return null;
+  return {
+    name: u.name,
+    email: u.email,
+    role: u.role,
+    status: u.status,
+    campusId: u.campusId,
+    username: u.username,
+    studentCode: u.studentCode,
+    classIds: u.classIds,
+    subjectIds: u.subjectIds,
+    gradeIds: u.gradeIds,
+    permissions: u.permissions,
+  };
+}
+
 export function generatePassword(length = 10): string {
   const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
   let out = "";

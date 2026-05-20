@@ -39,9 +39,20 @@ interface Props {
    * `min(attempt.startedAt + durationMin, shift.endAt)`.
    */
   durationMin: number;
+  /** Frozen exam form this runtime is rendering. Null for legacy shifts
+   *  without snapshots — caller has already shown a banner. */
+  examFormId?: string | null;
+  /** Which variant the student received. Null for legacy. */
+  variantId?: string | null;
 }
 
-export function ExamRuntime({ shift, questions, durationMin }: Props) {
+export function ExamRuntime({
+  shift,
+  questions,
+  durationMin,
+  examFormId,
+  variantId,
+}: Props) {
   const router = useRouter();
   const session = useAuthStore((s) => s.session);
   const startOrResume = useAttemptsStore((s) => s.startOrResume);
@@ -76,6 +87,9 @@ export function ExamRuntime({ shift, questions, durationMin }: Props) {
       shiftId: shift.id,
       studentId: session.userId,
       questionIds: questions.map((q) => q.id),
+      campusId: shift.campusId,
+      examFormId,
+      variantId,
     });
   }
   // Subscribe so saveAnswer triggers rerender of stats.

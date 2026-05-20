@@ -23,6 +23,8 @@ import {
   computePerQuestionScores,
   formatScore,
 } from "@/features/exam-shifts/lib/scoring";
+import { useExamFormsStore } from "@/features/exam-forms/state/exam-forms-store";
+import { resolveAttemptQuestions } from "@/features/exam-forms/lib/resolve-questions";
 import { useShiftsStore } from "@/features/exam-shifts/state/shifts-store";
 import { useGradingStore } from "@/features/grading/state/grading-store";
 import { RenderedContent } from "@/features/question-bank/components/rendered-content";
@@ -112,9 +114,15 @@ export default function ReportAttemptDetailPage() {
   const subject = subjects.find((s) => s.id === shift.subjectId);
   const scoring = shift.scoring ?? DEFAULT_SCORING;
 
-  const examQuestions = attempt.questionIds
-    .map((qid) => allQuestions.find((q) => q.id === qid))
-    .filter((q): q is Question => !!q);
+  const allForms = useExamFormsStore.getState().forms;
+  const resolved = resolveAttemptQuestions({
+    questionIds: attempt.questionIds,
+    examFormId: attempt.examFormId,
+    variantId: attempt.variantId,
+    allForms,
+    allLiveQuestions: allQuestions,
+  });
+  const examQuestions = resolved.questions;
   const perQuestionScore = computePerQuestionScores(scoring, examQuestions);
   const examMaxScore = Object.values(perQuestionScore).reduce(
     (a, n) => a + n,
@@ -229,10 +237,23 @@ export default function ReportAttemptDetailPage() {
             Cột trái: câu trả lời của HS. Cột phải: đáp án đúng. Mỗi câu hiển
             thị điểm được tính.
           </p>
+          {resolved.fromSnapshot ? null : (
+            <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-[11.5px] text-amber-900">
+              ⚠️ Ca thi này được tạo trước khi hệ thống snapshot bật. Đề
+              hiển thị bên dưới là phiên bản LIVE từ ngân hàng câu hỏi
+              — nếu giáo viên đã sửa câu hỏi sau khi HS nộp bài, nội
+              dung có thể khác với cái HS thực sự nhìn thấy. Tạo lại
+              ca thi mới để đảm bảo audit.
+            </div>
+          )}
         </header>
         <ol className="divide-y">
           {attempt.questionIds.map((qid, idx) => {
-            const q = allQuestions.find((x) => x.id === qid);
+            // Look up from the resolved list — snapshot first, live
+            // fallback. Old code searched allQuestions directly which
+            // showed the *current* question text even if the teacher
+            // edited it after the student submitted.
+            const q = examQuestions.find((x) => x.id === qid);
             const ans = attempt.answers[qid];
             const qScore = q ? perQuestionScore[q.id] ?? 0 : 0;
             const isManual =

@@ -27,6 +27,8 @@ import type {
   Question,
 } from "@/features/question-bank/data/seed-questions";
 import { useQuestionsStore } from "@/features/question-bank/state/questions-store";
+import { useExamFormsStore } from "@/features/exam-forms/state/exam-forms-store";
+import { resolveAttemptQuestions } from "@/features/exam-forms/lib/resolve-questions";
 import { useAttemptsStore } from "@/features/shift-exam/state/attempts-store";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import { cn } from "@/lib/utils";
@@ -64,17 +66,21 @@ export default function GradingWorkspacePage() {
     ? subjects.find((s) => s.id === shift.subjectId)
     : null;
 
-  // Resolve essay questions the student actually had.
+  // Resolve essay questions the student actually had. Snapshot-first
+  // so the teacher grades the EXACT text the student saw, not the
+  // current bank version.
+  const allForms = useExamFormsStore((s) => s.forms);
   const essayQuestions: Question[] = useMemo(() => {
-    if (!attempt || !bp) return [];
-    const pickedIds = new Set(bp.topics.flatMap((t) => t.pickedQuestionIds));
-    return allQuestions.filter(
-      (q) =>
-        pickedIds.has(q.id) &&
-        attempt.questionIds.includes(q.id) &&
-        isManualGradingType(q.type),
-    );
-  }, [attempt, bp, allQuestions]);
+    if (!attempt) return [];
+    const { questions } = resolveAttemptQuestions({
+      questionIds: attempt.questionIds,
+      examFormId: attempt.examFormId,
+      variantId: attempt.variantId,
+      allForms,
+      allLiveQuestions: allQuestions,
+    });
+    return questions.filter((q) => isManualGradingType(q.type));
+  }, [attempt, allForms, allQuestions]);
 
   const [activeIdx, setActiveIdx] = useState(0);
   useEffect(() => {

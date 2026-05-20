@@ -7,6 +7,8 @@ import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useAuthStore } from "@/features/auth/state/auth-store";
+import { pickVariantForStudent } from "@/features/exam-forms/data/types";
+import { useExamFormsStore } from "@/features/exam-forms/state/exam-forms-store";
 import { effectiveShiftStatus } from "@/features/exam-shifts/data/types";
 import { useShiftsStore } from "@/features/exam-shifts/state/shifts-store";
 import { useBlueprintsStore } from "@/features/exams/state/blueprints-store";
@@ -48,8 +50,22 @@ export default function ExamPage() {
   // render.
   const pkg = shift ? packages.find((p) => p.id === shift.packageId) : null;
   const bp = pkg ? blueprints.find((b) => b.id === pkg.blueprintId) : null;
+  // Snapshot-first: the exam form is the source of truth. It was
+  // frozen when the shift was published, so editing a question in the
+  // bank after this point cannot change what the student sees.
+  const examForm = useExamFormsStore((s) =>
+    shift ? s.activeForShift(shift.id) : null,
+  );
   const questions = useMemo(() => {
-    if (!bp || !pkg || !shift || !session) return [];
+    if (!shift || !session) return [];
+    if (examForm) {
+      const variant = pickVariantForStudent(examForm, session.userId);
+      if (variant) return variant.questions;
+    }
+    // Legacy fallback for shifts created before snapshots existed.
+    // Functionally equivalent to the old code path; a banner up the
+    // file warns the teacher their shift is unfrozen.
+    if (!bp || !pkg) return [];
     const targetTotal = pkg.matrix.reduce(
       (acc, m) => acc + m.easyCount + m.mediumCount + m.hardCount,
       0,
@@ -63,7 +79,6 @@ export default function ExamPage() {
           q.status === "approved" &&
           (shift.campusId ? q.campusId === shift.campusId : true),
       );
-    // Stable per-student shuffle so two students see different orders.
     let seed = 5381;
     const key = `${shift.id}|${session.userId}`;
     for (let i = 0; i < key.length; i++) {
@@ -79,7 +94,7 @@ export default function ExamPage() {
       [shuffled[i], shuffled[j]] = [shuffled[j]!, shuffled[i]!];
     }
     return targetTotal > 0 ? shuffled.slice(0, targetTotal) : shuffled;
-  }, [bp, pkg, allQuestions, shift, session]);
+  }, [examForm, bp, pkg, allQuestions, shift, session]);
 
   if (!shift) return notFound();
   if (!session) {
@@ -193,8 +208,16 @@ export default function ExamPage() {
         ? bp.duration
         : 45;
 
+  const variantForStudent =
+    examForm && session ? pickVariantForStudent(examForm, session.userId) : null;
   return (
-    <ExamRuntime shift={shift} questions={questions} durationMin={durationMin} />
+    <ExamRuntime
+      shift={shift}
+      questions={questions}
+      durationMin={durationMin}
+      examFormId={examForm?.id ?? null}
+      variantId={variantForStudent?.variantId ?? null}
+    />
   );
 }
 

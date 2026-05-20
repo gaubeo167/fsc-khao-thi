@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 
 import { subscribeUsers } from "@/features/admin/users/users-store";
 import { subscribeCampuses } from "@/features/campus/state/campuses-store";
+import { subscribeExamForms } from "@/features/exam-forms/state/exam-forms-store";
 import { subscribeShifts } from "@/features/exam-shifts/state/shifts-store";
 import { subscribeBlueprints } from "@/features/exams/state/blueprints-store";
 import { subscribePackages } from "@/features/exams/state/packages-store";
@@ -83,6 +84,7 @@ export function AuthBootstrap() {
           subscribeBlueprints(),
           subscribePackages(),
           subscribeShifts(),
+          subscribeExamForms(),
           subscribeAttempts(),
           subscribeProctorEvents(),
           subscribeGrading(),
@@ -107,6 +109,7 @@ export function AuthBootstrap() {
           subscribeBlueprints(),
           subscribePackages(),
           subscribeShifts(),
+          subscribeExamForms(),
           subscribeAttempts(),
           subscribeProctorEvents(),
           subscribeGrading(),

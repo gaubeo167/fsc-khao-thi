@@ -53,6 +53,13 @@ export interface StudentAttempt {
   campusId?: string | null;
   /** Snapshot of question ids assigned at start. Frozen for the run. */
   questionIds: string[];
+  /** Reference to the exam form this attempt was rendered against.
+   *  Null for legacy attempts created before snapshots existed — those
+   *  fall back to resolving questions from the live /questions store
+   *  (with the integrity drift that implies). */
+  examFormId?: string | null;
+  /** Which variant within the form this student received. */
+  variantId?: string | null;
   /** questionId → answer. */
   answers: Record<string, Answer>;
   /** questionIds the student flagged to revisit before submitting. */
@@ -84,6 +91,8 @@ interface Actions {
     studentId: string;
     questionIds: string[];
     campusId?: string | null;
+    examFormId?: string | null;
+    variantId?: string | null;
   }): StudentAttempt;
   saveAnswer(attemptId: string, questionId: string, answer: Answer): void;
   toggleMark(attemptId: string, questionId: string): void;
@@ -215,7 +224,14 @@ export const useAttemptsStore = create<State & Actions>()((set, get) => ({
   attempts: [],
   hydrated: false,
 
-  startOrResume({ shiftId, studentId, questionIds, campusId }) {
+  startOrResume({
+    shiftId,
+    studentId,
+    questionIds,
+    campusId,
+    examFormId,
+    variantId,
+  }) {
     const existing = get().attempts.find(
       (a) => a.shiftId === shiftId && a.studentId === studentId,
     );
@@ -226,6 +242,8 @@ export const useAttemptsStore = create<State & Actions>()((set, get) => ({
       studentId,
       campusId: campusId ?? null,
       questionIds,
+      examFormId: examFormId ?? null,
+      variantId: variantId ?? null,
       answers: {},
       markedForReview: [],
       startedAt: new Date().toISOString(),

@@ -3,6 +3,7 @@
 import type { Unsubscribe } from "firebase/firestore";
 import { create } from "zustand";
 
+import { recordAudit } from "@/lib/audit/record";
 import { isFirebaseConfigured } from "@/lib/firebase";
 import { COLLECTIONS } from "@/lib/firestore-collections";
 import {
@@ -38,6 +39,27 @@ interface Actions {
   _applySnapshot(rows: Question[]): void;
 }
 
+/** Project a question to a small audit-friendly subset — content is
+ *  included (truncated) so we can detect "teacher changed the prompt",
+ *  but full HTML / options arrays are summarised to keep audit rows
+ *  small enough for the 1MB doc limit. */
+function pickQuestionAuditFields(q: Question | undefined) {
+  if (!q) return null;
+  const contentPreview =
+    typeof q.content === "string" ? q.content.slice(0, 500) : null;
+  return {
+    type: q.type,
+    contentPreview,
+    contentLength: typeof q.content === "string" ? q.content.length : 0,
+    difficulty: q.difficulty,
+    subjectId: q.subjectId,
+    gradeId: q.gradeId,
+    tags: q.tags,
+    status: q.status,
+    kho: q.kho,
+  };
+}
+
 function nextId(existing: Question[]): string {
   const max = existing.reduce((acc, q) => {
     const m = /^Q-(\d+)$/.exec(q.id);
@@ -61,10 +83,18 @@ export const useQuestionsStore = create<State & Actions>()((set, get) => ({
     const q = { ...input, id, createdAt: now, updatedAt: now } as Question;
     set({ questions: [q, ...get().questions] });
     writeDoc(COLLECTIONS.questions, id, sanitizeForFirestore(q as unknown as Record<string, unknown>));
+    recordAudit({
+      entityType: "question",
+      entityId: id,
+      action: "create",
+      after: pickQuestionAuditFields(q),
+      campusId: q.campusId,
+    });
     return q;
   },
 
   update(id, patch) {
+    const before = get().questions.find((q) => q.id === id);
     const now = new Date().toISOString();
     set({
       questions: get().questions.map((q) =>
@@ -76,20 +106,52 @@ export const useQuestionsStore = create<State & Actions>()((set, get) => ({
       id,
       sanitizeForFirestore(patch as Record<string, unknown>),
     );
+    recordAudit({
+      entityType: "question",
+      entityId: id,
+      action: "update",
+      before: pickQuestionAuditFields(before),
+      after: pickQuestionAuditFields(
+        before ? ({ ...before, ...patch } as Question) : undefined,
+      ),
+      campusId: before?.campusId ?? null,
+    });
   },
 
   remove(id) {
+    const before = get().questions.find((q) => q.id === id);
     set({ questions: get().questions.filter((q) => q.id !== id) });
     removeDoc(COLLECTIONS.questions, id);
+    recordAudit({
+      entityType: "question",
+      entityId: id,
+      action: "delete",
+      before: pickQuestionAuditFields(before),
+      campusId: before?.campusId ?? null,
+    });
   },
 
   setStatus(id, status, approverId, note) {
+    const before = get().questions.find((q) => q.id === id);
     const patch: Partial<Question> = {
       status,
       approvedBy: status === "approved" ? approverId ?? null : null,
       rejectionNote: status === "rejected" ? note ?? null : null,
     } as Partial<Question>;
     get().update(id, patch);
+    if (status === "approved" || status === "rejected") {
+      recordAudit({
+        entityType: "question",
+        entityId: id,
+        action: status === "approved" ? "approve" : "reject",
+        before: pickQuestionAuditFields(before),
+        after: pickQuestionAuditFields(
+          before ? ({ ...before, ...patch } as Question) : undefined,
+        ),
+        campusId: before?.campusId ?? null,
+        reason: note,
+      });
+    }
   },
 
   findById(id) {

@@ -3,6 +3,7 @@
 import type { Unsubscribe } from "firebase/firestore";
 import { create } from "zustand";
 
+import { recordAudit } from "@/lib/audit/record";
 import { COLLECTIONS } from "@/lib/firestore-collections";
 import {
   patchDoc,
@@ -28,6 +29,31 @@ interface Actions {
   _applySnapshot(rows: ExamShift[]): void;
 }
 
+/** Reduce a shift to the fields most useful in an audit row — drops
+ *  large arrays (rooms with hundreds of students) and meta noise so the
+ *  audit log stays scannable. The before/after diff is computed against
+ *  these projections. */
+function pickShiftAuditFields(s: ExamShift | undefined) {
+  if (!s) return null;
+  return {
+    name: s.name,
+    status: s.status,
+    startAt: s.startAt,
+    endAt: s.endAt,
+    packageId: s.packageId,
+    gradeId: s.gradeId,
+    subjectId: s.subjectId,
+    classIds: s.classIds,
+    roomCount: s.rooms?.length ?? 0,
+    studentCount: s.rooms?.reduce(
+      (n, r) => n + (r.studentIds?.length ?? 0),
+      0,
+    ),
+    scoringMaxScore: s.scoring?.maxScore,
+    scoringMode: s.scoring?.mode,
+  };
+}
+
 function nextId(existing: ExamShift[]): string {
   const max = existing.reduce((acc, s) => {
     const m = /^SHIFT-(\d+)$/.exec(s.id);
@@ -50,10 +76,26 @@ export const useShiftsStore = create<State & Actions>()((set, get) => ({
       id,
       sanitizeForFirestore(shift as unknown as Record<string, unknown>),
     );
+    recordAudit({
+      entityType: "shift",
+      entityId: id,
+      action: "create",
+      after: {
+        name: shift.name,
+        gradeId: shift.gradeId,
+        subjectId: shift.subjectId,
+        packageId: shift.packageId,
+        startAt: shift.startAt,
+        endAt: shift.endAt,
+        status: shift.status,
+      },
+      campusId: shift.campusId,
+    });
     return shift;
   },
 
   update(id, patch) {
+    const before = get().shifts.find((s) => s.id === id);
     const now = new Date().toISOString();
     set({
       shifts: get().shifts.map((s) =>
@@ -65,11 +107,27 @@ export const useShiftsStore = create<State & Actions>()((set, get) => ({
       id,
       sanitizeForFirestore(patch as Record<string, unknown>),
     );
+    recordAudit({
+      entityType: "shift",
+      entityId: id,
+      action: "update",
+      before: pickShiftAuditFields(before),
+      after: pickShiftAuditFields({ ...(before ?? ({} as ExamShift)), ...patch }),
+      campusId: before?.campusId ?? null,
+    });
   },
 
   remove(id) {
+    const before = get().shifts.find((s) => s.id === id);
     set({ shifts: get().shifts.filter((s) => s.id !== id) });
     removeDoc(COLLECTIONS.shifts, id);
+    recordAudit({
+      entityType: "shift",
+      entityId: id,
+      action: "delete",
+      before: pickShiftAuditFields(before),
+      campusId: before?.campusId ?? null,
+    });
   },
 
   setStatus(id, status) {
