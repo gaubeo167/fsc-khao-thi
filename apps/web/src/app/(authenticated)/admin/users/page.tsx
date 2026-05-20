@@ -23,9 +23,11 @@ import { useCampusStore } from "@/features/campus/state/campus-store";
 import { ASSIGNABLE_ROLES } from "@/features/admin/users/role-labels";
 import { useUsersStore } from "@/features/admin/users/users-store";
 import {
+  EMPTY_USER_FILTERS,
   UsersFilterBar,
   type UserFilters,
 } from "@/features/admin/users/users-filter-bar";
+import { useGradesStore } from "@/features/grades/state/grades-store";
 import { UsersTable } from "@/features/admin/users/users-table";
 import { UsersPagination } from "@/features/admin/users/users-pagination";
 // Heavy dialogs (subject / grade pickers, password reset) — split out so
@@ -80,12 +82,15 @@ export default function UsersAdminPage() {
   const [deleteTarget, setDeleteTarget] = useState<SeedUser | null>(null);
 
   // Filters + pagination
-  const [filters, setFilters] = useState<UserFilters>({
-    query: "",
-    role: "all",
-    status: "all",
-    campusId: "all",
-  });
+  const [filters, setFilters] = useState<UserFilters>(EMPTY_USER_FILTERS);
+  // Class → grade lookup used to filter students by grade (student
+  // membership is stored at class granularity, not grade).
+  const allClasses = useGradesStore((s) => s.classes);
+  const classGradeMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of allClasses) m.set(c.id, c.gradeId);
+    return m;
+  }, [allClasses]);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
@@ -125,14 +130,53 @@ export default function UsersAdminPage() {
         const hay = `${u.name} ${u.email} ${u.id}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
+      // Subject filter — relevant for teachers / subject-leads. Students
+      // don't have subjectIds, so any subject filter excludes them by
+      // design.
+      if (filters.subjectId !== "all") {
+        const subjectIds = u.subjectIds ?? [];
+        if (!subjectIds.includes(filters.subjectId)) return false;
+      }
+      // Grade filter:
+      //   - teachers / subject-leads: check gradeIds (which khối họ phụ trách)
+      //   - students: walk their classIds, map each to its grade, check membership
+      if (filters.gradeId !== "all") {
+        if (u.role === "student") {
+          const myClassIds = u.classIds ?? [];
+          const myGradeIds = new Set(
+            myClassIds
+              .map((cid) => classGradeMap.get(cid))
+              .filter((g): g is string => !!g),
+          );
+          if (!myGradeIds.has(filters.gradeId)) return false;
+        } else {
+          const gradeIds = u.gradeIds ?? [];
+          if (!gradeIds.includes(filters.gradeId)) return false;
+        }
+      }
+      // Class filter — primarily for students (who have classIds).
+      // Teachers also store classIds for "Lớp quản lý"; honor either.
+      if (filters.classId !== "all") {
+        const classIds = u.classIds ?? [];
+        if (!classIds.includes(filters.classId)) return false;
+      }
       return true;
     });
-  }, [scoped, filters, session?.role]);
+  }, [scoped, filters, session?.role, classGradeMap]);
 
   // Reset pagination on filter change
   useEffect(() => {
     setPage(1);
-  }, [filters.query, filters.role, filters.status, filters.campusId, activeCampusId]);
+  }, [
+    filters.query,
+    filters.role,
+    filters.status,
+    filters.campusId,
+    filters.subjectId,
+    filters.gradeId,
+    filters.classId,
+    activeCampusId,
+  ]);
 
   const paged = useMemo(() => {
     const startIdx = (page - 1) * pageSize;
@@ -220,6 +264,11 @@ export default function UsersAdminPage() {
           onChange={setFilters}
           hideCampusFilter={session?.role !== "superadmin"}
           allowedRoles={allowedRoles}
+          campusScopeId={
+            session?.role === "superadmin"
+              ? activeCampusId ?? null
+              : session?.campusId ?? null
+          }
         />
       </div>
 
