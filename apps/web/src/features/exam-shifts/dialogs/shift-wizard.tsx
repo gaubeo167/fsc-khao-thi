@@ -399,17 +399,23 @@ export function ShiftWizard({ open, onOpenChange, editing }: Props) {
 
       // Student-level checks: no double-booking, every student assigned,
       // every room has at least 1 proctor.
-      const allStudents = users.filter(
-        (u) =>
-          u.role === "student" &&
-          u.status === "active" &&
-          (campusId ? u.campusId === campusId : true) &&
-          allClasses.some(
-            (c) =>
-              state.classIds.includes(c.id) &&
-              c.code === u.className,
-          ),
-      );
+      //
+      // "Every student" here means the roster ticked in Step 1 — HS
+      // unticked don't need a room. Empty selectedStudentIds = legacy
+      // flow (no roster picker yet) → fall back to "everyone in the
+      // selected classes".
+      const explicitRoster = new Set(state.selectedStudentIds);
+      const allStudents = users.filter((u) => {
+        if (u.role !== "student" || u.status !== "active") return false;
+        if (campusId && u.campusId !== campusId) return false;
+        if (state.selectedStudentIds.length > 0) {
+          return explicitRoster.has(u.id);
+        }
+        return allClasses.some(
+          (c) =>
+            state.classIds.includes(c.id) && c.code === u.className,
+        );
+      });
       const seen = new Set<string>();
       for (const r of state.rooms) {
         for (const sid of r.studentIds ?? []) {
