@@ -11,6 +11,7 @@ import {
   Plus,
   Shield,
   ShieldOff,
+  RotateCcw,
   Trash2,
   Users,
 } from "lucide-react";
@@ -81,9 +82,20 @@ export default function ShiftsPage() {
   const scope = useUserScope();
   const canCreateShift = useCanCreate("shift");
   const activeCampusId = useCampusStore((s) => s.activeCampusId);
-  const shifts = useShiftsStore((s) => s.shifts);
-  const removeShift = useShiftsStore((s) => s.remove);
+  const allShiftsRaw = useShiftsStore((s) => s.shifts);
+  const archiveShift = useShiftsStore((s) => s.archive);
+  const restoreShift = useShiftsStore((s) => s.restore);
   const setShiftStatus = useShiftsStore((s) => s.setStatus);
+  const [showArchived, setShowArchived] = useState(false);
+  // List view hides archived rows by default — see lib/lifecycle.ts.
+  // Toggle controlled by the page toolbar lets admins inspect history.
+  const shifts = useMemo(
+    () =>
+      showArchived
+        ? allShiftsRaw
+        : allShiftsRaw.filter((s) => !s.archivedAt),
+    [allShiftsRaw, showArchived],
+  );
   const { canMutate } = useCampusGate();
   const grades = useGradesStore((s) => s.grades);
   const allClasses = useGradesStore((s) => s.classes);
@@ -413,6 +425,15 @@ export default function ShiftsPage() {
             ✕ Xoá bộ lọc
           </button>
         )}
+        <label className="ml-auto inline-flex items-center gap-1.5 text-[11.5px] font-medium text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={showArchived}
+            onChange={(e) => setShowArchived(e.target.checked)}
+            className="h-3.5 w-3.5"
+          />
+          Hiển thị đã lưu trữ
+        </label>
       </div>
 
       {filtered.length === 0 ? (
@@ -665,18 +686,35 @@ export default function ShiftsPage() {
                       >
                         <PencilLine className="h-3.5 w-3.5" strokeWidth={1.75} />
                       </IconButton>
-                      <IconButton
-                        size="sm"
-                        variant="destructive"
-                        title={
-                          effectiveShiftStatus(sh) === "in-progress"
-                            ? "Ca đang diễn ra — phải dừng trước"
-                            : "Xoá ca thi"
-                        }
-                        onClick={() => tryDelete(sh)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" strokeWidth={1.75} />
-                      </IconButton>
+                      {sh.archivedAt ? (
+                        <IconButton
+                          size="sm"
+                          variant="primary"
+                          title="Khôi phục ca thi đã lưu trữ"
+                          onClick={() => {
+                            if (!session) return;
+                            restoreShift(sh.id, session.userId);
+                          }}
+                        >
+                          <RotateCcw
+                            className="h-3.5 w-3.5"
+                            strokeWidth={1.75}
+                          />
+                        </IconButton>
+                      ) : (
+                        <IconButton
+                          size="sm"
+                          variant="destructive"
+                          title={
+                            effectiveShiftStatus(sh) === "in-progress"
+                              ? "Ca đang diễn ra — phải dừng trước"
+                              : "Lưu trữ ca thi"
+                          }
+                          onClick={() => tryDelete(sh)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" strokeWidth={1.75} />
+                        </IconButton>
+                      )}
                     </div>
                   </footer>
                 </article>
@@ -735,10 +773,16 @@ export default function ShiftsPage() {
             : false
         }
         onConfirm={() => {
-          if (!deleting) return;
+          if (!deleting || !session) return;
           const hasData = attempts.some((a) => a.shiftId === deleting.id);
           if (hasData) return;
-          removeShift(deleting.id);
+          // Soft-archive instead of hard delete. Audit trail captures
+          // who did it; admins can restore from the "đã lưu trữ" tab.
+          archiveShift(
+            deleting.id,
+            session.userId,
+            "Admin xoá từ danh sách ca thi",
+          );
         }}
       />
 

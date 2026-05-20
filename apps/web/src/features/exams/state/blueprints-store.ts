@@ -8,7 +8,6 @@ import { isFirebaseConfigured } from "@/lib/firebase";
 import { COLLECTIONS } from "@/lib/firestore-collections";
 import {
   patchDoc,
-  removeDoc,
   sanitizeForFirestore,
   subscribeCollection,
   writeDoc,
@@ -27,6 +26,12 @@ interface Actions {
     input: Omit<ExamBlueprint, "id" | "createdAt" | "updatedAt">,
   ): ExamBlueprint;
   update(id: string, patch: Partial<ExamBlueprint>): void;
+  /** Soft-delete (sets archivedAt). Hard delete is forbidden — packages
+   *  + exam_forms + audit permanently reference blueprints. */
+  archive(id: string, actorUid: string, reason?: string): void;
+  /** Inverse — clear archive fields. */
+  restore(id: string, actorUid: string): void;
+  /** Legacy alias — routes to archive(). */
   remove(id: string): void;
   findById(id: string): ExamBlueprint | undefined;
   _applySnapshot(rows: ExamBlueprint[]): void;
@@ -140,17 +145,67 @@ export const useBlueprintsStore = create<State & Actions>()((set, get) => ({
     });
   },
 
-  remove(id) {
+  archive(id, actorUid, reason) {
     const before = get().blueprints.find((b) => b.id === id);
-    set({ blueprints: get().blueprints.filter((b) => b.id !== id) });
-    removeDoc(COLLECTIONS.blueprints, id);
+    if (!before) return;
+    const now = new Date().toISOString();
+    const patch: Partial<ExamBlueprint> = {
+      archivedAt: now,
+      archivedBy: actorUid,
+      archiveReason: reason ?? null,
+    };
+    set({
+      blueprints: get().blueprints.map((b) =>
+        b.id === id ? { ...b, ...patch, updatedAt: now } : b,
+      ),
+    });
+    patchDoc(
+      COLLECTIONS.blueprints,
+      id,
+      sanitizeForFirestore(patch as Record<string, unknown>),
+    );
     recordAudit({
       entityType: "blueprint",
       entityId: id,
-      action: "delete",
+      action: "archive",
       before: pickBlueprintAuditFields(before),
-      campusId: before?.campusId ?? null,
+      after: pickBlueprintAuditFields({ ...before, ...patch }),
+      campusId: before.campusId,
+      reason,
     });
+  },
+
+  restore(id, actorUid) {
+    const before = get().blueprints.find((b) => b.id === id);
+    if (!before) return;
+    const now = new Date().toISOString();
+    const patch: Partial<ExamBlueprint> = {
+      archivedAt: null,
+      archivedBy: null,
+      archiveReason: null,
+    };
+    set({
+      blueprints: get().blueprints.map((b) =>
+        b.id === id ? { ...b, ...patch, updatedAt: now } : b,
+      ),
+    });
+    patchDoc(
+      COLLECTIONS.blueprints,
+      id,
+      sanitizeForFirestore(patch as Record<string, unknown>),
+    );
+    recordAudit({
+      entityType: "blueprint",
+      entityId: id,
+      action: "restore",
+      before: pickBlueprintAuditFields(before),
+      after: pickBlueprintAuditFields({ ...before, ...patch }),
+      campusId: before.campusId,
+    });
+  },
+
+  remove(id) {
+    get().archive(id, "system", "Legacy remove() call");
   },
 
   findById(id) {

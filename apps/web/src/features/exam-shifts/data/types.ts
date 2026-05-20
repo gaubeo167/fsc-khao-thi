@@ -203,6 +203,14 @@ export interface ExamShift {
   ownerId: string;
   ownerName: string;
   status: ShiftStatus;
+
+  /** Soft-delete bookkeeping. `archivedAt != null` hides the shift
+   *  from list views and blocks edits. Hard delete is forbidden —
+   *  attempts, audit, and analytics all reference shifts forever. */
+  archivedAt?: string | null;
+  archivedBy?: string | null;
+  archiveReason?: string | null;
+
   createdAt: string;
   updatedAt: string;
 }

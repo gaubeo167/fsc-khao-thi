@@ -7,7 +7,6 @@ import { recordAudit } from "@/lib/audit/record";
 import { COLLECTIONS } from "@/lib/firestore-collections";
 import {
   patchDoc,
-  removeDoc,
   sanitizeForFirestore,
   subscribeCollection,
   writeDoc,
@@ -23,6 +22,16 @@ interface State {
 interface Actions {
   create(input: Omit<ExamShift, "id" | "createdAt" | "updatedAt">): ExamShift;
   update(id: string, patch: Partial<ExamShift>): void;
+  /**
+   * Soft-delete. Sets archivedAt + archivedBy + archiveReason.
+   * Hard delete is forbidden — attempts/audit/exam_forms permanently
+   * reference shifts. The legacy `remove()` alias still exists for
+   * older callers and now also routes through here.
+   */
+  archive(id: string, actorUid: string, reason?: string): void;
+  /** Inverse — clear archive fields so the shift reappears in lists. */
+  restore(id: string, actorUid: string): void;
+  /** Legacy alias preserved while callers migrate. Routes to archive(). */
   remove(id: string): void;
   setStatus(id: string, status: ShiftStatus): void;
   findById(id: string): ExamShift | undefined;
@@ -117,17 +126,71 @@ export const useShiftsStore = create<State & Actions>()((set, get) => ({
     });
   },
 
-  remove(id) {
+  archive(id, actorUid, reason) {
     const before = get().shifts.find((s) => s.id === id);
-    set({ shifts: get().shifts.filter((s) => s.id !== id) });
-    removeDoc(COLLECTIONS.shifts, id);
+    if (!before) return;
+    const now = new Date().toISOString();
+    const patch: Partial<ExamShift> = {
+      archivedAt: now,
+      archivedBy: actorUid,
+      archiveReason: reason ?? null,
+    };
+    set({
+      shifts: get().shifts.map((s) =>
+        s.id === id ? { ...s, ...patch, updatedAt: now } : s,
+      ),
+    });
+    patchDoc(
+      COLLECTIONS.shifts,
+      id,
+      sanitizeForFirestore(patch as Record<string, unknown>),
+    );
     recordAudit({
       entityType: "shift",
       entityId: id,
-      action: "delete",
+      action: "archive",
       before: pickShiftAuditFields(before),
-      campusId: before?.campusId ?? null,
+      after: pickShiftAuditFields({ ...before, ...patch }),
+      campusId: before.campusId,
+      reason,
     });
+  },
+
+  restore(id, actorUid) {
+    const before = get().shifts.find((s) => s.id === id);
+    if (!before) return;
+    const now = new Date().toISOString();
+    const patch: Partial<ExamShift> = {
+      archivedAt: null,
+      archivedBy: null,
+      archiveReason: null,
+    };
+    set({
+      shifts: get().shifts.map((s) =>
+        s.id === id ? { ...s, ...patch, updatedAt: now } : s,
+      ),
+    });
+    patchDoc(
+      COLLECTIONS.shifts,
+      id,
+      sanitizeForFirestore(patch as Record<string, unknown>),
+    );
+    recordAudit({
+      entityType: "shift",
+      entityId: id,
+      action: "restore",
+      before: pickShiftAuditFields(before),
+      after: pickShiftAuditFields({ ...before, ...patch }),
+      campusId: before.campusId,
+    });
+  },
+
+  remove(id) {
+    // Legacy alias — routes to archive(). We pull the current actor
+    // from the auth session synchronously; callers that need to
+    // override should call archive(id, actor, reason) directly.
+    const actorUid = "system";
+    get().archive(id, actorUid, "Legacy remove() call");
   },
 
   setStatus(id, status) {

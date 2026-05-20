@@ -92,10 +92,26 @@ export default function ExamBlueprintsPage() {
   const session = useAuthStore((s) => s.session);
   const scope = useUserScope();
   const activeCampusId = useCampusStore((s) => s.activeCampusId);
-  const blueprints = useBlueprintsStore((s) => s.blueprints);
-  const removeBlueprint = useBlueprintsStore((s) => s.remove);
-  const packages = usePackagesStore((s) => s.packages);
-  const removePackage = usePackagesStore((s) => s.remove);
+  const allBlueprintsRaw = useBlueprintsStore((s) => s.blueprints);
+  const archiveBlueprint = useBlueprintsStore((s) => s.archive);
+  const allPackagesRaw = usePackagesStore((s) => s.packages);
+  const archivePackage = usePackagesStore((s) => s.archive);
+  const [showArchived, setShowArchived] = useState(false);
+  // Hide archived rows by default; admin toggle reveals them.
+  const blueprints = useMemo(
+    () =>
+      showArchived
+        ? allBlueprintsRaw
+        : allBlueprintsRaw.filter((b) => !b.archivedAt),
+    [allBlueprintsRaw, showArchived],
+  );
+  const packages = useMemo(
+    () =>
+      showArchived
+        ? allPackagesRaw
+        : allPackagesRaw.filter((p) => !p.archivedAt),
+    [allPackagesRaw, showArchived],
+  );
   const generated = useGeneratedStore((s) => s.generated);
   const removeGenerated = useGeneratedStore((s) => s.remove);
   const removeGeneratedByPackage = useGeneratedStore((s) => s.removeByPackage);
@@ -282,15 +298,26 @@ export default function ExamBlueprintsPage() {
         title="Khung đề & Gói đề"
         description="Tạo khung đề (blueprint) → cấu hình gói đề (ma trận) → sinh đề tự động cho ca thi."
         actions={
-          <Button
-            size="sm"
-            onClick={openCreateBlueprint}
-            disabled={!canMutate}
-            title={!canMutate ? "Chọn 1 campus để tạo khung đề" : undefined}
-          >
-            <Plus className="h-4 w-4" />
-            Tạo khung đề mới
-          </Button>
+          <div className="flex items-center gap-2">
+            <label className="inline-flex items-center gap-1.5 text-[11.5px] font-medium text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={showArchived}
+                onChange={(e) => setShowArchived(e.target.checked)}
+                className="h-3.5 w-3.5"
+              />
+              Hiển thị đã lưu trữ
+            </label>
+            <Button
+              size="sm"
+              onClick={openCreateBlueprint}
+              disabled={!canMutate}
+              title={!canMutate ? "Chọn 1 campus để tạo khung đề" : undefined}
+            >
+              <Plus className="h-4 w-4" />
+              Tạo khung đề mới
+            </Button>
+          </div>
         }
       />
 
@@ -479,8 +506,15 @@ export default function ExamBlueprintsPage() {
             ""
           )
         }
-        confirmLabel="Xoá khung đề"
-        onConfirm={() => deletingBlueprint && removeBlueprint(deletingBlueprint.id)}
+        confirmLabel="Lưu trữ khung đề"
+        onConfirm={() => {
+          if (!deletingBlueprint || !session) return;
+          archiveBlueprint(
+            deletingBlueprint.id,
+            session.userId,
+            "Admin lưu trữ khung đề",
+          );
+        }}
       />
 
       <ConfirmActionDialog
@@ -519,18 +553,30 @@ export default function ExamBlueprintsPage() {
             ""
           )
         }
-        confirmLabel="Xoá gói đề"
+        confirmLabel="Lưu trữ gói đề"
         disableConfirm={
           deletingPackage
-            ? shifts.some((sh) => sh.packageId === deletingPackage.id)
+            ? shifts.some(
+                (sh) =>
+                  !sh.archivedAt && sh.packageId === deletingPackage.id,
+              )
             : false
         }
         onConfirm={() => {
-          if (!deletingPackage) return;
-          const inUse = shifts.some((sh) => sh.packageId === deletingPackage.id);
+          if (!deletingPackage || !session) return;
+          const inUse = shifts.some(
+            (sh) =>
+              !sh.archivedAt && sh.packageId === deletingPackage.id,
+          );
           if (inUse) return;
+          // Soft-archive; generated-store (localStorage) can still be
+          // pruned for housekeeping since it's not audit-tracked.
           removeGeneratedByPackage(deletingPackage.id);
-          removePackage(deletingPackage.id);
+          archivePackage(
+            deletingPackage.id,
+            session.userId,
+            "Admin lưu trữ gói đề",
+          );
         }}
       />
 

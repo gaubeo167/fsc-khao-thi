@@ -8,7 +8,6 @@ import { isFirebaseConfigured } from "@/lib/firebase";
 import { COLLECTIONS } from "@/lib/firestore-collections";
 import {
   patchDoc,
-  removeDoc,
   sanitizeForFirestore,
   subscribeCollection,
   writeDoc,
@@ -25,6 +24,12 @@ interface State {
 interface Actions {
   create(input: Omit<ExamPackage, "id" | "createdAt" | "updatedAt">): ExamPackage;
   update(id: string, patch: Partial<ExamPackage>): void;
+  /** Soft-delete (sets archivedAt). Hard delete is forbidden — shifts
+   *  + audit + analytics permanently reference packages. */
+  archive(id: string, actorUid: string, reason?: string): void;
+  /** Inverse — clear archive fields. */
+  restore(id: string, actorUid: string): void;
+  /** Legacy alias — routes to archive(). */
   remove(id: string): void;
   setStatus(
     id: string,
@@ -112,17 +117,67 @@ export const usePackagesStore = create<State & Actions>()((set, get) => ({
     });
   },
 
-  remove(id) {
+  archive(id, actorUid, reason) {
     const before = get().packages.find((p) => p.id === id);
-    set({ packages: get().packages.filter((p) => p.id !== id) });
-    removeDoc(COLLECTIONS.packages, id);
+    if (!before) return;
+    const now = new Date().toISOString();
+    const patch: Partial<ExamPackage> = {
+      archivedAt: now,
+      archivedBy: actorUid,
+      archiveReason: reason ?? null,
+    };
+    set({
+      packages: get().packages.map((p) =>
+        p.id === id ? { ...p, ...patch, updatedAt: now } : p,
+      ),
+    });
+    patchDoc(
+      COLLECTIONS.packages,
+      id,
+      sanitizeForFirestore(patch as Record<string, unknown>),
+    );
     recordAudit({
       entityType: "package",
       entityId: id,
-      action: "delete",
+      action: "archive",
       before: pickPackageAuditFields(before),
-      campusId: before?.campusId ?? null,
+      after: pickPackageAuditFields({ ...before, ...patch }),
+      campusId: before.campusId,
+      reason,
     });
+  },
+
+  restore(id, actorUid) {
+    const before = get().packages.find((p) => p.id === id);
+    if (!before) return;
+    const now = new Date().toISOString();
+    const patch: Partial<ExamPackage> = {
+      archivedAt: null,
+      archivedBy: null,
+      archiveReason: null,
+    };
+    set({
+      packages: get().packages.map((p) =>
+        p.id === id ? { ...p, ...patch, updatedAt: now } : p,
+      ),
+    });
+    patchDoc(
+      COLLECTIONS.packages,
+      id,
+      sanitizeForFirestore(patch as Record<string, unknown>),
+    );
+    recordAudit({
+      entityType: "package",
+      entityId: id,
+      action: "restore",
+      before: pickPackageAuditFields(before),
+      after: pickPackageAuditFields({ ...before, ...patch }),
+      campusId: before.campusId,
+    });
+  },
+
+  remove(id) {
+    get().archive(id, "system", "Legacy remove() call");
   },
 
   setStatus(id, status, approverId, note) {

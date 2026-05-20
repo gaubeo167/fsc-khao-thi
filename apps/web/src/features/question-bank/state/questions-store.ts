@@ -8,7 +8,6 @@ import { isFirebaseConfigured } from "@/lib/firebase";
 import { COLLECTIONS } from "@/lib/firestore-collections";
 import {
   patchDoc,
-  removeDoc,
   sanitizeForFirestore,
   subscribeCollection,
   writeDoc,
@@ -32,6 +31,13 @@ interface Actions {
    *  immediately. */
   create(input: Omit<Question, "id" | "createdAt" | "updatedAt">): Question;
   update(id: string, patch: Partial<Question>): void;
+  /** Soft-delete (sets archivedAt). Hard delete is forbidden —
+   *  exam_form snapshots + audit + analytics permanently reference
+   *  questions. */
+  archive(id: string, actorUid: string, reason?: string): void;
+  /** Inverse — clear archive fields. */
+  restore(id: string, actorUid: string): void;
+  /** Legacy alias — routes to archive(). */
   remove(id: string): void;
   setStatus(id: string, status: QuestionStatus, approverId?: string, note?: string): void;
   findById(id: string): Question | undefined;
@@ -118,17 +124,67 @@ export const useQuestionsStore = create<State & Actions>()((set, get) => ({
     });
   },
 
-  remove(id) {
+  archive(id, actorUid, reason) {
     const before = get().questions.find((q) => q.id === id);
-    set({ questions: get().questions.filter((q) => q.id !== id) });
-    removeDoc(COLLECTIONS.questions, id);
+    if (!before) return;
+    const now = new Date().toISOString();
+    const patch: Partial<Question> = {
+      archivedAt: now,
+      archivedBy: actorUid,
+      archiveReason: reason ?? null,
+    } as Partial<Question>;
+    set({
+      questions: get().questions.map((q) =>
+        q.id === id ? ({ ...q, ...patch, updatedAt: now } as Question) : q,
+      ),
+    });
+    patchDoc(
+      COLLECTIONS.questions,
+      id,
+      sanitizeForFirestore(patch as Record<string, unknown>),
+    );
     recordAudit({
       entityType: "question",
       entityId: id,
-      action: "delete",
+      action: "archive",
       before: pickQuestionAuditFields(before),
-      campusId: before?.campusId ?? null,
+      after: pickQuestionAuditFields({ ...before, ...patch } as Question),
+      campusId: before.campusId,
+      reason,
     });
+  },
+
+  restore(id, actorUid) {
+    const before = get().questions.find((q) => q.id === id);
+    if (!before) return;
+    const now = new Date().toISOString();
+    const patch: Partial<Question> = {
+      archivedAt: null,
+      archivedBy: null,
+      archiveReason: null,
+    } as Partial<Question>;
+    set({
+      questions: get().questions.map((q) =>
+        q.id === id ? ({ ...q, ...patch, updatedAt: now } as Question) : q,
+      ),
+    });
+    patchDoc(
+      COLLECTIONS.questions,
+      id,
+      sanitizeForFirestore(patch as Record<string, unknown>),
+    );
+    recordAudit({
+      entityType: "question",
+      entityId: id,
+      action: "restore",
+      before: pickQuestionAuditFields(before),
+      after: pickQuestionAuditFields({ ...before, ...patch } as Question),
+      campusId: before.campusId,
+    });
+  },
+
+  remove(id) {
+    get().archive(id, "system", "Legacy remove() call");
   },
 
   setStatus(id, status, approverId, note) {

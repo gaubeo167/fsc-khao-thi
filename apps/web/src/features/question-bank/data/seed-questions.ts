@@ -24,6 +24,11 @@ export interface BaseQuestion {
   approvedBy?: string | null;
   rejectionNote?: string | null;
 
+  /** Soft-delete bookkeeping (see lib/lifecycle.ts). */
+  archivedAt?: string | null;
+  archivedBy?: string | null;
+  archiveReason?: string | null;
+
   createdAt: string;
   updatedAt: string;
 }

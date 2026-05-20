@@ -78,9 +78,17 @@ export default function QuestionBankPage() {
   const campuses = useCampusesStore((s) => s.campuses);
   const grades = useGradesStore((s) => s.grades);
   const subjects = useSubjectsStore((s) => s.subjects);
-  const questions = useQuestionsStore((s) => s.questions);
-  const remove = useQuestionsStore((s) => s.remove);
+  const allQuestionsRaw = useQuestionsStore((s) => s.questions);
+  const archiveQuestion = useQuestionsStore((s) => s.archive);
   const createQuestion = useQuestionsStore((s) => s.create);
+  const [showArchived, setShowArchived] = useState(false);
+  const questions = useMemo(
+    () =>
+      showArchived
+        ? allQuestionsRaw
+        : allQuestionsRaw.filter((q) => !q.archivedAt),
+    [allQuestionsRaw, showArchived],
+  );
 
   // Pinned campus scope: grade + subject filter dropdowns only show options
   // applicable to the operating campus's tier.
@@ -273,6 +281,15 @@ export default function QuestionBankPage() {
         description="Quản lý câu hỏi của kho campus và kho cá nhân — Quản lý & khảo thí thông minh."
         actions={
           <>
+            <label className="inline-flex items-center gap-1.5 text-[11.5px] font-medium text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={showArchived}
+                onChange={(e) => setShowArchived(e.target.checked)}
+                className="h-3.5 w-3.5"
+              />
+              Hiển thị đã lưu trữ
+            </label>
             <Button
               size="sm"
               variant="outline"
@@ -434,18 +451,29 @@ export default function QuestionBankPage() {
         open={Boolean(deleting)}
         onOpenChange={(o) => !o && setDeleting(null)}
         variant="destructive"
-        title="Xoá câu hỏi?"
+        title="Lưu trữ câu hỏi?"
         description={
           deleting ? (
             <>
-              Mã <span className="font-mono">{deleting.id}</span>. Hành động không thể hoàn tác.
+              Mã <span className="font-mono">{deleting.id}</span> sẽ được
+              chuyển vào kho lưu trữ. Câu hỏi đã được đóng băng trong các
+              đề thi sẽ không bị ảnh hưởng — đề HS đã làm bài vẫn giữ
+              nguyên nội dung gốc. Có thể khôi phục từ tab "Hiển thị đã
+              lưu trữ".
             </>
           ) : (
             ""
           )
         }
-        confirmLabel="Xoá câu hỏi"
-        onConfirm={() => deleting && remove(deleting.id)}
+        confirmLabel="Lưu trữ"
+        onConfirm={() => {
+          if (!deleting || !session) return;
+          archiveQuestion(
+            deleting.id,
+            session.userId,
+            "Admin lưu trữ câu hỏi",
+          );
+        }}
       />
 
       <CopyQuestionDialog
