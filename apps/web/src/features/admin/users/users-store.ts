@@ -4,7 +4,6 @@ import { deleteApp, initializeApp } from "firebase/app";
 import {
   createUserWithEmailAndPassword,
   getAuth,
-  sendPasswordResetEmail,
   signOut as fbSignOut,
 } from "firebase/auth";
 import {
@@ -288,7 +287,35 @@ export const useUsersStore = create<UsersState & UsersActions>()((set, get) => (
     }
     const user = get().users.find((u) => u.id === id);
     if (!user) throw new Error(`User ${id} not found`);
-    await sendPasswordResetEmail(getAuthSafe(), user.email);
+    if (!newPassword || newPassword.length < 6) {
+      throw new Error("Mật khẩu mới phải có ít nhất 6 ký tự.");
+    }
+    // Hit the server route which uses Admin SDK to actually set the
+    // password on Firebase Auth. The previous implementation called
+    // sendPasswordResetEmail which (a) requires the user to click an
+    // email link, (b) does not work for students whose Auth email is
+    // synthetic (`@students.fsc.local`).
+    const caller = getAuthSafe().currentUser;
+    if (!caller) {
+      throw new Error("Bạn cần đăng nhập lại trước khi đặt mật khẩu.");
+    }
+    const idToken = await caller.getIdToken();
+    const res = await fetch("/api/admin/reset-password", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ targetUserId: id, newPassword }),
+    });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+      };
+      throw new Error(
+        data.error ?? `Đặt mật khẩu thất bại (HTTP ${res.status})`,
+      );
+    }
   },
 
   findById(id) {

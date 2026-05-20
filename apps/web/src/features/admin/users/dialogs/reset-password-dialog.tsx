@@ -29,6 +29,8 @@ export function ResetPasswordDialog({ user, onClose }: Props) {
   const [issuedPassword, setIssuedPassword] = useState("");
   const [customPassword, setCustomPassword] = useState("");
   const [copied, setCopied] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -36,24 +38,36 @@ export function ResetPasswordDialog({ user, onClose }: Props) {
       setIssuedPassword("");
       setCustomPassword("");
       setCopied(false);
+      setError(null);
+      setSubmitting(false);
     }
   }, [user?.id]);
 
-  function handleResetCustom() {
+  async function runReset(pw: string) {
     if (!user) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await resetPassword(user.id, pw);
+      setIssuedPassword(pw);
+      setStage("issued");
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Đặt mật khẩu thất bại.",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function handleResetCustom() {
     const pw = customPassword.trim();
     if (pw.length < 6) return;
-    resetPassword(user.id, pw);
-    setIssuedPassword(pw);
-    setStage("issued");
+    void runReset(pw);
   }
 
   function handleResetAuto() {
-    if (!user) return;
-    const pw = generatePassword(12);
-    resetPassword(user.id, pw);
-    setIssuedPassword(pw);
-    setStage("issued");
+    void runReset(generatePassword(12));
   }
 
   async function copyToClipboard() {
@@ -108,6 +122,11 @@ export function ResetPasswordDialog({ user, onClose }: Props) {
               "Sinh ngẫu nhiên" để hệ thống tạo password 12 ký tự an toàn. Mật
               khẩu cũ sẽ bị vô hiệu hoá ngay lập tức.
             </p>
+            {error ? (
+              <div className="rounded-md border border-destructive/40 bg-destructive/8 px-3 py-2 text-[13px] text-destructive">
+                {error}
+              </div>
+            ) : null}
           </div>
         ) : (
           <div className="space-y-3">
@@ -141,19 +160,23 @@ export function ResetPasswordDialog({ user, onClose }: Props) {
         <DialogFooter>
           {stage === "confirm" ? (
             <>
-              <Button variant="outline" onClick={onClose}>
+              <Button variant="outline" onClick={onClose} disabled={submitting}>
                 Hủy
               </Button>
-              <Button variant="outline" onClick={handleResetAuto}>
+              <Button
+                variant="outline"
+                onClick={handleResetAuto}
+                disabled={submitting}
+              >
                 <RefreshCw className="h-4 w-4" />
-                Sinh ngẫu nhiên
+                {submitting ? "Đang lưu…" : "Sinh ngẫu nhiên"}
               </Button>
               <Button
                 onClick={handleResetCustom}
-                disabled={customPassword.trim().length < 6}
+                disabled={submitting || customPassword.trim().length < 6}
               >
                 <KeyRound className="h-4 w-4" />
-                Lưu mật khẩu
+                {submitting ? "Đang lưu…" : "Lưu mật khẩu"}
               </Button>
             </>
           ) : (
