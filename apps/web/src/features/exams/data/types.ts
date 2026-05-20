@@ -40,6 +40,10 @@ export interface ExamBlueprint {
   archivedBy?: string | null;
   archiveReason?: string | null;
 
+  /** Version chain (see lib/version.ts). */
+  version?: number;
+  versionOfRootId?: string;
+
   createdAt: string;
   updatedAt: string;
 }
@@ -82,6 +86,10 @@ export interface ExamPackage {
   archivedAt?: string | null;
   archivedBy?: string | null;
   archiveReason?: string | null;
+
+  /** Version chain (see lib/version.ts). */
+  version?: number;
+  versionOfRootId?: string;
 
   createdAt: string;
   updatedAt: string;

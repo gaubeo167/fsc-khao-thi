@@ -64,7 +64,10 @@ const CopyQuestionDialog = dynamic(
     ),
   { ssr: false, loading: () => null },
 );
+import { useExamFormsStore } from "@/features/exam-forms/state/exam-forms-store";
 import { useQuestionsStore } from "@/features/question-bank/state/questions-store";
+import { buildLockedMessage, questionInUse } from "@/lib/in-use";
+import { getLatestVersionsOf, versionOf } from "@/lib/version";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import { PageHeader } from "@/features/shell/components/page-header";
 import { cn } from "@/lib/utils";
@@ -80,15 +83,26 @@ export default function QuestionBankPage() {
   const subjects = useSubjectsStore((s) => s.subjects);
   const allQuestionsRaw = useQuestionsStore((s) => s.questions);
   const archiveQuestion = useQuestionsStore((s) => s.archive);
+  const cloneQuestionVersion = useQuestionsStore((s) => s.cloneAsNewVersion);
   const createQuestion = useQuestionsStore((s) => s.create);
+  const examForms = useExamFormsStore((s) => s.forms);
   const [showArchived, setShowArchived] = useState(false);
-  const questions = useMemo(
-    () =>
-      showArchived
-        ? allQuestionsRaw
-        : allQuestionsRaw.filter((q) => !q.archivedAt),
-    [allQuestionsRaw, showArchived],
-  );
+  const [showAllVersions, setShowAllVersions] = useState(false);
+  // 1. Hide archived. 2. Optionally collapse to latest-per-chain.
+  const questions = useMemo(() => {
+    let rows = showArchived
+      ? allQuestionsRaw
+      : allQuestionsRaw.filter((q) => !q.archivedAt);
+    if (!showAllVersions) {
+      rows = getLatestVersionsOf(rows);
+    }
+    return rows;
+  }, [allQuestionsRaw, showArchived, showAllVersions]);
+  // CTA dialog state — "câu hỏi đã được dùng, tạo phiên bản mới?"
+  const [versionPrompt, setVersionPrompt] = useState<{
+    source: Question;
+    blockerReason: string;
+  } | null>(null);
 
   // Pinned campus scope: grade + subject filter dropdowns only show options
   // applicable to the operating campus's tier.
@@ -242,7 +256,29 @@ export default function QuestionBankPage() {
     setEditorOpen(true);
   }
   function openEdit(q: Question) {
+    // Enterprise rule: a published question that has already been
+    // frozen into a live exam_form cannot be edited in place — doing
+    // so would let analytics + audit drift. Surface the CTA per the
+    // governance message instead of silently disabling.
+    const usage = questionInUse(q.id, examForms);
+    if (usage.inUse) {
+      setVersionPrompt({ source: q, blockerReason: usage.reason ?? "" });
+      return;
+    }
     setEditing(q);
+    setEditorOpen(true);
+  }
+
+  function performCloneVersion(source: Question) {
+    if (!session) return;
+    const clone = cloneQuestionVersion(
+      source.id,
+      session.userId,
+      "Edit khi câu hỏi đã in-use trong đề",
+    );
+    if (!clone) return;
+    setVersionPrompt(null);
+    setEditing(clone);
     setEditorOpen(true);
   }
 
@@ -281,6 +317,15 @@ export default function QuestionBankPage() {
         description="Quản lý câu hỏi của kho campus và kho cá nhân — Quản lý & khảo thí thông minh."
         actions={
           <>
+            <label className="inline-flex items-center gap-1.5 text-[11.5px] font-medium text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={showAllVersions}
+                onChange={(e) => setShowAllVersions(e.target.checked)}
+                className="h-3.5 w-3.5"
+              />
+              Tất cả phiên bản
+            </label>
             <label className="inline-flex items-center gap-1.5 text-[11.5px] font-medium text-muted-foreground">
               <input
                 type="checkbox"
@@ -480,6 +525,39 @@ export default function QuestionBankPage() {
         question={copying}
         onClose={() => setCopying(null)}
         onConfirm={performCopy}
+      />
+
+      <ConfirmActionDialog
+        open={Boolean(versionPrompt)}
+        onOpenChange={(o) => !o && setVersionPrompt(null)}
+        variant="default"
+        title="Câu hỏi đã được dùng trong đề thi"
+        description={
+          versionPrompt ? (
+            <>
+              {buildLockedMessage({
+                inUse: true,
+                reason: versionPrompt.blockerReason,
+              })}
+              <div className="mt-2 rounded-md bg-muted/40 px-3 py-2 text-[11.5px] text-muted-foreground">
+                Phiên bản mới sẽ là{" "}
+                <span className="font-semibold">
+                  v{versionOf(versionPrompt.source) + 1}
+                </span>{" "}
+                trong chuỗi <span className="font-mono">{versionPrompt.source.id}</span>
+                . Bắt đầu ở trạng thái{" "}
+                <span className="font-semibold">draft</span> — cần được
+                duyệt lại trước khi dùng vào đề mới.
+              </div>
+            </>
+          ) : (
+            ""
+          )
+        }
+        confirmLabel="Tạo phiên bản mới"
+        onConfirm={() => {
+          if (versionPrompt) performCloneVersion(versionPrompt.source);
+        }}
       />
     </>
   );

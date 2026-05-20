@@ -8,6 +8,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { useGradesStore } from "@/features/grades/state/grades-store";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import { cn } from "@/lib/utils";
+import { versionOf } from "@/lib/version";
 
 import { findQuestionType } from "../data/question-types";
 import type { Question } from "../data/seed-questions";
@@ -139,9 +140,28 @@ function QuestionCardImpl({
           )}
         </span>
 
-        <StatusBadge variant={question.status} className="ml-auto">
+        {versionOf(question) > 1 ? (
+          <span
+            className="ml-auto rounded-md border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-700"
+            title={`Phiên bản v${versionOf(question)} trong chuỗi của câu hỏi này`}
+          >
+            v{versionOf(question)}
+          </span>
+        ) : null}
+        <StatusBadge
+          variant={question.status}
+          className={versionOf(question) > 1 ? "" : "ml-auto"}
+        >
           {STATUS_LABEL[question.status]}
         </StatusBadge>
+        {question.archivedAt ? (
+          <span
+            className="rounded-md border border-zinc-300 bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600"
+            title="Đã lưu trữ"
+          >
+            🗄 Đã lưu trữ
+          </span>
+        ) : null}
       </footer>
     </article>
   );

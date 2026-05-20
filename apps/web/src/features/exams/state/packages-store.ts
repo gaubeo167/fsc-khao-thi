@@ -6,6 +6,7 @@ import { create } from "zustand";
 import { recordAudit } from "@/lib/audit/record";
 import { isFirebaseConfigured } from "@/lib/firebase";
 import { COLLECTIONS } from "@/lib/firestore-collections";
+import { nextVersionFields, rootId, versionOf } from "@/lib/version";
 import {
   patchDoc,
   sanitizeForFirestore,
@@ -31,6 +32,14 @@ interface Actions {
   restore(id: string, actorUid: string): void;
   /** Legacy alias — routes to archive(). */
   remove(id: string): void;
+  /** Clone as new version (Phase D). New doc starts in `status: "draft"`
+   *  so it re-enters the approval flow — clones inherit content but
+   *  not approval state. */
+  cloneAsNewVersion(
+    sourceId: string,
+    actorUid: string,
+    reason?: string,
+  ): ExamPackage | null;
   setStatus(
     id: string,
     status: PackageStatus,
@@ -178,6 +187,52 @@ export const usePackagesStore = create<State & Actions>()((set, get) => ({
 
   remove(id) {
     get().archive(id, "system", "Legacy remove() call");
+  },
+
+  cloneAsNewVersion(sourceId, actorUid, reason) {
+    const source = get().packages.find((p) => p.id === sourceId);
+    if (!source) return null;
+    const id = nextId(get().packages);
+    const now = new Date().toISOString();
+    const { version, versionOfRootId } = nextVersionFields(source);
+    const baseCopy = JSON.parse(JSON.stringify(source)) as ExamPackage;
+    const clone: ExamPackage = {
+      ...baseCopy,
+      id,
+      version,
+      versionOfRootId,
+      // Re-enter the approval workflow.
+      status: "draft",
+      approvedBy: null,
+      rejectionNote: null,
+      ownerId: actorUid,
+      ownerName: source.ownerName,
+      archivedAt: null,
+      archivedBy: null,
+      archiveReason: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    set({ packages: [clone, ...get().packages] });
+    writeDoc(
+      COLLECTIONS.packages,
+      id,
+      sanitizeForFirestore(clone as unknown as Record<string, unknown>),
+    );
+    recordAudit({
+      entityType: "package",
+      entityId: id,
+      action: "lifecycle-transition",
+      before: { sourceId, sourceVersion: versionOf(source) },
+      after: {
+        newVersion: version,
+        rootId: rootId(source),
+        status: "draft",
+      },
+      campusId: source.campusId,
+      reason: reason ?? "Tạo phiên bản mới từ gói đề",
+    });
+    return clone;
   },
 
   setStatus(id, status, approverId, note) {

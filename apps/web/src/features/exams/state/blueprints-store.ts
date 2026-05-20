@@ -6,6 +6,7 @@ import { create } from "zustand";
 import { recordAudit } from "@/lib/audit/record";
 import { isFirebaseConfigured } from "@/lib/firebase";
 import { COLLECTIONS } from "@/lib/firestore-collections";
+import { nextVersionFields, rootId, versionOf } from "@/lib/version";
 import {
   patchDoc,
   sanitizeForFirestore,
@@ -33,6 +34,14 @@ interface Actions {
   restore(id: string, actorUid: string): void;
   /** Legacy alias — routes to archive(). */
   remove(id: string): void;
+  /** Clone as new version (Phase D version-chains). The new doc shares
+   *  the parent's `versionOfRootId`, gets `version = parent.version + 1`,
+   *  and the parent stays live until explicitly archived. */
+  cloneAsNewVersion(
+    sourceId: string,
+    actorUid: string,
+    reason?: string,
+  ): ExamBlueprint | null;
   findById(id: string): ExamBlueprint | undefined;
   _applySnapshot(rows: ExamBlueprint[]): void;
 }
@@ -206,6 +215,47 @@ export const useBlueprintsStore = create<State & Actions>()((set, get) => ({
 
   remove(id) {
     get().archive(id, "system", "Legacy remove() call");
+  },
+
+  cloneAsNewVersion(sourceId, actorUid, reason) {
+    const source = get().blueprints.find((b) => b.id === sourceId);
+    if (!source) return null;
+    const id = nextId(get().blueprints);
+    const now = new Date().toISOString();
+    const { version, versionOfRootId } = nextVersionFields(source);
+    const baseCopy = JSON.parse(JSON.stringify(source)) as ExamBlueprint;
+    const clone: ExamBlueprint = {
+      ...baseCopy,
+      id,
+      version,
+      versionOfRootId,
+      ownerId: actorUid,
+      ownerName: source.ownerName,
+      archivedAt: null,
+      archivedBy: null,
+      archiveReason: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    set({ blueprints: [clone, ...get().blueprints] });
+    writeDoc(
+      COLLECTIONS.blueprints,
+      id,
+      sanitizeForFirestore(clone as unknown as Record<string, unknown>),
+    );
+    recordAudit({
+      entityType: "blueprint",
+      entityId: id,
+      action: "lifecycle-transition",
+      before: { sourceId, sourceVersion: versionOf(source) },
+      after: {
+        newVersion: version,
+        rootId: rootId(source),
+      },
+      campusId: source.campusId,
+      reason: reason ?? "Tạo phiên bản mới từ khung đề",
+    });
+    return clone;
   },
 
   findById(id) {

@@ -29,6 +29,13 @@ export interface BaseQuestion {
   archivedBy?: string | null;
   archiveReason?: string | null;
 
+  /** Version chain (see lib/version.ts). `version` is 1-indexed; the
+   *  original draft is v1. `versionOfRootId` points at the v1 doc id
+   *  so all versions in a chain share a root — undefined on legacy
+   *  rows, in which case the row IS its own root. */
+  version?: number;
+  versionOfRootId?: string;
+
   createdAt: string;
   updatedAt: string;
 }

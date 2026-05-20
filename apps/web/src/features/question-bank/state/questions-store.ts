@@ -6,6 +6,7 @@ import { create } from "zustand";
 import { recordAudit } from "@/lib/audit/record";
 import { isFirebaseConfigured } from "@/lib/firebase";
 import { COLLECTIONS } from "@/lib/firestore-collections";
+import { nextVersionFields, rootId, versionOf } from "@/lib/version";
 import {
   patchDoc,
   sanitizeForFirestore,
@@ -39,6 +40,21 @@ interface Actions {
   restore(id: string, actorUid: string): void;
   /** Legacy alias — routes to archive(). */
   remove(id: string): void;
+  /**
+   * Clone the row as a new version in the same chain. The new row:
+   *   - Gets a fresh id and `version = parent.version + 1`.
+   *   - Shares the parent's `versionOfRootId`.
+   *   - Starts in `status: "draft"` so it must go through the same
+   *     approval flow the parent did (no shortcut around TBM duyệt).
+   *   - Keeps `kho` from the parent.
+   * The parent stays live — admins may archive it explicitly once the
+   * new version is approved. Returns the new doc.
+   */
+  cloneAsNewVersion(
+    sourceId: string,
+    actorUid: string,
+    reason?: string,
+  ): Question | null;
   setStatus(id: string, status: QuestionStatus, approverId?: string, note?: string): void;
   findById(id: string): Question | undefined;
   /** Internal — called by the Firestore snapshot listener. */
@@ -185,6 +201,55 @@ export const useQuestionsStore = create<State & Actions>()((set, get) => ({
 
   remove(id) {
     get().archive(id, "system", "Legacy remove() call");
+  },
+
+  cloneAsNewVersion(sourceId, actorUid, reason) {
+    const source = get().questions.find((q) => q.id === sourceId);
+    if (!source) return null;
+    const id = nextId(get().questions);
+    const now = new Date().toISOString();
+    const { version, versionOfRootId } = nextVersionFields(source);
+    // Deep-clone via JSON to avoid sharing nested arrays (options,
+    // subQuestions, etc.) between versions.
+    const baseCopy = JSON.parse(JSON.stringify(source)) as Question;
+    const clone = {
+      ...baseCopy,
+      id,
+      version,
+      versionOfRootId,
+      // New versions start in draft and re-enter the approval workflow.
+      status: "draft",
+      approvedBy: null,
+      rejectionNote: null,
+      // Carry over kho + campusId; ownerId moves to the cloner.
+      ownerId: actorUid,
+      ownerName: source.ownerName,
+      archivedAt: null,
+      archivedBy: null,
+      archiveReason: null,
+      createdAt: now,
+      updatedAt: now,
+    } as Question;
+    set({ questions: [clone, ...get().questions] });
+    writeDoc(
+      COLLECTIONS.questions,
+      id,
+      sanitizeForFirestore(clone as unknown as Record<string, unknown>),
+    );
+    recordAudit({
+      entityType: "question",
+      entityId: id,
+      action: "lifecycle-transition",
+      before: { sourceId, sourceVersion: versionOf(source) },
+      after: {
+        newVersion: version,
+        rootId: rootId(source),
+        status: "draft",
+      },
+      campusId: source.campusId,
+      reason: reason ?? "Tạo phiên bản mới từ câu hỏi đã in-use",
+    });
+    return clone;
   },
 
   setStatus(id, status, approverId, note) {
