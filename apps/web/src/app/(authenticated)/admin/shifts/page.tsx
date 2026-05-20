@@ -46,7 +46,7 @@ import {
   type ShiftStatus,
 } from "@/features/exam-shifts/data/types";
 import { useShiftsStore } from "@/features/exam-shifts/state/shifts-store";
-import { toast } from "sonner";
+import { buildLockedMessage, shiftInUse } from "@/lib/in-use";
 
 import { useAttemptsStore } from "@/features/shift-exam/state/attempts-store";
 import { useUsersStore } from "@/features/admin/users/users-store";
@@ -116,6 +116,13 @@ export default function ShiftsPage() {
   const [forceStop, setForceStop] = useState<{
     shift: ExamShift;
     intent: "edit" | "delete";
+  } | null>(null);
+  // CTA dialog when the user tries to edit a shift that already has
+  // attempts. Replaces the prior toast.error so the rule is visible
+  // in the same place where the user took the action.
+  const [shiftLocked, setShiftLocked] = useState<{
+    shift: ExamShift;
+    reason: string;
   } | null>(null);
   const [gradingTarget, setGradingTarget] = useState<{
     shift: ExamShift;
@@ -200,15 +207,15 @@ export default function ShiftsPage() {
       setForceStop({ shift: s, intent: "edit" });
       return;
     }
-    // Block edit when student attempt data exists — once a HS has
-    // started or submitted, the questions / scoring / roster shouldn't
-    // shift under their feet. Display banner instead of opening wizard.
-    const hasAttempts = attempts.some((a) => a.shiftId === s.id);
-    if (hasAttempts) {
-      toast.error(
-        `Không thể chỉnh sửa "${s.name}" — đã có dữ liệu làm bài của học sinh. Ca thi đã có HS thi sẽ được khoá để bảo toàn minh chứng.`,
-        { duration: 6000 },
-      );
+    // Enterprise governance: a shift that has any student attempt
+    // (submitted or in-progress) cannot be edited — the questions,
+    // scoring, roster, and timing must remain frozen for audit. The
+    // CTA invites the user to "create a new shift" instead. Shifts
+    // aren't versionable artifacts the way questions are, so we
+    // don't auto-clone; we just open the wizard with no editing target.
+    const usage = shiftInUse(s.id, attempts);
+    if (usage.inUse) {
+      setShiftLocked({ shift: s, reason: usage.reason ?? "" });
       return;
     }
     setEditing(s);
@@ -857,6 +864,34 @@ export default function ShiftsPage() {
           } else {
             setDeleting(latest);
           }
+        }}
+      />
+
+      <ConfirmActionDialog
+        open={Boolean(shiftLocked)}
+        onOpenChange={(o) => !o && setShiftLocked(null)}
+        variant="default"
+        title="🔒 Ca thi đã có học sinh làm bài — không thể chỉnh sửa"
+        description={
+          shiftLocked ? (
+            <>
+              {buildLockedMessage({ inUse: true, reason: shiftLocked.reason })}
+              <div className="mt-2 rounded-md bg-muted/40 px-3 py-2 text-[11.5px] text-muted-foreground">
+                Ca thi không có khái niệm "phiên bản v2" — nếu cần sửa
+                đề, hãy tạo ca thi mới và phân HS sang ca đó. Ca cũ vẫn
+                giữ nguyên kết quả cho audit.
+              </div>
+            </>
+          ) : (
+            ""
+          )
+        }
+        confirmLabel="Tạo ca thi mới"
+        onConfirm={() => {
+          if (!shiftLocked) return;
+          setShiftLocked(null);
+          setEditing(null);
+          setWizardOpen(true);
         }}
       />
 

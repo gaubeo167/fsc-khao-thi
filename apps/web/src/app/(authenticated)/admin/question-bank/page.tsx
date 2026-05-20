@@ -83,6 +83,7 @@ export default function QuestionBankPage() {
   const subjects = useSubjectsStore((s) => s.subjects);
   const allQuestionsRaw = useQuestionsStore((s) => s.questions);
   const archiveQuestion = useQuestionsStore((s) => s.archive);
+  const restoreQuestion = useQuestionsStore((s) => s.restore);
   const cloneQuestionVersion = useQuestionsStore((s) => s.cloneAsNewVersion);
   const createQuestion = useQuestionsStore((s) => s.create);
   const examForms = useExamFormsStore((s) => s.forms);
@@ -470,6 +471,10 @@ export default function QuestionBankPage() {
                 onEdit={openEdit}
                 onDuplicate={setCopying}
                 onDelete={setDeleting}
+                onRestore={(target) => {
+                  if (!session) return;
+                  restoreQuestion(target.id, session.userId);
+                }}
               />
             </li>
           ))}

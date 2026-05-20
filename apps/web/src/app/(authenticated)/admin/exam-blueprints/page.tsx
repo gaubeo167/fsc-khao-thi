@@ -33,6 +33,8 @@ import { useQuestionsStore } from "@/features/question-bank/state/questions-stor
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import { PageHeader } from "@/features/shell/components/page-header";
 import { cn } from "@/lib/utils";
+import { blueprintInUse, buildLockedMessage, packageInUse } from "@/lib/in-use";
+import { versionOf } from "@/lib/version";
 
 import { BlueprintCard } from "@/features/exams/components/blueprint-card";
 import { DifficultyPills } from "@/features/exams/components/difficulty-pills";
@@ -94,8 +96,20 @@ export default function ExamBlueprintsPage() {
   const activeCampusId = useCampusStore((s) => s.activeCampusId);
   const allBlueprintsRaw = useBlueprintsStore((s) => s.blueprints);
   const archiveBlueprint = useBlueprintsStore((s) => s.archive);
+  const restoreBlueprint = useBlueprintsStore((s) => s.restore);
+  const cloneBlueprintVersion = useBlueprintsStore((s) => s.cloneAsNewVersion);
   const allPackagesRaw = usePackagesStore((s) => s.packages);
   const archivePackage = usePackagesStore((s) => s.archive);
+  const restorePackage = usePackagesStore((s) => s.restore);
+  const clonePackageVersion = usePackagesStore((s) => s.cloneAsNewVersion);
+  const [blueprintVersionPrompt, setBlueprintVersionPrompt] = useState<{
+    source: ExamBlueprint;
+    blockerReason: string;
+  } | null>(null);
+  const [packageVersionPrompt, setPackageVersionPrompt] = useState<{
+    source: ExamPackage;
+    blockerReason: string;
+  } | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   // Hide archived rows by default; admin toggle reveals them.
   const blueprints = useMemo(
@@ -115,7 +129,13 @@ export default function ExamBlueprintsPage() {
   const generated = useGeneratedStore((s) => s.generated);
   const removeGenerated = useGeneratedStore((s) => s.remove);
   const removeGeneratedByPackage = useGeneratedStore((s) => s.removeByPackage);
-  const shifts = useShiftsStore((s) => s.shifts);
+  const allShiftsRaw = useShiftsStore((s) => s.shifts);
+  // Live (non-archived) shifts only — what the existing checks were
+  // computing implicitly before Phase C ever-archived shifts existed.
+  const shifts = useMemo(
+    () => allShiftsRaw.filter((s) => !s.archivedAt),
+    [allShiftsRaw],
+  );
   const allQuestions = useQuestionsStore((s) => s.questions);
   const subjects = useSubjectsStore((s) => s.subjects);
   const grades = useGradesStore((s) => s.grades);
@@ -278,7 +298,27 @@ export default function ExamBlueprintsPage() {
     setBlueprintDialogOpen(true);
   }
   function openEditBlueprint(b: ExamBlueprint) {
+    // Enterprise governance: blueprint in-use (referenced by any
+    // non-archived package) cannot be edited in place. Surface the
+    // "Tạo phiên bản mới" CTA.
+    const usage = blueprintInUse(b.id, allPackagesRaw);
+    if (usage.inUse) {
+      setBlueprintVersionPrompt({ source: b, blockerReason: usage.reason ?? "" });
+      return;
+    }
     setEditingBlueprint(b);
+    setBlueprintDialogOpen(true);
+  }
+  function performCloneBlueprint(source: ExamBlueprint) {
+    if (!session) return;
+    const clone = cloneBlueprintVersion(
+      source.id,
+      session.userId,
+      "Edit khi khung đề đã in-use bởi gói đề",
+    );
+    if (!clone) return;
+    setBlueprintVersionPrompt(null);
+    setEditingBlueprint(clone);
     setBlueprintDialogOpen(true);
   }
   function openCreatePackage(b: ExamBlueprint) {
@@ -287,7 +327,25 @@ export default function ExamBlueprintsPage() {
     setPackageDialogOpen(true);
   }
   function openEditPackage(p: ExamPackage) {
+    const usage = packageInUse(p.id, allShiftsRaw);
+    if (usage.inUse) {
+      setPackageVersionPrompt({ source: p, blockerReason: usage.reason ?? "" });
+      return;
+    }
     setEditingPackage(p);
+    setPackageBaseBlueprint(null);
+    setPackageDialogOpen(true);
+  }
+  function performClonePackage(source: ExamPackage) {
+    if (!session) return;
+    const clone = clonePackageVersion(
+      source.id,
+      session.userId,
+      "Edit khi gói đề đã in-use bởi ca thi",
+    );
+    if (!clone) return;
+    setPackageVersionPrompt(null);
+    setEditingPackage(clone);
     setPackageBaseBlueprint(null);
     setPackageDialogOpen(true);
   }
@@ -410,6 +468,10 @@ export default function ExamBlueprintsPage() {
           allQuestions={allQuestions}
           onEdit={openEditBlueprint}
           onDelete={setDeletingBlueprint}
+          onRestore={(b) => {
+            if (!session) return;
+            restoreBlueprint(b.id, session.userId);
+          }}
           onCreatePackage={openCreatePackage}
         />
       )}
@@ -422,6 +484,10 @@ export default function ExamBlueprintsPage() {
           generated={generated}
           onEdit={openEditPackage}
           onDelete={setDeletingPackage}
+          onRestore={(p) => {
+            if (!session) return;
+            restorePackage(p.id, session.userId);
+          }}
           onGenerate={setGeneratingFor}
         />
       )}
@@ -600,6 +666,71 @@ export default function ExamBlueprintsPage() {
           deletingGenerated && removeGenerated(deletingGenerated.id)
         }
       />
+
+      <ConfirmActionDialog
+        open={Boolean(blueprintVersionPrompt)}
+        onOpenChange={(o) => !o && setBlueprintVersionPrompt(null)}
+        variant="default"
+        title="Khung đề đã được dùng bởi gói đề"
+        description={
+          blueprintVersionPrompt ? (
+            <>
+              {buildLockedMessage({
+                inUse: true,
+                reason: blueprintVersionPrompt.blockerReason,
+              })}
+              <div className="mt-2 rounded-md bg-muted/40 px-3 py-2 text-[11.5px] text-muted-foreground">
+                Phiên bản mới sẽ là{" "}
+                <span className="font-semibold">
+                  v{versionOf(blueprintVersionPrompt.source) + 1}
+                </span>{" "}
+                trong chuỗi của khung đề{" "}
+                <span className="font-mono">{blueprintVersionPrompt.source.name}</span>
+                .
+              </div>
+            </>
+          ) : (
+            ""
+          )
+        }
+        confirmLabel="Tạo phiên bản mới"
+        onConfirm={() => {
+          if (blueprintVersionPrompt)
+            performCloneBlueprint(blueprintVersionPrompt.source);
+        }}
+      />
+
+      <ConfirmActionDialog
+        open={Boolean(packageVersionPrompt)}
+        onOpenChange={(o) => !o && setPackageVersionPrompt(null)}
+        variant="default"
+        title="Gói đề đã được dùng bởi ca thi"
+        description={
+          packageVersionPrompt ? (
+            <>
+              {buildLockedMessage({
+                inUse: true,
+                reason: packageVersionPrompt.blockerReason,
+              })}
+              <div className="mt-2 rounded-md bg-muted/40 px-3 py-2 text-[11.5px] text-muted-foreground">
+                Phiên bản mới sẽ là{" "}
+                <span className="font-semibold">
+                  v{versionOf(packageVersionPrompt.source) + 1}
+                </span>{" "}
+                — bắt đầu ở trạng thái <span className="font-semibold">draft</span>
+                , cần được duyệt lại trước khi dùng cho ca thi mới.
+              </div>
+            </>
+          ) : (
+            ""
+          )
+        }
+        confirmLabel="Tạo phiên bản mới"
+        onConfirm={() => {
+          if (packageVersionPrompt)
+            performClonePackage(packageVersionPrompt.source);
+        }}
+      />
     </>
   );
 }
@@ -639,12 +770,14 @@ function BlueprintsView({
   allQuestions,
   onEdit,
   onDelete,
+  onRestore,
   onCreatePackage,
 }: {
   blueprints: ExamBlueprint[];
   allQuestions: Parameters<typeof BlueprintCard>[0]["questions"];
   onEdit(b: ExamBlueprint): void;
   onDelete(b: ExamBlueprint): void;
+  onRestore(b: ExamBlueprint): void;
   onCreatePackage(b: ExamBlueprint): void;
 }) {
   if (blueprints.length === 0) {
@@ -658,7 +791,7 @@ function BlueprintsView({
   return (
     <ul className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
       {blueprints.map((b) => (
-        <li key={b.id}>
+        <li key={b.id} className="relative">
           <BlueprintCard
             blueprint={b}
             questions={allQuestions}
@@ -666,6 +799,29 @@ function BlueprintsView({
             onDelete={onDelete}
             onCreatePackage={onCreatePackage}
           />
+          {/* Version + archive badges sit over the card top-right.
+              The card itself isn't version-aware (legacy component),
+              so we overlay; this avoids touching BlueprintCard. */}
+          <div className="pointer-events-none absolute right-2 top-2 flex gap-1">
+            {versionOf(b) > 1 && (
+              <span className="rounded-md border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">
+                v{versionOf(b)}
+              </span>
+            )}
+            {b.archivedAt && (
+              <span className="pointer-events-auto inline-flex items-center gap-1 rounded-md border border-zinc-300 bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600">
+                🗄 Đã lưu trữ
+                <button
+                  type="button"
+                  onClick={() => onRestore(b)}
+                  className="rounded px-1 font-bold text-blue-700 hover:bg-blue-50"
+                  title="Khôi phục"
+                >
+                  Khôi phục
+                </button>
+              </span>
+            )}
+          </div>
         </li>
       ))}
     </ul>
@@ -681,6 +837,7 @@ function PackagesView({
   generated,
   onEdit,
   onDelete,
+  onRestore,
   onGenerate,
 }: {
   packages: ExamPackage[];
@@ -689,6 +846,7 @@ function PackagesView({
   generated: GeneratedExam[];
   onEdit(p: ExamPackage): void;
   onDelete(p: ExamPackage): void;
+  onRestore(p: ExamPackage): void;
   onGenerate(p: ExamPackage): void;
 }) {
   if (packages.length === 0) {
@@ -720,6 +878,23 @@ function PackagesView({
                   {p.id}
                 </span>
                 <PackageStatusBadge status={p.status} />
+                {versionOf(p) > 1 ? (
+                  <span className="rounded-md border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">
+                    v{versionOf(p)}
+                  </span>
+                ) : null}
+                {p.archivedAt ? (
+                  <span className="inline-flex items-center gap-1 rounded-md border border-zinc-300 bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600">
+                    🗄 Đã lưu trữ
+                    <button
+                      type="button"
+                      onClick={() => onRestore(p)}
+                      className="rounded px-1 font-bold text-blue-700 hover:bg-blue-50"
+                    >
+                      Khôi phục
+                    </button>
+                  </span>
+                ) : null}
                 <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-muted-foreground">
                   ⏱ {p.duration}p · {perExam} câu/đề
                 </span>

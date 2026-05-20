@@ -1,6 +1,6 @@
 "use client";
 
-import { Copy, Eye, PencilLine, Trash2 } from "lucide-react";
+import { Copy, Eye, PencilLine, RotateCcw, Trash2 } from "lucide-react";
 import { memo } from "react";
 
 import { IconButton } from "@/components/ui/icon-button";
@@ -23,6 +23,10 @@ interface Props {
   onEdit: (q: Question) => void;
   onDuplicate?: (q: Question) => void;
   onDelete: (q: Question) => void;
+  /** When set, show a restore button instead of edit/delete on
+   *  archived questions. Phase C/E governance: archived rows are
+   *  immutable in place; only un-archive is allowed. */
+  onRestore?: (q: Question) => void;
 }
 
 const DIFFICULTY_LABEL: Record<Question["difficulty"], string> = {
@@ -44,6 +48,7 @@ function QuestionCardImpl({
   onEdit,
   onDuplicate,
   onDelete,
+  onRestore,
 }: Props) {
   const subjects = useSubjectsStore((s) => s.subjects);
   const grades = useGradesStore((s) => s.grades);
@@ -98,9 +103,25 @@ function QuestionCardImpl({
               <Copy className="h-3.5 w-3.5" strokeWidth={1.75} />
             </IconButton>
           )}
-          <IconButton size="sm" variant="destructive" title="Xoá" onClick={() => onDelete(question)}>
-            <Trash2 className="h-3.5 w-3.5" strokeWidth={1.75} />
-          </IconButton>
+          {question.archivedAt && onRestore ? (
+            <IconButton
+              size="sm"
+              variant="primary"
+              title="Khôi phục câu hỏi đã lưu trữ"
+              onClick={() => onRestore(question)}
+            >
+              <RotateCcw className="h-3.5 w-3.5" strokeWidth={1.75} />
+            </IconButton>
+          ) : (
+            <IconButton
+              size="sm"
+              variant="destructive"
+              title="Lưu trữ"
+              onClick={() => onDelete(question)}
+            >
+              <Trash2 className="h-3.5 w-3.5" strokeWidth={1.75} />
+            </IconButton>
+          )}
         </div>
       </header>
 
