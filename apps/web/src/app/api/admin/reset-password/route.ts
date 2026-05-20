@@ -24,6 +24,23 @@ const STAFF_ROLES_THAT_CAN_RESET = new Set([
   "campus-admin",
 ]);
 
+/** Normalize the various ways a user doc might store campus membership
+ *  into a single string array. /users docs in this project use
+ *  `campusId: string | null` (singular), but we also honor a future
+ *  `campusIds: string[]` shape so the route doesn't need rewriting
+ *  when multi-campus roles arrive. */
+function collectCampuses(
+  data: Record<string, unknown>,
+): string[] {
+  if (Array.isArray(data.campusIds) && data.campusIds.length > 0) {
+    return data.campusIds.filter((v): v is string => typeof v === "string");
+  }
+  if (typeof data.campusId === "string" && data.campusId.length > 0) {
+    return [data.campusId];
+  }
+  return [];
+}
+
 export async function POST(req: Request) {
   let body: { targetUserId?: string; newPassword?: string };
   try {
@@ -104,20 +121,20 @@ export async function POST(req: Request) {
   }
   const targetData = targetSnap.data() ?? {};
 
-  // Campus admin scope check.
+  // Campus admin scope check. The /users docs store campus membership
+  // as `campusId: string | null` (singular). Earlier draft of this
+  // route accidentally read `campusIds` (array, which doesn't exist)
+  // so every campus-admin call returned 403 even within their own
+  // campus. We honor both shapes for forward compatibility.
   if (callerRole === "campus-admin") {
-    const callerCampuses: string[] = Array.isArray(callerData.campusIds)
-      ? callerData.campusIds
-      : [];
-    const targetCampuses: string[] = Array.isArray(targetData.campusIds)
-      ? targetData.campusIds
-      : targetData.campusId
-        ? [targetData.campusId]
-        : [];
+    const callerCampuses = collectCampuses(callerData);
+    const targetCampuses = collectCampuses(targetData);
     const overlap = targetCampuses.some((c) => callerCampuses.includes(c));
     if (!overlap) {
       return NextResponse.json(
-        { error: "Campus admins can only reset users in their own campus" },
+        {
+          error: `Campus admins can only reset users in their own campus. caller=[${callerCampuses.join(",") || "none"}] target=[${targetCampuses.join(",") || "none"}]`,
+        },
         { status: 403 },
       );
     }
