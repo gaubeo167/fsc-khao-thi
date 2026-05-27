@@ -187,24 +187,30 @@ export function QuestionPickerDialog({
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onOpenChange(false)}>
       <DialogContent
-        className="max-w-5xl max-h-[92vh] overflow-hidden p-0"
+        className="flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden p-0"
         onPointerDownOutside={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}
       >
-        <DialogHeader className="border-b px-5 py-3">
-          <DialogTitle className="inline-flex items-center gap-2">
-            <CheckSquare className="h-5 w-5 text-primary" />
-            Chọn câu hỏi từ ngân hàng
-          </DialogTitle>
-          <DialogDescription>
-            {subject ? `Đang lọc môn ${subject.name}` : "Hãy chọn môn trước"}
-            {gradeId ? ` · khối liên quan` : ""} · chỉ hiển thị câu hỏi tự
-            chấm được
-          </DialogDescription>
+        <DialogHeader className="shrink-0 border-b bg-gradient-to-r from-emerald-50 to-teal-50 px-5 py-4">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-sm">
+              <CheckSquare className="h-5 w-5" strokeWidth={1.85} />
+            </span>
+            <div>
+              <DialogTitle className="text-[16px]">
+                Chọn câu hỏi từ ngân hàng
+              </DialogTitle>
+              <DialogDescription className="mt-0.5">
+                {subject ? `Đang lọc môn ${subject.name}` : "Hãy chọn môn trước"}
+                {gradeId ? ` · khối liên quan` : ""} · chỉ hiển thị câu hỏi
+                tự chấm được
+              </DialogDescription>
+            </div>
+          </div>
         </DialogHeader>
 
         {/* Kho tabs */}
-        <div className="border-b px-5 py-2">
+        <div className="shrink-0 border-b px-5 py-2">
           <div className="inline-flex rounded-xl border bg-card p-1">
             <KhoTab
               active={kho === "campus"}
@@ -222,7 +228,7 @@ export function QuestionPickerDialog({
         </div>
 
         {/* Filters */}
-        <div className="grid grid-cols-2 gap-3 border-b px-5 py-3 sm:grid-cols-4">
+        <div className="grid shrink-0 grid-cols-2 gap-3 border-b px-5 py-3 sm:grid-cols-4">
           <div className="space-y-1">
             <Label className="text-[11px] text-muted-foreground">Độ khó</Label>
             <Select
@@ -279,7 +285,7 @@ export function QuestionPickerDialog({
         </div>
 
         {/* Search + bulk actions */}
-        <div className="flex items-center gap-2 border-b px-5 py-2.5">
+        <div className="flex shrink-0 items-center gap-2 border-b px-5 py-2.5">
           <div className="relative min-w-[240px] flex-1">
             <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -310,7 +316,7 @@ export function QuestionPickerDialog({
         </div>
 
         {/* List */}
-        <div className="max-h-[400px] overflow-y-auto px-5 py-2">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-2">
           {pool.length === 0 ? (
             <div className="rounded-lg border border-dashed bg-muted/15 px-6 py-10 text-center">
               <p className="text-section-title">
@@ -411,7 +417,7 @@ export function QuestionPickerDialog({
         </div>
 
         {/* Footer */}
-        <footer className="flex items-center justify-between border-t bg-muted/15 px-5 py-3">
+        <footer className="flex shrink-0 items-center justify-between border-t bg-muted/15 px-5 py-3">
           <p className="text-[12.5px] font-medium text-foreground/80">
             Đã chọn <span className="text-primary">{draft.length}</span> câu
           </p>

@@ -1,6 +1,40 @@
 "use client";
 
-import { Download, ExternalLink } from "lucide-react";
+import {
+  Download,
+  ExternalLink,
+  FileSpreadsheet,
+  FileText,
+  FileType,
+  ImageIcon,
+  Link2,
+  Music2,
+  Play,
+} from "lucide-react";
+
+function FileTypeIconForViewer({
+  fileType,
+}: {
+  fileType: MaterialFileType;
+}) {
+  switch (fileType) {
+    case "video":
+      return <Play className="h-5 w-5" strokeWidth={1.85} />;
+    case "pdf":
+    case "word":
+      return <FileText className="h-5 w-5" strokeWidth={1.85} />;
+    case "powerpoint":
+      return <FileType className="h-5 w-5" strokeWidth={1.85} />;
+    case "excel":
+      return <FileSpreadsheet className="h-5 w-5" strokeWidth={1.85} />;
+    case "image":
+      return <ImageIcon className="h-5 w-5" strokeWidth={1.85} />;
+    case "audio":
+      return <Music2 className="h-5 w-5" strokeWidth={1.85} />;
+    default:
+      return <Link2 className="h-5 w-5" strokeWidth={1.85} />;
+  }
+}
 
 import { Button } from "@/components/ui/button";
 import {
@@ -16,6 +50,7 @@ import {
   formatFileSize,
   toEmbedUrl,
   type LearningMaterial,
+  type MaterialFileType,
 } from "../data/types";
 
 interface Props {
@@ -28,29 +63,37 @@ export function MaterialViewerDialog({ material, onClose }: Props) {
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent
-        className="max-w-4xl max-h-[92vh] overflow-y-auto p-0"
-        onPointerDownOutside={(e) => {
+        className="flex max-h-[94vh] w-full max-w-4xl flex-col overflow-hidden p-0"
+        onPointerDownOutside={() => {
           // Single click outside should close — viewer is read-only, no
           // unsaved work to protect.
         }}
       >
         {material && (
           <>
-            <DialogHeader className="border-b px-5 py-3">
-              <DialogTitle className="text-section-title">
-                {material.title}
-              </DialogTitle>
-              <DialogDescription className="text-meta">
-                {FILE_TYPE_LABEL[material.fileType]} ·{" "}
-                {formatFileSize(material.sizeBytes)} · {material.originalFilename}
-              </DialogDescription>
+            <DialogHeader className="shrink-0 border-b bg-gradient-to-r from-amber-50 to-orange-50 px-5 py-4">
+              <div className="flex items-center gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-white shadow-sm">
+                  <FileTypeIconForViewer fileType={material.fileType} />
+                </span>
+                <div className="min-w-0">
+                  <DialogTitle className="text-section-title">
+                    {material.title}
+                  </DialogTitle>
+                  <DialogDescription className="text-meta">
+                    {FILE_TYPE_LABEL[material.fileType]} ·{" "}
+                    {formatFileSize(material.sizeBytes)} ·{" "}
+                    {material.originalFilename}
+                  </DialogDescription>
+                </div>
+              </div>
             </DialogHeader>
 
-            <div className="px-5 py-4">
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
               <ViewerBody material={material} />
             </div>
 
-            <footer className="flex items-center justify-between border-t bg-muted/30 px-5 py-3">
+            <footer className="flex shrink-0 items-center justify-between border-t bg-muted/30 px-5 py-3">
               <p className="text-meta">
                 Tải lên bởi{" "}
                 <span className="font-medium text-foreground/75">

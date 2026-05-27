@@ -285,25 +285,29 @@ export function UploadMaterialDialog({ open, onOpenChange }: Props) {
       }}
     >
       <DialogContent
-        className="max-w-xl max-h-[92vh] overflow-y-auto"
+        className="flex max-h-[94vh] w-full max-w-xl flex-col overflow-hidden p-0"
         onPointerDownOutside={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}
         onEscapeKeyDown={(e) => {
           if (submitting) e.preventDefault();
         }}
       >
-        <DialogHeader>
-          <DialogTitle className="inline-flex items-center gap-2">
-            <CloudUpload className="h-5 w-5 text-primary" />
-            Thêm học liệu
-          </DialogTitle>
-          <DialogDescription>
-            Upload file (video / PDF / Word / PPT / Excel / ảnh, tối đa{" "}
-            {formatFileSize(MAX_BYTES)}) hoặc dán liên kết chia sẻ
-            (YouTube / Google Drive / OneDrive…). Học liệu vào kho
-            trường cần TBM hoặc Admin duyệt.
-          </DialogDescription>
+        <DialogHeader className="shrink-0 border-b bg-gradient-to-r from-amber-50 to-orange-50 px-5 py-4">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-white shadow-sm">
+              <CloudUpload className="h-5 w-5" strokeWidth={1.85} />
+            </span>
+            <div>
+              <DialogTitle className="text-[16px]">Thêm học liệu</DialogTitle>
+              <DialogDescription className="mt-0.5">
+                File (video / PDF / Word / PPT / Excel / ảnh, ≤{" "}
+                {formatFileSize(MAX_BYTES)}) hoặc liên kết chia sẻ
+                (YouTube / Drive / OneDrive…). Kho trường cần duyệt.
+              </DialogDescription>
+            </div>
+          </div>
         </DialogHeader>
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
 
         <div className="space-y-3">
           {/* Source toggle */}
@@ -543,8 +547,9 @@ export function UploadMaterialDialog({ open, onOpenChange }: Props) {
             </div>
           )}
         </div>
+        </div>
 
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="flex shrink-0 justify-end gap-2 border-t bg-card px-5 py-3">
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}

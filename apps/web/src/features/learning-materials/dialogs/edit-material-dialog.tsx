@@ -163,7 +163,7 @@ export function EditMaterialDialog({ material, onClose }: Props) {
   return (
     <Dialog open={open} onOpenChange={(o) => !o && !submitting && onClose()}>
       <DialogContent
-        className="max-w-xl max-h-[92vh] overflow-y-auto"
+        className="flex max-h-[94vh] w-full max-w-xl flex-col overflow-hidden p-0"
         onPointerDownOutside={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}
         onEscapeKeyDown={(e) => {
@@ -172,18 +172,24 @@ export function EditMaterialDialog({ material, onClose }: Props) {
       >
         {material && (
           <>
-            <DialogHeader>
-              <DialogTitle className="inline-flex items-center gap-2">
-                <Pencil className="h-5 w-5 text-primary" />
-                Chỉnh sửa học liệu
-              </DialogTitle>
-              <DialogDescription>
-                Nội dung file không thể đổi sau khi upload. Để thay file
-                hãy upload học liệu mới rồi lưu trữ cái cũ.
-              </DialogDescription>
+            <DialogHeader className="shrink-0 border-b bg-gradient-to-r from-blue-50 to-indigo-50 px-5 py-4">
+              <div className="flex items-center gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm">
+                  <Pencil className="h-5 w-5" strokeWidth={1.85} />
+                </span>
+                <div>
+                  <DialogTitle className="text-[16px]">
+                    Chỉnh sửa học liệu
+                  </DialogTitle>
+                  <DialogDescription className="mt-0.5">
+                    Nội dung file không thể đổi sau khi upload. Để thay file
+                    hãy upload mới rồi lưu trữ cái cũ.
+                  </DialogDescription>
+                </div>
+              </div>
             </DialogHeader>
 
-            <div className="space-y-3">
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4">
               {material.sourceType === "link" && (
                 <div className="space-y-1.5">
                   <Label>Liên kết chia sẻ *</Label>
@@ -341,7 +347,7 @@ export function EditMaterialDialog({ material, onClose }: Props) {
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex shrink-0 justify-end gap-2 border-t bg-card px-5 py-3">
               <Button variant="outline" onClick={onClose} disabled={submitting}>
                 Huỷ
               </Button>

@@ -59,11 +59,11 @@ export function HomeworkAttemptDetailDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-w-4xl max-h-[92vh] overflow-hidden p-0"
+        className="flex max-h-[94vh] w-full max-w-4xl flex-col overflow-hidden p-0"
         onPointerDownOutside={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}
       >
-        <DialogHeader className="border-b bg-gradient-to-r from-blue-50 to-cyan-50 px-5 py-4">
+        <DialogHeader className="shrink-0 border-b bg-gradient-to-r from-blue-50 to-cyan-50 px-5 py-4">
           <DialogTitle>{studentName}</DialogTitle>
           <DialogDescription className="mt-0.5">
             {studentUsername ? `${studentUsername} · ` : ""}
@@ -94,7 +94,7 @@ export function HomeworkAttemptDetailDialog({
           ) : null}
         </DialogHeader>
 
-        <div className="max-h-[calc(92vh-9rem)] overflow-y-auto px-5 py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           {!attempt?.submittedAt ? (
             <div className="rounded-lg border border-dashed bg-muted/15 px-6 py-10 text-center text-meta">
               Học sinh chưa nộp bài. Khi HS nộp, chi tiết bài làm sẽ hiển

@@ -126,22 +126,28 @@ export function MaterialPickerDialog({
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onOpenChange(false)}>
       <DialogContent
-        className="max-w-4xl max-h-[92vh] overflow-hidden p-0"
+        className="flex max-h-[94vh] w-full max-w-4xl flex-col overflow-hidden p-0"
         onPointerDownOutside={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}
       >
-        <DialogHeader className="border-b px-5 py-3">
-          <DialogTitle className="inline-flex items-center gap-2">
-            <Paperclip className="h-5 w-5 text-primary" />
-            Chọn học liệu đính kèm
-          </DialogTitle>
-          <DialogDescription>
-            {subject ? `Đang lọc môn ${subject.name}` : "Chọn môn trước"} ·
-            học sinh có thể xem học liệu này khi làm BTVN
-          </DialogDescription>
+        <DialogHeader className="shrink-0 border-b bg-gradient-to-r from-amber-50 to-orange-50 px-5 py-4">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-white shadow-sm">
+              <Paperclip className="h-5 w-5" strokeWidth={1.85} />
+            </span>
+            <div>
+              <DialogTitle className="text-[16px]">
+                Chọn học liệu đính kèm
+              </DialogTitle>
+              <DialogDescription className="mt-0.5">
+                {subject ? `Đang lọc môn ${subject.name}` : "Chọn môn trước"} ·
+                HS có thể xem học liệu này khi làm BTVN
+              </DialogDescription>
+            </div>
+          </div>
         </DialogHeader>
 
-        <div className="border-b px-5 py-2">
+        <div className="shrink-0 border-b px-5 py-2">
           <div className="inline-flex rounded-xl border bg-card p-1">
             <KhoTab
               active={kho === "campus"}
@@ -158,7 +164,7 @@ export function MaterialPickerDialog({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 border-b px-5 py-3">
+        <div className="grid shrink-0 grid-cols-2 gap-3 border-b px-5 py-3">
           <div className="space-y-1">
             <Label className="text-[11px] text-muted-foreground">Loại file</Label>
             <Select
@@ -192,7 +198,7 @@ export function MaterialPickerDialog({
           </div>
         </div>
 
-        <div className="flex items-center gap-2 border-b px-5 py-2.5">
+        <div className="flex shrink-0 items-center gap-2 border-b px-5 py-2.5">
           <div className="relative min-w-[240px] flex-1">
             <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -215,7 +221,7 @@ export function MaterialPickerDialog({
           </Button>
         </div>
 
-        <div className="max-h-[400px] overflow-y-auto px-5 py-2">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-2">
           {pool.length === 0 ? (
             <div className="rounded-lg border border-dashed bg-muted/15 px-6 py-10 text-center">
               <p className="text-section-title">Không có học liệu nào phù hợp.</p>
@@ -300,7 +306,7 @@ export function MaterialPickerDialog({
           )}
         </div>
 
-        <footer className="flex items-center justify-between border-t bg-muted/15 px-5 py-3">
+        <footer className="flex shrink-0 items-center justify-between border-t bg-muted/15 px-5 py-3">
           <p className="text-[12.5px] font-medium text-foreground/80">
             Đã chọn <span className="text-primary">{draft.length}</span> học liệu
           </p>

@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  ClipboardList,
   Eye,
   FileText,
   Paperclip,
@@ -130,19 +131,28 @@ export function HomeworkPreviewDialog({
       }}
     >
       <DialogContent
-        className="max-w-5xl max-h-[92vh] overflow-hidden p-0"
+        className="flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden p-0"
         onPointerDownOutside={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}
       >
-        <DialogHeader className="border-b px-5 py-3">
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <DialogTitle>{title || "Xem trước BTVN"}</DialogTitle>
-              <DialogDescription>
-                {questions.length} câu · {materials.length} học liệu đính kèm
-              </DialogDescription>
+        {/* Header — purple gradient + icon, same flavour as form */}
+        <DialogHeader className="shrink-0 border-b bg-gradient-to-r from-violet-50 to-purple-50 px-5 py-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-600 text-white shadow-sm">
+                <ClipboardList className="h-5 w-5" strokeWidth={1.85} />
+              </span>
+              <div>
+                <DialogTitle className="text-[16px]">
+                  {title || "Xem trước BTVN"}
+                </DialogTitle>
+                <DialogDescription className="mt-0.5">
+                  {questions.length} câu · {materials.length} học liệu đính
+                  kèm
+                </DialogDescription>
+              </div>
             </div>
-            <div className="inline-flex rounded-xl border bg-card p-1">
+            <div className="inline-flex shrink-0 rounded-xl border bg-card p-1">
               <ModeTab
                 active={mode === "review"}
                 onClick={() => {
@@ -170,9 +180,9 @@ export function HomeworkPreviewDialog({
             Chưa có câu hỏi nào để xem trước. Quay lại và chọn câu hỏi.
           </div>
         ) : (
-          <div className="grid max-h-[calc(92vh-9rem)] grid-cols-[1fr_220px] gap-0 overflow-hidden">
-            {/* Main */}
-            <div className="overflow-y-auto px-5 py-4">
+          <div className="grid min-h-0 flex-1 grid-cols-[1fr_240px] overflow-hidden">
+            {/* Main — scrollable */}
+            <div className="min-w-0 overflow-y-auto px-5 py-4">
               {mode === "review" ? (
                 <ReviewBody questions={questions} />
               ) : trialScore != null ? (
@@ -288,7 +298,7 @@ export function HomeworkPreviewDialog({
         )}
 
         {questions.length > 0 && mode === "trial" && !trialSubmitted && (
-          <footer className="flex items-center justify-between border-t bg-muted/15 px-5 py-3">
+          <footer className="flex shrink-0 items-center justify-between border-t bg-muted/15 px-5 py-3">
             <Button
               variant="outline"
               onClick={() => setIdx((i) => Math.max(0, i - 1))}
