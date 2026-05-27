@@ -459,7 +459,7 @@ export default function ReportDetailPage() {
                 return (
                   <li
                     key={row.question.id}
-                    className="grid items-center gap-2 px-4 py-1.5 hover:bg-accent/20 sm:grid-cols-[28px_minmax(0,1fr)_140px_60px_28px]"
+                    className="grid items-center gap-2 px-4 py-1.5 hover:bg-accent/20 sm:grid-cols-[28px_minmax(0,1fr)_140px_90px_28px]"
                   >
                     <span className="text-right text-[11px] font-semibold text-foreground/60">
                       {idx + 1}.
@@ -523,7 +523,7 @@ export default function ReportDetailPage() {
                     </div>
                     <div
                       className={cn(
-                        "rounded-md border px-1.5 py-0.5 text-center text-[13px] font-bold",
+                        "rounded-md border px-1.5 py-0.5 text-center leading-tight",
                         tone === "emerald"
                           ? "border-emerald-300 bg-emerald-50 text-emerald-800"
                           : tone === "blue"
@@ -533,10 +533,17 @@ export default function ReportDetailPage() {
                               : "border-rose-300 bg-rose-50 text-rose-800",
                       )}
                       title={
-                        row.isManual ? "% đạt ≥ 50% rubric" : "% HS đúng"
+                        row.isManual
+                          ? `${row.correct} HS đạt ≥ 50% rubric · ${row.wrong} chưa đạt · ${row.blank} bỏ trống / ${row.totalAssigned} HS được giao`
+                          : `${row.correct} HS đúng · ${row.wrong} HS sai · ${row.blank} HS bỏ trống / ${row.totalAssigned} HS được giao`
                       }
                     >
-                      {pct}%
+                      <div className="text-[13px] font-bold tabular-nums">
+                        {row.correct}/{row.totalAssigned}
+                      </div>
+                      <div className="text-[10px] font-semibold opacity-80">
+                        {pct}%
+                      </div>
                     </div>
                     <button
                       type="button"

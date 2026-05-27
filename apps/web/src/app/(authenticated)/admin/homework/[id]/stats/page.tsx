@@ -320,7 +320,7 @@ export default function HomeworkStatsPage() {
                 return (
                   <li
                     key={row.question.id}
-                    className="grid items-center gap-2 px-4 py-1.5 hover:bg-accent/20 sm:grid-cols-[28px_minmax(0,1fr)_140px_60px_28px]"
+                    className="grid items-center gap-2 px-4 py-1.5 hover:bg-accent/20 sm:grid-cols-[28px_minmax(0,1fr)_140px_90px_28px]"
                   >
                     <span className="text-right text-[11px] font-semibold text-foreground/60">
                       {idx + 1}.
@@ -365,7 +365,7 @@ export default function HomeworkStatsPage() {
                       />
                     </div>
                     <div
-                      className={`rounded-md border px-1.5 py-0.5 text-center text-[13px] font-bold ${
+                      className={`rounded-md border px-1.5 py-0.5 text-center leading-tight ${
                         tone === "emerald"
                           ? "border-emerald-300 bg-emerald-50 text-emerald-800"
                           : tone === "blue"
@@ -374,8 +374,14 @@ export default function HomeworkStatsPage() {
                               ? "border-amber-300 bg-amber-50 text-amber-800"
                               : "border-rose-300 bg-rose-50 text-rose-800"
                       }`}
+                      title={`${row.correct} HS đúng · ${wrong} HS sai trên ${row.total} HS đã nộp`}
                     >
-                      {pct}%
+                      <div className="text-[13px] font-bold tabular-nums">
+                        {row.correct}/{row.total}
+                      </div>
+                      <div className="text-[10px] font-semibold opacity-80">
+                        {pct}%
+                      </div>
                     </div>
                     <button
                       type="button"
