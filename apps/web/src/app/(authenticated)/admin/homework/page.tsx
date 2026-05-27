@@ -48,6 +48,14 @@ const HomeworkFormDialog = dynamic(
   { ssr: false, loading: () => null },
 );
 
+const HomeworkPreviewDialog = dynamic(
+  () =>
+    import("@/features/homework/dialogs/homework-preview-dialog").then(
+      (m) => m.HomeworkPreviewDialog,
+    ),
+  { ssr: false, loading: () => null },
+);
+
 export default function HomeworkAdminPage() {
   const session = useAuthStore((s) => s.session);
   const activeCampusId = useCampusStore((s) => s.activeCampusId);
@@ -60,6 +68,7 @@ export default function HomeworkAdminPage() {
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Homework | null>(null);
+  const [previewing, setPreviewing] = useState<Homework | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [subjectFilter, setSubjectFilter] = useState<string>("all");
@@ -382,13 +391,14 @@ export default function HomeworkAdminPage() {
                             <BarChart3 className="h-3.5 w-3.5" />
                             Thống kê
                           </Link>
-                          <Link
-                            href={`/admin/homework/${h.id}`}
+                          <button
+                            type="button"
+                            onClick={() => setPreviewing(h)}
                             className="inline-flex h-7 items-center gap-1 rounded-md border bg-card px-2 text-[11px] font-medium hover:bg-accent/30"
                           >
                             <Eye className="h-3.5 w-3.5" />
                             Xem
-                          </Link>
+                          </button>
                           {h.archivedAt ? (
                             <IconButton
                               size="sm"
@@ -484,6 +494,16 @@ export default function HomeworkAdminPage() {
           if (!o) setEditing(null);
         }}
         editing={editing}
+      />
+
+      <HomeworkPreviewDialog
+        open={Boolean(previewing)}
+        onOpenChange={(o) => {
+          if (!o) setPreviewing(null);
+        }}
+        questionIds={previewing?.questionIds ?? []}
+        materialIds={previewing?.materialIds ?? []}
+        title={previewing?.title ?? ""}
       />
     </>
   );

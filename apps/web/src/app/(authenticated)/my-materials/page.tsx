@@ -113,16 +113,19 @@ export default function MyMaterialsPage() {
     if (!session) return [];
     const seen = new Map<string, VisibleMaterial>();
 
-    // Pass 1 — materials shared directly via classIds (or campus-wide
-    // when classIds is empty).
+    // Pass 1 — materials EXPLICITLY shared with at least one of the
+    // student's classes. Materials with empty classIds are NOT shown
+    // here even if they sit in kho trường (approved); they need either
+    // (a) explicit class assignment, or (b) attachment to a BTVN
+    // assigned to this student (pass 2). This matches teacher intent —
+    // "available in kho trường" ≠ "shared with students".
     for (const m of allMaterials) {
       if (m.archivedAt) continue;
       if (m.kho !== "campus") continue;
       if (m.status !== "approved") continue;
       if (session.campusId && m.campusId !== session.campusId) continue;
-      const restricted = m.classIds && m.classIds.length > 0;
-      const reachable =
-        !restricted || m.classIds!.some((cid) => myClassIds.has(cid));
+      if (!m.classIds || m.classIds.length === 0) continue;
+      const reachable = m.classIds.some((cid) => myClassIds.has(cid));
       if (!reachable) continue;
       seen.set(m.id, {
         material: m,
@@ -159,7 +162,32 @@ export default function MyMaterialsPage() {
       }
     }
 
-    return [...seen.values()].sort((a, b) =>
+    // Content-identity dedupe: when a teacher uploads the same file to
+    // both kho trường (Chia sẻ) and kho cá nhân (BTVN attach), the
+    // student would otherwise see it twice. Merge by
+    // (title + fileType + sizeBytes/externalUrl), keeping the BTVN row
+    // when both exist (more specific context).
+    const byKey = new Map<string, VisibleMaterial>();
+    for (const v of seen.values()) {
+      const m = v.material;
+      const key = `${m.title.trim().toLowerCase()}|${m.fileType}|${m.sourceType === "link" ? m.externalUrl ?? "" : m.sizeBytes}`;
+      const existing = byKey.get(key);
+      if (!existing) {
+        byKey.set(key, v);
+        continue;
+      }
+      // BTVN provenance wins; otherwise keep the newer.
+      if (v.source === "homework" && existing.source !== "homework") {
+        byKey.set(key, v);
+      } else if (
+        v.source === existing.source &&
+        v.material.createdAt > existing.material.createdAt
+      ) {
+        byKey.set(key, v);
+      }
+    }
+
+    return [...byKey.values()].sort((a, b) =>
       a.material.createdAt < b.material.createdAt ? 1 : -1,
     );
   }, [allMaterials, allHomework, session, myClassIds]);
