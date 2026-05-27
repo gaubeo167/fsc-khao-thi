@@ -42,6 +42,14 @@ const MaterialViewerDialog = dynamic(
   { ssr: false, loading: () => null },
 );
 
+const EditMaterialDialog = dynamic(
+  () =>
+    import("../dialogs/edit-material-dialog").then(
+      (m) => m.EditMaterialDialog,
+    ),
+  { ssr: false, loading: () => null },
+);
+
 type KhoView = "campus" | "personal";
 
 interface Props {
@@ -68,6 +76,7 @@ export function MaterialsTab({
 
   const [uploadOpen, setUploadOpen] = useState(false);
   const [viewing, setViewing] = useState<LearningMaterial | null>(null);
+  const [editing, setEditing] = useState<LearningMaterial | null>(null);
   const [khoView, setKhoView] = useState<KhoView>("campus");
   const [search, setSearch] = useState("");
   const [subjectFilter, setSubjectFilter] = useState<string>("all");
@@ -247,6 +256,7 @@ export function MaterialsTab({
               <MaterialCard
                 material={m}
                 onView={setViewing}
+                onEdit={showAdminControls ? setEditing : undefined}
                 onArchive={
                   showAdminControls
                     ? (target) => {
@@ -277,6 +287,10 @@ export function MaterialsTab({
       <MaterialViewerDialog
         material={viewing}
         onClose={() => setViewing(null)}
+      />
+      <EditMaterialDialog
+        material={editing}
+        onClose={() => setEditing(null)}
       />
     </>
   );

@@ -279,6 +279,35 @@ service cloud.firestore {
       allow delete: if false; // soft-archive only
     }
 
+    // ───── /homework — BTVN giáo viên giao ────────────────────────────────
+    // Reads open to any signed-in user. Writes are scoped to the owner
+    // (teacher) or campus admin in the UI; rules give teacher+ the
+    // baseline. Status workflow + classIds filtering happens client-side.
+    match /homework/{id} {
+      allow read: if isSignedIn();
+      allow create: if isTeacherOrAbove() &&
+        request.resource.data.ownerId == uid();
+      allow update, delete: if isSignedIn() && (
+        isAdmin() || resource.data.ownerId == uid()
+      );
+    }
+
+    // ───── /homework_attempts — per-student attempts ──────────────────────
+    // Students write their own attempt; teachers + admins read all to
+    // power the stats page.
+    match /homework_attempts/{id} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() &&
+        request.resource.data.studentId == uid();
+      allow update: if isSignedIn() && (
+        (resource.data.studentId == uid() &&
+          resource.data.submittedAt == null) ||
+        isTeacherOrAbove()
+      );
+      // Hard delete forbidden once attempted — preserve report data.
+      allow delete: if isAdmin();
+    }
+
     // ───── /audit_events — append-only audit log ──────────────────────────
     // Every mutation of a production entity emits one of these. The
     // contract: create-only, never update or delete. Reads scoped to

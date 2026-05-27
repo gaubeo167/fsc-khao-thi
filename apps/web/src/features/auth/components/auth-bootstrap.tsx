@@ -7,6 +7,8 @@ import { subscribeCampuses } from "@/features/campus/state/campuses-store";
 import { subscribeExamForms } from "@/features/exam-forms/state/exam-forms-store";
 import { subscribeShifts } from "@/features/exam-shifts/state/shifts-store";
 import { subscribeMaterials } from "@/features/learning-materials/state/materials-store";
+import { subscribeHomework } from "@/features/homework/state/homework-store";
+import { subscribeHomeworkAttempts } from "@/features/homework/state/homework-attempts-store";
 import { subscribeBlueprints } from "@/features/exams/state/blueprints-store";
 import { subscribePackages } from "@/features/exams/state/packages-store";
 import { subscribeGradesCatalog } from "@/features/grades/state/grades-store";
@@ -90,6 +92,8 @@ export function AuthBootstrap() {
           subscribeProctorEvents(),
           subscribeGrading(),
           subscribeMaterials(),
+          subscribeHomework(),
+          subscribeHomeworkAttempts(),
         ];
       } catch (e) {
         // eslint-disable-next-line no-console
@@ -116,6 +120,8 @@ export function AuthBootstrap() {
           subscribeProctorEvents(),
           subscribeGrading(),
           subscribeMaterials(),
+          subscribeHomework(),
+          subscribeHomeworkAttempts(),
         ];
       } catch (e) {
         // eslint-disable-next-line no-console

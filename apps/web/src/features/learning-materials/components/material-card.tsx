@@ -8,6 +8,7 @@ import {
   ImageIcon,
   Link2,
   Music2,
+  PencilLine,
   Play,
   RotateCcw,
   Trash2,
@@ -37,11 +38,18 @@ const STATUS_LABEL: Record<LearningMaterial["status"], string> = {
 interface Props {
   material: LearningMaterial;
   onView: (m: LearningMaterial) => void;
+  onEdit?: (m: LearningMaterial) => void;
   onArchive?: (m: LearningMaterial) => void;
   onRestore?: (m: LearningMaterial) => void;
 }
 
-function MaterialCardImpl({ material, onView, onArchive, onRestore }: Props) {
+function MaterialCardImpl({
+  material,
+  onView,
+  onEdit,
+  onArchive,
+  onRestore,
+}: Props) {
   const subjects = useSubjectsStore((s) => s.subjects);
   const tocNodes = useSubjectsStore((s) => s.tocNodes);
   const grades = useGradesStore((s) => s.grades);
@@ -93,6 +101,16 @@ function MaterialCardImpl({ material, onView, onArchive, onRestore }: Props) {
               <Eye className="h-3.5 w-3.5" strokeWidth={1.75} />
             )}
           </IconButton>
+          {onEdit && !material.archivedAt ? (
+            <IconButton
+              size="sm"
+              variant="primary"
+              title="Chỉnh sửa"
+              onClick={() => onEdit(material)}
+            >
+              <PencilLine className="h-3.5 w-3.5" strokeWidth={1.75} />
+            </IconButton>
+          ) : null}
           {material.archivedAt && onRestore ? (
             <IconButton
               size="sm"

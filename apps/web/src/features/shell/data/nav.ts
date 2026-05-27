@@ -13,6 +13,7 @@ import {
   LayoutDashboard,
   LayoutGrid,
   ListChecks,
+  ClipboardList,
   Library,
   Play,
   Settings,
@@ -73,6 +74,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/my-exams", icon: CalendarClock, label: "Lịch thi của tôi", roles: STUDENT },
       { href: "/my-exams/history", icon: History, label: "Lịch sử bài thi", roles: STUDENT },
+      { href: "/my-homework", icon: ClipboardList, label: "Bài tập về nhà", roles: STUDENT },
       { href: "/my-materials", icon: Play, label: "Học liệu", roles: STUDENT },
     ],
   },
@@ -90,6 +92,7 @@ export const NAV_GROUPS: NavGroup[] = [
     roles: STAFF,
     items: [
       { href: "/admin/question-bank", icon: Library, label: "Ngân hàng câu hỏi", roles: STAFF },
+      { href: "/admin/homework", icon: ClipboardList, label: "Bài tập về nhà", roles: STAFF },
       // Blueprints + Shifts: defaults to LEAD/ADMIN but a `teacher` with the
       // matching `permissions.canCreate*` flag also passes via the runtime
       // check in `filterNavForRole`. The role array stays as the BASELINE
