@@ -184,7 +184,23 @@ export function HomeworkPreviewDialog({
                     Câu {idx + 1} / {questions.length} · {currentQ.type} ·{" "}
                     {currentQ.difficulty}
                   </p>
-                  <RenderedContent content={currentQ.content} />
+                  {/* Skip raw content for types whose QuestionRenderer
+                      already prints the passage interactively — else
+                      we'd duplicate the prompt and leak the answer
+                      markers ([u:...] / [zone:N]). */}
+                  {currentQ.type !== "drag-drop" &&
+                    currentQ.type !== "underline" && (
+                      <RenderedContent
+                        content={
+                          currentQ.type === "fill-blank"
+                            ? currentQ.content.replace(
+                                /\[blank:\d+\]/g,
+                                "_____",
+                              )
+                            : currentQ.content
+                        }
+                      />
+                    )}
                   <div className="mt-3">
                     <QuestionRenderer
                       question={currentQ}

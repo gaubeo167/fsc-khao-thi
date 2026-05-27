@@ -410,42 +410,47 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
               </div>
             </div>
 
-            {/* Class picker */}
-            <div className="space-y-1.5">
-              <Label>Lớp được giao *</Label>
-              {classesForGrade.length === 0 ? (
-                <p className="text-meta">
-                  {gradeId
-                    ? "Chưa có lớp nào ở khối này"
-                    : "Chọn khối để hiển thị danh sách lớp"}
-                </p>
-              ) : (
-                <div className="flex flex-wrap gap-1.5 rounded-md border bg-card p-2">
-                  {classesForGrade.map((c) => (
-                    <button
-                      key={c.id}
-                      type="button"
-                      onClick={() => toggleClass(c.id)}
-                      disabled={submitting}
-                      className={cn(
-                        "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[12px] font-medium",
-                        selectedClassIds.includes(c.id)
-                          ? "border-primary bg-primary text-primary-foreground"
-                          : "border-border bg-background text-foreground/70 hover:bg-accent",
-                      )}
-                    >
-                      {selectedClassIds.includes(c.id) ? (
-                        <Check className="h-3 w-3" />
-                      ) : null}
-                      {c.name}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            {/* Class picker — only shown once a Khối is chosen, so the
+                flow is linear: Môn → Khối → Lớp → HS → ... */}
+            {gradeId ? (
+              <div className="space-y-1.5">
+                <Label>Lớp được giao *</Label>
+                {classesForGrade.length === 0 ? (
+                  <p className="text-meta">Chưa có lớp nào ở khối này</p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5 rounded-md border bg-card p-2">
+                    {classesForGrade.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => toggleClass(c.id)}
+                        disabled={submitting}
+                        className={cn(
+                          "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[12px] font-medium",
+                          selectedClassIds.includes(c.id)
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-border bg-background text-foreground/70 hover:bg-accent",
+                        )}
+                      >
+                        {selectedClassIds.includes(c.id) ? (
+                          <Check className="h-3 w-3" />
+                        ) : null}
+                        {c.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="rounded-md border border-dashed bg-muted/15 px-3 py-3 text-center text-meta">
+                Chọn <b>khối</b> ở trên để hiển thị danh sách lớp.
+              </div>
+            )}
 
-            {/* Student roster — appears once at least 1 class is selected */}
-            {rosterByClass.length > 0 ? (
+            {/* Student roster — appears once a class is selected. The
+                gradeId guard above already hides this layer; this
+                second guard handles "khối chosen but no class ticked". */}
+            {gradeId && rosterByClass.length > 0 ? (
               <RosterPanel
                 rosterByClass={rosterByClass}
                 selectedStudentIds={selectedStudentIds}
@@ -464,12 +469,10 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
                   const classStudentIds = group.students.map((s) => s.id);
                   setSelectedStudentIds((prev) => {
                     if (allOn) {
-                      // Add any missing
                       const set = new Set(prev);
                       for (const id of classStudentIds) set.add(id);
                       return [...set];
                     }
-                    // Remove all of this class's students
                     return prev.filter((id) => !classStudentIds.includes(id));
                   });
                 }}

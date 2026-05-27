@@ -227,7 +227,22 @@ export default function HomeworkRuntimePage() {
             </button>
           </header>
           <div className="space-y-4 px-5 py-4">
-            <RenderedContent content={currentQ.content} />
+            {/* drag-drop + underline render the passage inline inside
+                QuestionRenderer (with interactive zones / clickable
+                words). Showing raw content here would (a) duplicate
+                the prompt, (b) leak the [u:...] / [zone:N] markers as
+                green-underlined answers. fill-blank strips its
+                [blank:N] markers. */}
+            {currentQ.type !== "drag-drop" &&
+              currentQ.type !== "underline" && (
+                <RenderedContent
+                  content={
+                    currentQ.type === "fill-blank"
+                      ? currentQ.content.replace(/\[blank:\d+\]/g, "_____")
+                      : currentQ.content
+                  }
+                />
+              )}
             <QuestionRenderer
               question={currentQ}
               answer={myAttempt.answers[currentQ.id]}
