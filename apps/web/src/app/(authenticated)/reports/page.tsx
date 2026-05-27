@@ -844,16 +844,20 @@ export default function ReportsPage() {
                           : passRate >= 30
                             ? "text-amber-700"
                             : "text-rose-700";
-                    const statusLabel =
-                      passRate >= 80
-                        ? { text: "Đạt giỏi", tone: "emerald" as const }
-                        : passRate >= 65
-                          ? { text: "Đạt khá", tone: "blue" as const }
-                          : passRate >= 50
-                            ? { text: "Đạt TB", tone: "amber" as const }
-                            : passRate > 0
-                              ? { text: "Chưa đạt", tone: "rose" as const }
-                              : { text: "Chưa có nộp", tone: "muted" as const };
+                    // Trạng thái = "X% đạt" (tỉ lệ HS pass = đạt ≥ 5/10).
+                    // Tone theo ngưỡng % đạt — không phải phân loại
+                    // Giỏi/Khá/TB (đó là band điểm TB, dùng ở report
+                    // detail). Empty submissions render "Chưa có nộp".
+                    const hasSubmissions = report.totals.submitted > 0;
+                    const statusLabel = hasSubmissions
+                      ? passRate >= 70
+                        ? { text: `Đạt ${passRate}%`, tone: "emerald" as const }
+                        : passRate >= 50
+                          ? { text: `Đạt ${passRate}%`, tone: "blue" as const }
+                          : passRate >= 30
+                            ? { text: `Đạt ${passRate}%`, tone: "amber" as const }
+                            : { text: `Đạt ${passRate}%`, tone: "rose" as const }
+                      : { text: "Chưa có nộp", tone: "muted" as const };
                     const statusToneClass = {
                       emerald:
                         "border-emerald-300 bg-emerald-50 text-emerald-700",
@@ -932,11 +936,20 @@ export default function ReportsPage() {
                           </span>
                         </td>
                         <td className="px-3 py-2.5">
-                          <span
-                            className={`rounded-md border px-1.5 py-0.5 text-[10.5px] font-semibold ${statusToneClass}`}
+                          <Tooltip
+                            text={
+                              hasSubmissions
+                                ? `${report.totals.submitted} HS nộp · ${passRate}% đạt (điểm ≥ 5/10)`
+                                : "Chưa có HS nào nộp bài"
+                            }
+                            className="gap-1"
                           >
-                            {statusLabel.text}
-                          </span>
+                            <span
+                              className={`rounded-md border px-1.5 py-0.5 text-[10.5px] font-semibold ${statusToneClass}`}
+                            >
+                              {statusLabel.text}
+                            </span>
+                          </Tooltip>
                         </td>
                         <td className="px-3 py-2.5">
                           <div className="flex flex-wrap items-center gap-1">
