@@ -24,6 +24,14 @@ const HomeworkAttemptDetailDialog = dynamic(
   { ssr: false, loading: () => null },
 );
 
+const ViewQuestionDialog = dynamic(
+  () =>
+    import("@/features/question-bank/dialogs/view-question-dialog").then(
+      (m) => m.ViewQuestionDialog,
+    ),
+  { ssr: false, loading: () => null },
+);
+
 export default function HomeworkStatsPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
@@ -36,6 +44,9 @@ export default function HomeworkStatsPage() {
   const allClasses = useGradesStore((s) => s.classes);
 
   const [detailStudentId, setDetailStudentId] = useState<string | null>(null);
+  const [reviewing, setReviewing] = useState<
+    (typeof allQuestions)[number] | null
+  >(null);
 
   if (!homework) {
     if (!homeworkHydrated) {
@@ -142,98 +153,243 @@ export default function HomeworkStatsPage() {
         <KpiTile label="Trung bình đúng" value={`${avgPercent}%`} tone="blue" />
       </section>
 
-      {/* Per-question chart */}
-      <section className="mb-5 rounded-xl border bg-card p-4">
-        <p className="mb-3 text-section-title">% HS đúng từng câu</p>
-        {submitted === 0 ? (
-          <p className="text-meta">Chưa có HS nộp bài để thống kê.</p>
+      {/* Per-student section moved ABOVE per-question — mirrors the
+          exam reports detail layout. */}
+      <section className="mb-5 rounded-2xl border bg-card">
+        <header className="border-b px-5 py-3">
+          <h2 className="text-section-title">👥 Bảng điểm HS</h2>
+          <p className="text-meta mt-0.5">
+            Click vào HS để xem bài làm chi tiết đúng/sai từng câu.
+          </p>
+        </header>
+        {studentRows.length === 0 ? (
+          <p className="px-5 py-6 text-center text-meta">
+            Lớp được giao chưa có HS nào. Kiểm tra lại danh sách lớp.
+          </p>
         ) : (
-          <div className="space-y-2">
-            {perQuestionStats.map((row, idx) => {
-              const pct =
-                row.total > 0 ? Math.round((row.correct / row.total) * 100) : 0;
-              const barColor =
-                pct >= 70
-                  ? "bg-emerald-500"
-                  : pct >= 40
-                    ? "bg-amber-500"
-                    : "bg-rose-500";
-              return (
-                <div key={row.question.id} className="space-y-0.5">
-                  <div className="flex justify-between text-[12px]">
-                    <span className="font-medium">
-                      Câu {idx + 1}
-                      <span className="ml-2 font-normal text-muted-foreground">
-                        {plainText(row.question.content).slice(0, 80)}
+          <ul className="divide-y">
+            {studentRows
+              .slice()
+              .sort((a, b) => {
+                // Submitted first, then by score descending.
+                const aSub = a.attempt?.submittedAt ? 1 : 0;
+                const bSub = b.attempt?.submittedAt ? 1 : 0;
+                if (aSub !== bSub) return bSub - aSub;
+                const aPct =
+                  a.attempt?.totalQuestions
+                    ? (a.attempt.correctCount ?? 0) / a.attempt.totalQuestions
+                    : 0;
+                const bPct =
+                  b.attempt?.totalQuestions
+                    ? (b.attempt.correctCount ?? 0) / b.attempt.totalQuestions
+                    : 0;
+                return bPct - aPct;
+              })
+              .map((row, idx) => {
+                const submittedAt = row.attempt?.submittedAt;
+                const score = row.attempt?.correctCount ?? null;
+                const totalQ =
+                  row.attempt?.totalQuestions ?? questions.length;
+                const pct =
+                  score != null && totalQ > 0
+                    ? Math.round((score / totalQ) * 100)
+                    : null;
+                const tone =
+                  pct == null
+                    ? "muted"
+                    : pct >= 75
+                      ? "emerald"
+                      : pct >= 50
+                        ? "blue"
+                        : pct >= 25
+                          ? "amber"
+                          : "rose";
+                return (
+                  <li key={row.studentId}>
+                    <button
+                      type="button"
+                      onClick={() => setDetailStudentId(row.studentId)}
+                      className="grid w-full items-center gap-3 px-5 py-2 text-left hover:bg-accent/20 sm:grid-cols-[28px_minmax(0,1fr)_100px_70px_44px]"
+                      title="Xem chi tiết bài làm"
+                    >
+                      <span className="text-right text-[11px] font-semibold text-foreground/65">
+                        {idx + 1}
                       </span>
-                    </span>
-                    <span className="text-foreground/70">
-                      {row.correct}/{row.total} ({pct}%)
-                    </span>
-                  </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-muted">
-                    <div
-                      className={`h-full ${barColor}`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-[12.5px] font-semibold">
+                          {row.name}
+                        </p>
+                        <p className="truncate text-[10.5px] text-muted-foreground">
+                          {row.username}
+                        </p>
+                      </div>
+                      <span
+                        className={`text-center text-[14px] font-bold ${
+                          tone === "emerald"
+                            ? "text-emerald-700"
+                            : tone === "blue"
+                              ? "text-blue-700"
+                              : tone === "amber"
+                                ? "text-amber-700"
+                                : tone === "rose"
+                                  ? "text-rose-700"
+                                  : "text-muted-foreground"
+                        }`}
+                      >
+                        {submittedAt ? (
+                          <>
+                            {score}
+                            <span className="text-[10.5px] font-normal text-muted-foreground">
+                              /{totalQ}
+                            </span>
+                          </>
+                        ) : (
+                          "—"
+                        )}
+                      </span>
+                      {submittedAt ? (
+                        <span
+                          className={`rounded-md border px-1.5 py-0.5 text-center text-[10.5px] font-semibold uppercase ${
+                            tone === "emerald"
+                              ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                              : tone === "blue"
+                                ? "border-blue-300 bg-blue-50 text-blue-700"
+                                : tone === "amber"
+                                  ? "border-amber-300 bg-amber-50 text-amber-700"
+                                  : "border-rose-300 bg-rose-50 text-rose-700"
+                          }`}
+                        >
+                          {pct}%
+                        </span>
+                      ) : (
+                        <span className="rounded-md border border-zinc-300 bg-zinc-50 px-1.5 py-0.5 text-center text-[10.5px] font-semibold uppercase text-zinc-600">
+                          Chưa nộp
+                        </span>
+                      )}
+                      <span className="text-center text-[11.5px] font-semibold text-blue-700 hover:underline">
+                        Xem →
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+          </ul>
         )}
       </section>
 
-      {/* Per-student table */}
-      <section className="rounded-xl border bg-card">
-        <p className="border-b px-4 py-3 text-section-title">Chi tiết theo HS</p>
-        <div className="divide-y">
-          {studentRows.length === 0 ? (
-            <p className="px-4 py-6 text-center text-meta">
-              Lớp được giao chưa có HS nào. Kiểm tra lại danh sách lớp.
-            </p>
-          ) : (
-            studentRows.map((row) => {
-              const submittedAt = row.attempt?.submittedAt;
-              const score = row.attempt?.correctCount ?? null;
-              const totalQ = row.attempt?.totalQuestions ?? questions.length;
-              const pct =
-                score != null && totalQ > 0
-                  ? Math.round((score / totalQ) * 100)
-                  : null;
-              return (
-                <button
-                  key={row.studentId}
-                  type="button"
-                  onClick={() => setDetailStudentId(row.studentId)}
-                  className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-accent/15"
-                  title="Xem chi tiết bài làm"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[13px] font-semibold">{row.name}</p>
-                    <p className="text-meta truncate">{row.username}</p>
-                  </div>
-                  {submittedAt ? (
-                    <>
-                      <span className="rounded-md border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[10.5px] font-semibold text-emerald-700">
-                        Đã nộp
-                      </span>
-                      <span className="font-mono text-[12.5px]">
-                        {score}/{totalQ}
-                      </span>
-                      <span className="text-meta">{pct}%</span>
-                    </>
-                  ) : (
-                    <span className="rounded-md border border-zinc-300 bg-zinc-50 px-1.5 py-0.5 text-[10.5px] font-semibold text-zinc-600">
-                      Chưa nộp
+      {/* Per-question detail — compact rows with eye icon to inspect
+          full question content. Hardest first. */}
+      <section className="mb-5 rounded-2xl border bg-card">
+        <header className="border-b px-5 py-3">
+          <h2 className="text-section-title">📝 Chi tiết theo câu hỏi</h2>
+          <p className="text-meta mt-0.5">
+            % HS trả lời đúng. Click{" "}
+            <Eye className="mx-1 inline h-3 w-3" /> để xem chi tiết câu hỏi.
+          </p>
+        </header>
+        {submitted === 0 ? (
+          <p className="px-5 py-6 text-center text-[12px] text-muted-foreground">
+            Chưa có HS nộp bài để thống kê.
+          </p>
+        ) : (
+          <ul className="divide-y">
+            {perQuestionStats
+              .slice()
+              .sort((a, b) => {
+                // Hardest first.
+                const ap =
+                  a.total > 0 ? a.correct / a.total : 0.5;
+                const bp =
+                  b.total > 0 ? b.correct / b.total : 0.5;
+                return ap - bp;
+              })
+              .map((row, idx) => {
+                const pct =
+                  row.total > 0
+                    ? Math.round((row.correct / row.total) * 100)
+                    : 0;
+                const wrong = row.total - row.correct;
+                const tone =
+                  pct >= 75
+                    ? "emerald"
+                    : pct >= 50
+                      ? "blue"
+                      : pct >= 25
+                        ? "amber"
+                        : "rose";
+                return (
+                  <li
+                    key={row.question.id}
+                    className="grid items-center gap-2 px-4 py-1.5 hover:bg-accent/20 sm:grid-cols-[28px_minmax(0,1fr)_140px_60px_28px]"
+                  >
+                    <span className="text-right text-[11px] font-semibold text-foreground/60">
+                      {idx + 1}.
                     </span>
-                  )}
-                  <Eye className="ml-1 h-4 w-4 text-muted-foreground" />
-                </button>
-              );
-            })
-          )}
-        </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className={`rounded-full border px-1.5 text-[9.5px] font-bold uppercase ${
+                            row.question.difficulty === "easy"
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                              : row.question.difficulty === "medium"
+                                ? "border-amber-200 bg-amber-50 text-amber-700"
+                                : "border-rose-200 bg-rose-50 text-rose-700"
+                          }`}
+                        >
+                          {row.question.difficulty === "easy"
+                            ? "Dễ"
+                            : row.question.difficulty === "medium"
+                              ? "TB"
+                              : "Khó"}
+                        </span>
+                        <span className="line-clamp-1 text-[12px] leading-snug text-foreground/85">
+                          {plainText(row.question.content)}
+                        </span>
+                      </div>
+                    </div>
+                    <div
+                      className="flex h-3 overflow-hidden rounded-full bg-muted/60"
+                      title={`Đúng ${row.correct} · Sai ${wrong} / ${row.total}`}
+                    >
+                      <div
+                        className="h-full bg-emerald-500"
+                        style={{
+                          width: `${(row.correct / Math.max(1, row.total)) * 100}%`,
+                        }}
+                      />
+                      <div
+                        className="h-full bg-rose-500"
+                        style={{
+                          width: `${(wrong / Math.max(1, row.total)) * 100}%`,
+                        }}
+                      />
+                    </div>
+                    <div
+                      className={`rounded-md border px-1.5 py-0.5 text-center text-[13px] font-bold ${
+                        tone === "emerald"
+                          ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                          : tone === "blue"
+                            ? "border-blue-300 bg-blue-50 text-blue-800"
+                            : tone === "amber"
+                              ? "border-amber-300 bg-amber-50 text-amber-800"
+                              : "border-rose-300 bg-rose-50 text-rose-800"
+                      }`}
+                    >
+                      {pct}%
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setReviewing(row.question)}
+                      title="Xem chi tiết câu hỏi"
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-blue-200 bg-blue-50 text-blue-700 transition hover:bg-blue-100"
+                    >
+                      <Eye className="h-3.5 w-3.5" />
+                    </button>
+                  </li>
+                );
+              })}
+          </ul>
+        )}
       </section>
 
       <HomeworkAttemptDetailDialog
@@ -252,6 +408,11 @@ export default function HomeworkStatsPage() {
             : null) as HomeworkAttempt | null
         }
         questions={questions}
+      />
+
+      <ViewQuestionDialog
+        question={reviewing}
+        onClose={() => setReviewing(null)}
       />
     </>
   );

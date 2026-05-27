@@ -312,10 +312,19 @@ export default function ReportDetailPage() {
       </section>
 
       {/* Distribution chart */}
-      <section className="rounded-2xl border bg-card p-5">
-        <h2 className="text-section-title mb-3">📊 Phân bố điểm</h2>
+      <section className="rounded-xl border bg-card px-4 py-3">
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="text-[13px] font-semibold inline-flex items-center gap-1.5">
+            📊 Phân bố điểm
+          </h2>
+          {report.totals.submitted > 0 && (
+            <span className="text-[11px] text-muted-foreground">
+              {report.totals.submitted} HS đã nộp
+            </span>
+          )}
+        </div>
         {report.totals.submitted === 0 ? (
-          <p className="rounded-md border border-dashed bg-muted/20 px-3 py-2 text-[12px] text-muted-foreground">
+          <p className="text-[12px] text-muted-foreground">
             Chưa có bài làm để phân tích.
           </p>
         ) : (
@@ -323,148 +332,9 @@ export default function ReportDetailPage() {
         )}
       </section>
 
-      {/* Per-question detail */}
-      <section className="rounded-2xl border bg-card">
-        <header className="border-b px-5 py-3">
-          <h2 className="text-section-title">📝 Chi tiết theo câu hỏi</h2>
-          <p className="text-meta mt-0.5">
-            % HS trả lời đúng (auto) hoặc đạt ≥ 50% rubric (tự luận).
-          </p>
-        </header>
-        {report.perQuestion.length === 0 ? (
-          <p className="px-5 py-6 text-center text-[12px] text-muted-foreground">
-            Bộ đề chưa có câu hỏi nào trong pool blueprint.
-          </p>
-        ) : (
-          <ul className="divide-y">
-            {report.perQuestion
-              .filter((row) => row.totalAssigned > 0)
-              .sort((a, b) => {
-                // Hardest questions to the top.
-                const ap = a.correctPercent ?? 50;
-                const bp = b.correctPercent ?? 50;
-                return ap - bp;
-              })
-              .map((row, idx) => {
-                const pct = row.correctPercent ?? 0;
-                const tone =
-                  pct >= 75
-                    ? "emerald"
-                    : pct >= 50
-                      ? "blue"
-                      : pct >= 25
-                        ? "amber"
-                        : "rose";
-                return (
-                  <li
-                    key={row.question.id}
-                    className="grid items-center gap-3 px-5 py-3 hover:bg-accent/20 sm:grid-cols-[40px_minmax(0,1fr)_180px_120px_44px]"
-                  >
-                    <span className="text-right text-[11px] font-semibold text-foreground/65">
-                      {idx + 1}.
-                    </span>
-                    <div className="min-w-0">
-                      <div className="mb-0.5 flex flex-wrap items-center gap-1.5">
-                        <span
-                          className={cn(
-                            "rounded-full border px-1.5 py-0 text-[9.5px] font-bold uppercase",
-                            row.difficulty === "easy"
-                              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                              : row.difficulty === "medium"
-                                ? "border-amber-200 bg-amber-50 text-amber-700"
-                                : "border-rose-200 bg-rose-50 text-rose-700",
-                          )}
-                        >
-                          {row.difficulty === "easy"
-                            ? "Dễ"
-                            : row.difficulty === "medium"
-                              ? "TB"
-                              : "Khó"}
-                        </span>
-                        {row.isManual && (
-                          <span className="rounded-full bg-violet-100 px-1.5 py-0 text-[9.5px] font-bold text-violet-700">
-                            Tự luận
-                          </span>
-                        )}
-                        <span className="rounded bg-muted px-1 text-[9.5px] font-semibold text-foreground/65">
-                          {formatScore(row.weight)} đ
-                        </span>
-                      </div>
-                      <RenderedContent
-                        content={row.question.content}
-                        hideUnderlineMarks
-                        className="text-[12.5px] leading-snug line-clamp-2"
-                      />
-                    </div>
-                    {/* Bar visualisation */}
-                    <div className="w-full">
-                      <div className="flex h-3 overflow-hidden rounded-full bg-muted/60">
-                        <div
-                          className="h-full bg-emerald-500"
-                          style={{
-                            width: `${(row.correct / Math.max(1, row.totalAssigned)) * 100}%`,
-                          }}
-                          title={`Đúng: ${row.correct}`}
-                        />
-                        <div
-                          className="h-full bg-rose-500"
-                          style={{
-                            width: `${(row.wrong / Math.max(1, row.totalAssigned)) * 100}%`,
-                          }}
-                          title={`Sai: ${row.wrong}`}
-                        />
-                        <div
-                          className="h-full bg-slate-300"
-                          style={{
-                            width: `${(row.blank / Math.max(1, row.totalAssigned)) * 100}%`,
-                          }}
-                          title={`Bỏ trống/Chưa chấm: ${row.blank}`}
-                        />
-                      </div>
-                      <p className="mt-1 text-[10.5px] text-muted-foreground">
-                        Đúng {row.correct} · Sai {row.wrong} · Bỏ trống{" "}
-                        {row.blank} / {row.totalAssigned}
-                      </p>
-                    </div>
-                    <div
-                      className={cn(
-                        "rounded-md border px-2 py-1.5 text-center",
-                        tone === "emerald"
-                          ? "border-emerald-300 bg-emerald-50 text-emerald-800"
-                          : tone === "blue"
-                            ? "border-blue-300 bg-blue-50 text-blue-800"
-                            : tone === "amber"
-                              ? "border-amber-300 bg-amber-50 text-amber-800"
-                              : "border-rose-300 bg-rose-50 text-rose-800",
-                      )}
-                    >
-                      <p className="text-[18px] font-bold leading-none">
-                        {pct}%
-                      </p>
-                      <p className="mt-0.5 text-[9.5px] uppercase tracking-[0.06em]">
-                        {row.isManual ? "Đạt ≥ 50% rubric" : "Đúng"}
-                      </p>
-                    </div>
-                    {/* Eye icon — opens the full ViewQuestionDialog so the
-                        teacher can read prompt, options, correct answer,
-                        explanation, etc. The list above only renders a
-                        2-line truncated preview to keep the row compact. */}
-                    <button
-                      type="button"
-                      onClick={() => setReviewing(row.question)}
-                      title="Xem chi tiết câu hỏi (đề + đáp án + giải thích)"
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-blue-200 bg-blue-50 text-blue-700 transition hover:bg-blue-100"
-                    >
-                      <Eye className="h-3.5 w-3.5" />
-                    </button>
-                  </li>
-                );
-              })}
-          </ul>
-        )}
-      </section>
-
-      {/* Per-student table */}
+      {/* Per-student table — moved ABOVE per-question per UX feedback:
+          teachers want to scan student scores first, then drill into
+          which questions were hardest. */}
       <section className="rounded-2xl border bg-card">
         <header className="border-b px-5 py-3">
           <h2 className="text-section-title">👥 Bảng điểm HS</h2>
@@ -554,6 +424,135 @@ export default function ReportDetailPage() {
         )}
       </section>
 
+      {/* Per-question detail — compact rows. Hardest first. */}
+      <section className="rounded-2xl border bg-card">
+        <header className="border-b px-5 py-3">
+          <h2 className="text-section-title">📝 Chi tiết theo câu hỏi</h2>
+          <p className="text-meta mt-0.5">
+            % HS trả lời đúng (auto) hoặc đạt ≥ 50% rubric (tự luận). Click
+            <Eye className="mx-1 inline h-3 w-3" /> để xem nội dung câu.
+          </p>
+        </header>
+        {report.perQuestion.length === 0 ? (
+          <p className="px-5 py-6 text-center text-[12px] text-muted-foreground">
+            Bộ đề chưa có câu hỏi nào trong pool blueprint.
+          </p>
+        ) : (
+          <ul className="divide-y">
+            {report.perQuestion
+              .filter((row) => row.totalAssigned > 0)
+              .sort((a, b) => {
+                const ap = a.correctPercent ?? 50;
+                const bp = b.correctPercent ?? 50;
+                return ap - bp;
+              })
+              .map((row, idx) => {
+                const pct = row.correctPercent ?? 0;
+                const tone =
+                  pct >= 75
+                    ? "emerald"
+                    : pct >= 50
+                      ? "blue"
+                      : pct >= 25
+                        ? "amber"
+                        : "rose";
+                return (
+                  <li
+                    key={row.question.id}
+                    className="grid items-center gap-2 px-4 py-1.5 hover:bg-accent/20 sm:grid-cols-[28px_minmax(0,1fr)_140px_60px_28px]"
+                  >
+                    <span className="text-right text-[11px] font-semibold text-foreground/60">
+                      {idx + 1}.
+                    </span>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className={cn(
+                            "rounded-full border px-1.5 text-[9.5px] font-bold uppercase",
+                            row.difficulty === "easy"
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                              : row.difficulty === "medium"
+                                ? "border-amber-200 bg-amber-50 text-amber-700"
+                                : "border-rose-200 bg-rose-50 text-rose-700",
+                          )}
+                        >
+                          {row.difficulty === "easy"
+                            ? "Dễ"
+                            : row.difficulty === "medium"
+                              ? "TB"
+                              : "Khó"}
+                        </span>
+                        {row.isManual && (
+                          <span className="rounded-full bg-violet-100 px-1.5 text-[9.5px] font-bold text-violet-700">
+                            Tự luận
+                          </span>
+                        )}
+                        <span className="rounded bg-muted px-1 text-[9.5px] font-semibold text-foreground/60">
+                          {formatScore(row.weight)}đ
+                        </span>
+                        <RenderedContent
+                          content={row.question.content}
+                          hideUnderlineMarks
+                          className="line-clamp-1 text-[12px] leading-snug text-foreground/85"
+                        />
+                      </div>
+                    </div>
+                    {/* Stacked bar (no extra caption row — saves height) */}
+                    <div
+                      className="flex h-3 overflow-hidden rounded-full bg-muted/60"
+                      title={`Đúng ${row.correct} · Sai ${row.wrong} · Bỏ trống ${row.blank} / ${row.totalAssigned}`}
+                    >
+                      <div
+                        className="h-full bg-emerald-500"
+                        style={{
+                          width: `${(row.correct / Math.max(1, row.totalAssigned)) * 100}%`,
+                        }}
+                      />
+                      <div
+                        className="h-full bg-rose-500"
+                        style={{
+                          width: `${(row.wrong / Math.max(1, row.totalAssigned)) * 100}%`,
+                        }}
+                      />
+                      <div
+                        className="h-full bg-slate-300"
+                        style={{
+                          width: `${(row.blank / Math.max(1, row.totalAssigned)) * 100}%`,
+                        }}
+                      />
+                    </div>
+                    <div
+                      className={cn(
+                        "rounded-md border px-1.5 py-0.5 text-center text-[13px] font-bold",
+                        tone === "emerald"
+                          ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                          : tone === "blue"
+                            ? "border-blue-300 bg-blue-50 text-blue-800"
+                            : tone === "amber"
+                              ? "border-amber-300 bg-amber-50 text-amber-800"
+                              : "border-rose-300 bg-rose-50 text-rose-800",
+                      )}
+                      title={
+                        row.isManual ? "% đạt ≥ 50% rubric" : "% HS đúng"
+                      }
+                    >
+                      {pct}%
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setReviewing(row.question)}
+                      title="Xem chi tiết câu hỏi"
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-blue-200 bg-blue-50 text-blue-700 transition hover:bg-blue-100"
+                    >
+                      <Eye className="h-3.5 w-3.5" />
+                    </button>
+                  </li>
+                );
+              })}
+          </ul>
+        )}
+      </section>
+
       {/* Review dialog (per question detail). Opens when the eye icon is
           clicked above; uses the same dialog the question bank uses for
           consistency so authors and graders see identical content. */}
@@ -570,33 +569,60 @@ function DistributionChart({
 }: {
   distribution: Array<{ band: GradeBand; count: number; percent: number }>;
 }) {
-  const tones: Record<GradeBand, string> = {
-    "Giỏi": "bg-emerald-500",
-    "Khá": "bg-blue-500",
-    "Trung bình": "bg-amber-500",
-    "Chưa đạt": "bg-rose-500",
+  // Compact horizontal stacked bar + 4 pills under it — keeps the
+  // section ~80px tall instead of the previous ~180px of vertical bars.
+  const total = distribution.reduce((acc, d) => acc + d.count, 0);
+  const tones: Record<GradeBand, { bar: string; chip: string }> = {
+    Giỏi: {
+      bar: "bg-emerald-500",
+      chip: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    },
+    Khá: {
+      bar: "bg-blue-500",
+      chip: "border-blue-200 bg-blue-50 text-blue-700",
+    },
+    "Trung bình": {
+      bar: "bg-amber-500",
+      chip: "border-amber-200 bg-amber-50 text-amber-700",
+    },
+    "Chưa đạt": {
+      bar: "bg-rose-500",
+      chip: "border-rose-200 bg-rose-50 text-rose-700",
+    },
   };
-  const max = Math.max(1, ...distribution.map((d) => d.count));
   return (
-    <div className="grid grid-cols-4 gap-3">
-      {distribution.map((d) => (
-        <div
-          key={d.band}
-          className="flex flex-col items-center justify-end rounded-lg border bg-card px-3 py-3"
-        >
-          <div className="relative flex h-24 w-full items-end">
+    <div className="space-y-2">
+      <div className="flex h-3 overflow-hidden rounded-full border bg-muted/40">
+        {distribution.map((d) =>
+          d.count > 0 ? (
             <div
-              className={cn("w-full rounded-md transition-all", tones[d.band])}
-              style={{ height: `${(d.count / max) * 100}%`, minHeight: 4 }}
+              key={d.band}
+              className={cn("h-full", tones[d.band].bar)}
+              style={{ width: `${(d.count / Math.max(1, total)) * 100}%` }}
+              title={`${d.band}: ${d.count} HS (${d.percent}%)`}
             />
-          </div>
-          <p className="mt-2 text-[18px] font-bold leading-none">{d.count}</p>
-          <p className="text-[10px] uppercase tracking-[0.06em] text-muted-foreground">
-            {d.band}
-          </p>
-          <p className="mt-0.5 text-[10.5px] font-semibold">{d.percent}%</p>
-        </div>
-      ))}
+          ) : null,
+        )}
+      </div>
+      <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+        {distribution.map((d) => (
+          <span
+            key={d.band}
+            className={cn(
+              "inline-flex items-center justify-between gap-2 rounded-md border px-2 py-1 text-[11.5px] font-medium",
+              tones[d.band].chip,
+            )}
+          >
+            <span>{d.band}</span>
+            <span className="font-bold">
+              {d.count}
+              <span className="ml-1 text-[10px] font-normal opacity-70">
+                · {d.percent}%
+              </span>
+            </span>
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
