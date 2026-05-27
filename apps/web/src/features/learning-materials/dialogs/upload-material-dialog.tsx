@@ -370,8 +370,13 @@ export function UploadMaterialDialog({ open, onOpenChange }: Props) {
                 if (f) onFileChosen(f);
               }}
             >
+              {/* "Tối đa N MB" sits at the top-right corner — matches the
+                  mockup placement. */}
+              <span className="absolute right-3 top-2 text-[10.5px] text-muted-foreground">
+                Tối đa {formatFileSize(MAX_BYTES)}
+              </span>
               <label className="flex cursor-pointer flex-col items-center text-center">
-                <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-100 to-orange-100 text-amber-600 shadow-inner">
+                <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-sm">
                   <CloudUpload className="h-6 w-6" strokeWidth={1.85} />
                 </span>
                 {file ? (
@@ -401,9 +406,6 @@ export function UploadMaterialDialog({ open, onOpenChange }: Props) {
                   disabled={submitting}
                 />
               </label>
-              <span className="absolute bottom-2 right-3 text-[10.5px] text-muted-foreground">
-                Tối đa {formatFileSize(MAX_BYTES)}
-              </span>
             </div>
           ) : (
             <div className="space-y-1.5">
@@ -438,36 +440,60 @@ export function UploadMaterialDialog({ open, onOpenChange }: Props) {
             </div>
           )}
 
-          {/* Title with char counter */}
-          <FieldWithCounter
-            label="Tiêu đề"
-            required
-            value={title}
-            max={MAX_TITLE}
-          >
-            <Input
-              value={title}
-              onChange={(e) => setTitle(e.target.value.slice(0, MAX_TITLE))}
-              placeholder="VD: Bài giảng Phương trình bậc 2"
-              disabled={submitting}
-              maxLength={MAX_TITLE}
-            />
-          </FieldWithCounter>
+          {/* Title with inline char counter */}
+          <div className="space-y-1.5">
+            <Label>
+              Tiêu đề <span className="text-rose-500">*</span>
+            </Label>
+            <div className="relative">
+              <Input
+                value={title}
+                onChange={(e) => setTitle(e.target.value.slice(0, MAX_TITLE))}
+                placeholder="VD: Bài giảng Phương trình bậc 2"
+                disabled={submitting}
+                maxLength={MAX_TITLE}
+                className="pr-16"
+              />
+              <span
+                className={cn(
+                  "pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[10.5px] font-medium tabular-nums",
+                  title.length > MAX_TITLE * 0.9
+                    ? "text-amber-700"
+                    : "text-muted-foreground",
+                )}
+              >
+                {title.length}/{MAX_TITLE}
+              </span>
+            </div>
+          </div>
 
-          {/* Description with char counter */}
-          <FieldWithCounter label="Mô tả" value={description} max={MAX_DESC}>
-            <textarea
-              value={description}
-              onChange={(e) =>
-                setDescription(e.target.value.slice(0, MAX_DESC))
-              }
-              rows={2}
-              placeholder="Tóm tắt nội dung học liệu (tuỳ chọn)"
-              className="w-full rounded-md border bg-background px-3 py-2 text-[13px] disabled:opacity-50"
-              disabled={submitting}
-              maxLength={MAX_DESC}
-            />
-          </FieldWithCounter>
+          {/* Description with inline char counter (textarea bottom-right) */}
+          <div className="space-y-1.5">
+            <Label>Mô tả</Label>
+            <div className="relative">
+              <textarea
+                value={description}
+                onChange={(e) =>
+                  setDescription(e.target.value.slice(0, MAX_DESC))
+                }
+                rows={2}
+                placeholder="Tóm tắt nội dung học liệu (tuỳ chọn)"
+                className="w-full rounded-md border bg-background px-3 py-2 pb-5 text-[13px] disabled:opacity-50"
+                disabled={submitting}
+                maxLength={MAX_DESC}
+              />
+              <span
+                className={cn(
+                  "pointer-events-none absolute bottom-2 right-3 text-[10.5px] font-medium tabular-nums",
+                  description.length > MAX_DESC * 0.9
+                    ? "text-amber-700"
+                    : "text-muted-foreground",
+                )}
+              >
+                {description.length}/{MAX_DESC}
+              </span>
+            </div>
+          </div>
 
           {/* Subject + Grade with icon-prefixed selects */}
           <div className="grid grid-cols-2 gap-3">
@@ -476,7 +502,7 @@ export function UploadMaterialDialog({ open, onOpenChange }: Props) {
                 Môn học <span className="text-rose-500">*</span>
               </Label>
               <div className="relative">
-                <span className="pointer-events-none absolute left-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md bg-blue-100 text-blue-700">
+                <span className="pointer-events-none absolute left-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md bg-violet-100 text-violet-700">
                   <BookOpen className="h-3.5 w-3.5" />
                 </span>
                 <Select
@@ -640,7 +666,7 @@ export function UploadMaterialDialog({ open, onOpenChange }: Props) {
               </div>
               <div className="h-1.5 overflow-hidden rounded-full bg-muted">
                 <div
-                  className="h-full bg-gradient-to-r from-amber-400 to-orange-500 transition-[width]"
+                  className="h-full bg-gradient-to-r from-blue-500 to-indigo-600 transition-[width]"
                   style={{ width: `${progress * 100}%` }}
                 />
               </div>
@@ -663,7 +689,7 @@ export function UploadMaterialDialog({ open, onOpenChange }: Props) {
               (sourceType === "upload" && !file) ||
               (sourceType === "link" && !externalUrl.trim())
             }
-            className="bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-sm hover:from-amber-600 hover:to-orange-600"
+            className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm hover:from-blue-700 hover:to-indigo-700"
           >
             {submitting ? (
               <>
@@ -718,40 +744,3 @@ function SourceTab({
   );
 }
 
-/** Field label that shows a "N/MAX" character counter to the right.
- *  Wraps a single input/textarea child so the counter stays in sync
- *  with whatever the user has typed without prop-drilling. */
-function FieldWithCounter({
-  label,
-  required,
-  value,
-  max,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  value: string;
-  max: number;
-  children: React.ReactNode;
-}) {
-  const over = value.length > max * 0.9;
-  return (
-    <div className="space-y-1.5">
-      <div className="flex items-center justify-between">
-        <Label>
-          {label}
-          {required ? <span className="ml-1 text-rose-500">*</span> : null}
-        </Label>
-        <span
-          className={cn(
-            "text-[10.5px] font-medium tabular-nums",
-            over ? "text-amber-700" : "text-muted-foreground",
-          )}
-        >
-          {value.length}/{max}
-        </span>
-      </div>
-      {children}
-    </div>
-  );
-}
