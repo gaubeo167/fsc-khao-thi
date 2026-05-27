@@ -24,20 +24,31 @@ import { latexToDocxMath } from "./latex-to-docx-math";
  * Word's Equation Editor output WILL be flattened by mammoth. The template
  * instructs teachers to keep math in `$...$` form when editing.
  */
-export async function GET() {
+export async function GET(req: Request) {
+  // Subject theme — drives which sample questions get generated.
+  // Accepted values: "math" | "lit" | "eng" | "phy" | "chem" | "bio"
+  // | undefined (= generic mix). Also accepts the raw subject doc id
+  // ("subject-toan" → math, etc.) for convenience from the UI.
+  const url = new URL(req.url);
+  const subjectParam = url.searchParams.get("subject")?.toLowerCase() ?? "";
+  const theme = resolveTheme(subjectParam);
+
   const doc = new Document({
     creator: "FSC Exam Platform",
-    title: "Mẫu import câu hỏi",
+    title: `Mẫu import câu hỏi — ${theme.label}`,
     description: "File mẫu chuẩn để soạn câu hỏi import vào hệ thống FSC.",
     sections: [
       {
         properties: {},
         children: [
           // ───────── Cover / instructions ─────────
-          heading("FSC EXAM PLATFORM — MẪU IMPORT CÂU HỎI", 1),
+          heading(
+            `FSC EXAM PLATFORM — MẪU IMPORT CÂU HỎI · ${theme.label.toUpperCase()}`,
+            1,
+          ),
           gap(),
           body(
-            "File này chứa các câu hỏi mẫu ở tất cả 8 dạng được hỗ trợ. " +
+            `File mẫu cho môn ${theme.label}. ` +
               "Mở trong Word / Google Docs để chỉnh sửa nội dung rồi lưu lại " +
               "thành .docx → upload vào dialog Import câu hỏi từ Word.",
           ),
@@ -75,7 +86,7 @@ export async function GET() {
           pageBreak(),
 
           // ───────── Sample questions ─────────
-          ...sampleQuestions(),
+          ...sampleQuestions(theme),
 
           gap(),
           divider(),
@@ -218,7 +229,483 @@ function inlineMixed(text: string, baseStyle?: { bold?: boolean }): ParagraphChi
 
 /* ────────────────── Question samples ────────────────── */
 
-function sampleQuestions(): Paragraph[] {
+/**
+ * Inline placeholder image — a small base64-encoded PNG (light-gray
+ * rectangle with the FSC mark). Embedded straight into the .docx via
+ * `docx.ImageRun` so the template shows the teacher exactly how an
+ * image-bearing question renders. Teachers replace it with their own
+ * artwork by selecting + pasting over.
+ */
+const PLACEHOLDER_PNG_BASE64 =
+  // 200x100 light-gray PNG with "MINH HOẠ" caption — generated offline.
+  // Kept inline so the route stays a single-file artifact (no public
+  // asset to ship). 1.3 KB.
+  "iVBORw0KGgoAAAANSUhEUgAAAMgAAABkCAMAAADTKfWYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAA8UExURf///+vr69nZ2cHBwbu7u7Gxsa6urqWlpaCgoJiYmJWVlYqKioODg39/f3l5eXR0dG5ubmlpaWVlZf///+SLKB4AAAATdFJOU///////////////////////////ACOgsK0AAAAJcEhZcwAADsMAAA7DAcdvqGQAAACySURBVHhe7c89DoAgEEThSXz/G7sBVoOJ5sZqJgFa+rvDPYkAQEhEEhEpEoSWQiAILAUDCcKLAUcCSIyk0AghMQQwYECEYJDgEEILBgYBAhECAgAQ4SAIBAhICAAAUMACAQISAQIAACAQIQAAAhICAgAACEgEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhAQEZD3oQECEgYBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhAQiAhICCAQICAAAAhICAAAAAEBAAEBAQIBAgIBAgIBAgIBAhICEAIBAQIBAgIBAQABEBAQAAAAAA==";
+
+type Theme = {
+  key: "math" | "lit" | "eng" | "phy" | "chem" | "bio" | "generic";
+  label: string;
+};
+
+function resolveTheme(input: string): Theme {
+  // Accept either subject id ("subject-toan") or short code ("math").
+  if (input.includes("toan") || input === "math") {
+    return { key: "math", label: "Toán" };
+  }
+  if (input.includes("van") || input === "lit") {
+    return { key: "lit", label: "Ngữ văn" };
+  }
+  if (input.includes("anh") || input === "eng") {
+    return { key: "eng", label: "Tiếng Anh" };
+  }
+  if (input.includes("ly") || input === "phy") {
+    return { key: "phy", label: "Vật lý" };
+  }
+  if (input.includes("hoa") || input === "chem") {
+    return { key: "chem", label: "Hoá học" };
+  }
+  if (input.includes("sinh") || input === "bio") {
+    return { key: "bio", label: "Sinh học" };
+  }
+  return { key: "generic", label: "Tổng quát" };
+}
+
+function imageQuestion(n: number, prompt: string, options: string[]): Paragraph[] {
+  // Question header + meta, then the placeholder image, then options.
+  const imgBuf = Buffer.from(PLACEHOLDER_PNG_BASE64, "base64");
+  return [
+    qHeader(n),
+    meta("Dạng", "MCQ-SINGLE"),
+    meta("Độ khó", "Trung bình"),
+    meta("Đề bài", prompt + " (Dán ảnh của bạn vào ô bên dưới, thay ảnh mẫu.)"),
+    new Paragraph({
+      spacing: { after: 100 },
+      children: [
+        new ImageRun({
+          type: "png",
+          data: imgBuf,
+          transformation: { width: 240, height: 120 },
+        }),
+      ],
+    }),
+    ...options.map((opt, i) =>
+      optMath(
+        `${String.fromCharCode(65 + i)}.`,
+        opt,
+        i === 0, // first option = correct by default
+      ),
+    ),
+    gap(),
+  ];
+}
+
+function sampleQuestions(theme: Theme): Paragraph[] {
+  switch (theme.key) {
+    case "math":
+      return mathQuestions();
+    case "lit":
+      return litQuestions();
+    case "eng":
+      return engQuestions();
+    case "phy":
+      return phyQuestions();
+    case "chem":
+      return chemQuestions();
+    case "bio":
+      return bioQuestions();
+    default:
+      return genericQuestions();
+  }
+}
+
+function mathQuestions(): Paragraph[] {
+  const out: Paragraph[] = [];
+  out.push(
+    qHeader(1),
+    meta("Dạng", "MCQ-SINGLE"),
+    meta("Độ khó", "Dễ"),
+    metaWithMath("Đề bài", "Tính $2 + 3 \\times 4 = ?$"),
+    optMath("A.", "14", true),
+    optMath("B.", "20"),
+    optMath("C.", "9"),
+    optMath("D.", "10"),
+    meta("Giải thích", "Nhân trước cộng sau: 3 × 4 = 12, 2 + 12 = 14."),
+    gap(),
+  );
+  out.push(
+    qHeader(2),
+    meta("Dạng", "MCQ-SINGLE"),
+    meta("Độ khó", "Trung bình"),
+    metaWithMath("Đề bài", "Đạo hàm của $f(x) = x^3 - 2x^2 + 5$ tại $x = 1$?"),
+    optMath("A.", "-1", true),
+    optMath("B.", "1"),
+    optMath("C.", "0"),
+    optMath("D.", "3"),
+    metaWithMath(
+      "Giải thích",
+      "$f'(x) = 3x^2 - 4x$ → $f'(1) = 3 - 4 = -1$.",
+    ),
+    gap(),
+  );
+  out.push(
+    ...imageQuestion(3, "Quan sát hình tam giác bên dưới và tính diện tích:", [
+      "$\\frac{1}{2} \\times a \\times h$",
+      "$a \\times h$",
+      "$a + h$",
+      "$\\pi r^2$",
+    ]),
+  );
+  out.push(
+    qHeader(4),
+    meta("Dạng", "TRUE-FALSE"),
+    meta("Độ khó", "Dễ"),
+    metaWithMath("Đề bài", "Phương trình $x^2 + 1 = 0$ có nghiệm thực."),
+    meta("Đáp án", "Sai"),
+    metaWithMath(
+      "Giải thích",
+      "$x^2 \\geq 0$ nên $x^2 + 1 \\geq 1 > 0$, không có nghiệm thực.",
+    ),
+    gap(),
+  );
+  out.push(
+    qHeader(5),
+    meta("Dạng", "FILL-BLANK"),
+    meta("Độ khó", "Trung bình"),
+    metaWithMath(
+      "Đề bài",
+      "Giải phương trình $x^2 - 5x + 6 = 0$. Nghiệm $x_1 = $ ___, $x_2 = $ ___.",
+    ),
+    meta("Đáp án 1", "2"),
+    meta("Đáp án 2", "3"),
+    gap(),
+  );
+  out.push(
+    qHeader(6),
+    meta("Dạng", "ORDERING"),
+    meta("Độ khó", "Dễ"),
+    metaWithMath("Đề bài", "Sắp xếp các số sau từ bé đến lớn."),
+    orderItem(1, "-7"),
+    orderItem(2, "-2"),
+    orderItem(3, "0"),
+    orderItem(4, "3"),
+    orderItem(5, "8"),
+    gap(),
+  );
+  out.push(
+    qHeader(7),
+    meta("Dạng", "MATCHING"),
+    meta("Độ khó", "Trung bình"),
+    metaWithMath("Đề bài", "Ghép hàm số với đạo hàm của nó."),
+    pair(1, "$x^2$", "$2x$"),
+    pair(2, "$\\sin x$", "$\\cos x$"),
+    pair(3, "$e^x$", "$e^x$"),
+    pair(4, "$\\ln x$", "$1/x$"),
+    gap(),
+  );
+  return out;
+}
+
+function litQuestions(): Paragraph[] {
+  const out: Paragraph[] = [];
+  out.push(
+    qHeader(1),
+    meta("Dạng", "MCQ-SINGLE"),
+    meta("Độ khó", "Dễ"),
+    meta("Đề bài", 'Bài thơ "Tây Tiến" là của tác giả nào?'),
+    optMath("A.", "Quang Dũng", true),
+    optMath("B.", "Xuân Diệu"),
+    optMath("C.", "Tố Hữu"),
+    optMath("D.", "Huy Cận"),
+    meta("Giải thích", "Quang Dũng sáng tác Tây Tiến năm 1948."),
+    gap(),
+  );
+  out.push(
+    qHeader(2),
+    meta("Dạng", "MCQ-MULTI"),
+    meta("Độ khó", "Trung bình"),
+    meta(
+      "Đề bài",
+      "Trong các tác phẩm sau, tác phẩm nào của Nam Cao?",
+    ),
+    optMath("A.", "Chí Phèo", true),
+    optMath("B.", "Vợ chồng A Phủ"),
+    optMath("C.", "Lão Hạc", true),
+    optMath("D.", "Số đỏ"),
+    optMath("E.", "Đời thừa", true),
+    gap(),
+  );
+  out.push(
+    ...imageQuestion(3, "Quan sát tranh minh hoạ tác phẩm và cho biết tác giả:", [
+      "Quang Dũng",
+      "Xuân Diệu",
+      "Nguyễn Du",
+      "Hồ Xuân Hương",
+    ]),
+  );
+  out.push(
+    qHeader(4),
+    meta("Dạng", "UNDERLINE"),
+    meta("Độ khó", "Dễ"),
+    meta(
+      "Đề bài",
+      "Gạch chân các tính từ trong câu: Hôm nay trời rất [đẹp], gió thổi [nhẹ nhàng], hoa nở [rực rỡ].",
+    ),
+    gap(),
+  );
+  out.push(
+    qHeader(5),
+    meta("Dạng", "UNDERLINE"),
+    meta("Độ khó", "Trung bình"),
+    meta(
+      "Đề bài",
+      "Gạch chân các động từ: Cô bé [đang đi] đến trường [bằng xe đạp] và [cười rạng rỡ].",
+    ),
+    gap(),
+  );
+  out.push(
+    qHeader(6),
+    meta("Dạng", "FILL-BLANK"),
+    meta("Độ khó", "Dễ"),
+    meta(
+      "Đề bài",
+      "Truyện Kiều của ___ gồm ___ câu thơ lục bát. (Điền vào chỗ trống)",
+    ),
+    meta("Đáp án 1", "Nguyễn Du | nguyễn du"),
+    meta("Đáp án 2", "3254"),
+    gap(),
+  );
+  out.push(
+    qHeader(7),
+    meta("Dạng", "ESSAY"),
+    meta("Độ khó", "Khó"),
+    meta(
+      "Đề bài",
+      'Phân tích vẻ đẹp của hình tượng người lính trong bài thơ "Tây Tiến".',
+    ),
+    meta("Số từ tối thiểu", "300"),
+    meta("Số từ tối đa", "800"),
+    meta("Tiêu chí 1", "Bối cảnh sáng tác | 1"),
+    meta("Tiêu chí 2", "Hình tượng người lính | 5"),
+    meta("Tiêu chí 3", "Nghệ thuật thơ | 2"),
+    meta("Tiêu chí 4", "Cảm nhận cá nhân | 2"),
+    gap(),
+  );
+  return out;
+}
+
+function engQuestions(): Paragraph[] {
+  const out: Paragraph[] = [];
+  out.push(
+    qHeader(1),
+    meta("Dạng", "MCQ-SINGLE"),
+    meta("Độ khó", "Dễ"),
+    meta("Đề bài", "Choose the correct form: She ___ to school every day."),
+    optMath("A.", "go"),
+    optMath("B.", "goes", true),
+    optMath("C.", "going"),
+    optMath("D.", "went"),
+    meta(
+      "Giải thích",
+      "Subject 'She' is 3rd person singular → verb takes -s.",
+    ),
+    gap(),
+  );
+  out.push(
+    qHeader(2),
+    meta("Dạng", "MCQ-MULTI"),
+    meta("Độ khó", "Trung bình"),
+    meta("Đề bài", "Which of these are past tense verbs?"),
+    optMath("A.", "ran", true),
+    optMath("B.", "running"),
+    optMath("C.", "ate", true),
+    optMath("D.", "wrote", true),
+    optMath("E.", "write"),
+    gap(),
+  );
+  out.push(
+    ...imageQuestion(3, "Look at the picture. What is it?", [
+      "An apple",
+      "A book",
+      "A pen",
+      "A computer",
+    ]),
+  );
+  out.push(
+    qHeader(4),
+    meta("Dạng", "FILL-BLANK"),
+    meta("Độ khó", "Dễ"),
+    meta(
+      "Đề bài",
+      "Complete: My name ___ John. I ___ from Vietnam.",
+    ),
+    meta("Đáp án 1", "is | 's"),
+    meta("Đáp án 2", "am | 'm"),
+    gap(),
+  );
+  out.push(
+    qHeader(5),
+    meta("Dạng", "MATCHING"),
+    meta("Độ khó", "Dễ"),
+    meta("Đề bài", "Match the country with its capital."),
+    pair(1, "Vietnam", "Hanoi"),
+    pair(2, "France", "Paris"),
+    pair(3, "Japan", "Tokyo"),
+    pair(4, "UK", "London"),
+    gap(),
+  );
+  out.push(
+    qHeader(6),
+    meta("Dạng", "ORDERING"),
+    meta("Độ khó", "Trung bình"),
+    meta(
+      "Đề bài",
+      "Put the sentences in order to form a paragraph.",
+    ),
+    orderItem(1, "My name is Linh."),
+    orderItem(2, "I am 15 years old."),
+    orderItem(3, "I live in Hanoi."),
+    orderItem(4, "I study at FSC School."),
+    gap(),
+  );
+  out.push(
+    qHeader(7),
+    meta("Dạng", "TRUE-FALSE"),
+    meta("Độ khó", "Dễ"),
+    meta("Đề bài", "English is the only official language of the USA."),
+    meta("Đáp án", "Sai"),
+    meta(
+      "Giải thích",
+      "The USA has no official federal language; English is de facto.",
+    ),
+    gap(),
+  );
+  return out;
+}
+
+function phyQuestions(): Paragraph[] {
+  const out: Paragraph[] = [];
+  out.push(
+    qHeader(1),
+    meta("Dạng", "MCQ-SINGLE"),
+    meta("Độ khó", "Dễ"),
+    metaWithMath(
+      "Đề bài",
+      "Định luật II Newton: $F = ma$, đơn vị của $F$ là gì?",
+    ),
+    optMath("A.", "Newton (N)", true),
+    optMath("B.", "Joule (J)"),
+    optMath("C.", "Watt (W)"),
+    optMath("D.", "Pascal (Pa)"),
+    gap(),
+  );
+  out.push(
+    ...imageQuestion(
+      2,
+      "Quan sát mạch điện. Cường độ dòng điện $I$ qua mạch là?",
+      ["$I = U/R$", "$I = U \\cdot R$", "$I = R/U$", "$I = U + R$"],
+    ),
+  );
+  out.push(
+    qHeader(3),
+    meta("Dạng", "FILL-BLANK"),
+    meta("Độ khó", "Trung bình"),
+    metaWithMath(
+      "Đề bài",
+      "Vận tốc ánh sáng trong chân không $c \\approx$ ___ m/s.",
+    ),
+    meta("Đáp án 1", "3.10^8 | 300000000 | 3*10^8"),
+    gap(),
+  );
+  out.push(
+    qHeader(4),
+    meta("Dạng", "TRUE-FALSE"),
+    meta("Độ khó", "Dễ"),
+    meta(
+      "Đề bài",
+      "Trọng lực của một vật trên Trái Đất phụ thuộc vào khối lượng vật đó.",
+    ),
+    meta("Đáp án", "Đúng"),
+    metaWithMath("Giải thích", "$P = mg$ — trọng lực tỉ lệ với khối lượng."),
+    gap(),
+  );
+  return out;
+}
+
+function chemQuestions(): Paragraph[] {
+  const out: Paragraph[] = [];
+  out.push(
+    qHeader(1),
+    meta("Dạng", "MCQ-SINGLE"),
+    meta("Độ khó", "Dễ"),
+    meta("Đề bài", "Công thức hoá học của muối ăn là?"),
+    optMath("A.", "NaCl", true),
+    optMath("B.", "NaOH"),
+    optMath("C.", "HCl"),
+    optMath("D.", "Na₂SO₄"),
+    gap(),
+  );
+  out.push(
+    ...imageQuestion(2, "Quan sát mô hình cấu tạo nguyên tử. Số proton là?", [
+      "8",
+      "6",
+      "16",
+      "24",
+    ]),
+  );
+  out.push(
+    qHeader(3),
+    meta("Dạng", "MATCHING"),
+    meta("Độ khó", "Trung bình"),
+    meta("Đề bài", "Ghép cặp axit với muối được tạo ra khi tác dụng với NaOH."),
+    pair(1, "HCl", "NaCl"),
+    pair(2, "H₂SO₄", "Na₂SO₄"),
+    pair(3, "HNO₃", "NaNO₃"),
+    pair(4, "H₃PO₄", "Na₃PO₄"),
+    gap(),
+  );
+  return out;
+}
+
+function bioQuestions(): Paragraph[] {
+  const out: Paragraph[] = [];
+  out.push(
+    qHeader(1),
+    meta("Dạng", "MCQ-SINGLE"),
+    meta("Độ khó", "Dễ"),
+    meta(
+      "Đề bài",
+      "Quang hợp diễn ra chủ yếu ở bộ phận nào của lá cây?",
+    ),
+    optMath("A.", "Lục lạp", true),
+    optMath("B.", "Ti thể"),
+    optMath("C.", "Nhân"),
+    optMath("D.", "Màng tế bào"),
+    gap(),
+  );
+  out.push(
+    ...imageQuestion(2, "Quan sát hình tế bào thực vật. Bộ phận chính giúp cây xanh là?", [
+      "Lục lạp",
+      "Ti thể",
+      "Vách tế bào",
+      "Không bào",
+    ]),
+  );
+  out.push(
+    qHeader(3),
+    meta("Dạng", "ORDERING"),
+    meta("Độ khó", "Trung bình"),
+    meta("Đề bài", "Sắp xếp các giai đoạn phát triển của ếch."),
+    orderItem(1, "Trứng"),
+    orderItem(2, "Nòng nọc có đuôi"),
+    orderItem(3, "Nòng nọc có chân sau"),
+    orderItem(4, "Nòng nọc có cả 4 chân"),
+    orderItem(5, "Ếch trưởng thành"),
+    gap(),
+  );
+  return out;
+}
+
+function genericQuestions(): Paragraph[] {
   const out: Paragraph[] = [];
 
   // 1. MCQ Single

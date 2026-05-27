@@ -6,6 +6,7 @@ import {
   Check,
   CheckSquare,
   ClipboardList,
+  Download,
   Eye,
   FileText,
   GraduationCap,
@@ -60,6 +61,13 @@ import { HomeworkPreviewDialog } from "./homework-preview-dialog";
 import { MaterialPickerDialog } from "./material-picker-dialog";
 import { QuestionPickerDialog } from "./question-picker-dialog";
 
+const CreateQuestionDialog = dynamic(
+  () =>
+    import("@/features/question-bank/dialogs/create-question-dialog").then(
+      (m) => m.CreateQuestionDialog,
+    ),
+  { ssr: false, loading: () => null },
+);
 const ViewQuestionDialog = dynamic(
   () =>
     import("@/features/question-bank/dialogs/view-question-dialog").then(
@@ -129,6 +137,11 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
   const [importing, setImporting] = useState(false);
   const importFileRef = useRef<HTMLInputElement | null>(null);
   const createQuestion = useQuestionsStore((s) => s.create);
+  // For inline question editing — clicking the pencil on a row opens
+  // CreateQuestionDialog with the question prefilled.
+  const [editingQuestionId, setEditingQuestionId] = useState<string | null>(
+    null,
+  );
   const [materialPickerOpen, setMaterialPickerOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [viewingQuestionId, setViewingQuestionId] = useState<string | null>(
@@ -782,6 +795,23 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
                           if (f) void importWordFile(f);
                         }}
                       />
+                      <a
+                        href={
+                          subjectId
+                            ? `/api/import/template?subject=${encodeURIComponent(subjectId)}`
+                            : "/api/import/template"
+                        }
+                        download
+                        className="inline-flex h-7 items-center gap-1 rounded-md border bg-card px-2 text-[11.5px] font-medium text-foreground/80 hover:bg-accent/30"
+                        title={
+                          subjectId
+                            ? "Tải file mẫu theo môn đã chọn — kèm câu hỏi mẫu + ảnh minh hoạ"
+                            : "Tải file mẫu chung — chọn môn trước để được mẫu theo môn"
+                        }
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        Tải file mẫu
+                      </a>
                       <button
                         type="button"
                         onClick={() => {
@@ -875,6 +905,16 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
                           >
                             <Eye className="h-3.5 w-3.5" />
                           </button>
+                          {!isLocked && (
+                            <button
+                              type="button"
+                              onClick={() => setEditingQuestionId(q.id)}
+                              className="rounded p-1 text-muted-foreground hover:bg-blue-50 hover:text-blue-600"
+                              title="Chỉnh sửa câu hỏi"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                           {!isLocked && (
                             <button
                               type="button"
@@ -1185,6 +1225,17 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
             : null
         }
         onClose={() => setViewingQuestionId(null)}
+      />
+      <CreateQuestionDialog
+        open={editingQuestionId != null}
+        onOpenChange={(o) => {
+          if (!o) setEditingQuestionId(null);
+        }}
+        editing={
+          editingQuestionId
+            ? allQuestions.find((q) => q.id === editingQuestionId) ?? null
+            : null
+        }
       />
       <MaterialViewerDialog
         material={
