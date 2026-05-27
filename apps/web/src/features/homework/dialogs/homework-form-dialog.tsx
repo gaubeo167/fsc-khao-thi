@@ -1,6 +1,17 @@
 "use client";
 
-import { Check, Loader2, X } from "lucide-react";
+import {
+  Check,
+  CheckSquare,
+  Eye,
+  FileText,
+  Link2,
+  Loader2,
+  Paperclip,
+  Pencil,
+  Plus,
+  X,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -19,17 +30,19 @@ import { useAuthStore } from "@/features/auth/state/auth-store";
 import { useCampusStore } from "@/features/campus/state/campus-store";
 import { useGradesStore } from "@/features/grades/state/grades-store";
 import { useMaterialsStore } from "@/features/learning-materials/state/materials-store";
+import {
+  FILE_TYPE_LABEL,
+} from "@/features/learning-materials/data/types";
+import { findQuestionType } from "@/features/question-bank/data/question-types";
 import { useQuestionsStore } from "@/features/question-bank/state/questions-store";
-import type { Question } from "@/features/question-bank/data/seed-questions";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import { cn } from "@/lib/utils";
 
-import {
-  HOMEWORK_QUESTION_TYPES,
-  type Homework,
-  type HomeworkStatus,
-} from "../data/types";
+import type { Homework, HomeworkStatus } from "../data/types";
 import { useHomeworkStore } from "../state/homework-store";
+import { HomeworkPreviewDialog } from "./homework-preview-dialog";
+import { MaterialPickerDialog } from "./material-picker-dialog";
+import { QuestionPickerDialog } from "./question-picker-dialog";
 
 interface Props {
   open: boolean;
@@ -38,14 +51,13 @@ interface Props {
 }
 
 /**
- * Single-page form (no wizard steps) — teacher fills everything at
- * once. Question + material pickers are inline lists with search +
- * checkbox.
+ * Streamlined form — no inline pickers. Question + material selection
+ * is delegated to dedicated picker dialogs that open over this one.
+ * The form itself focuses on metadata and shows summary cards of what
+ * was picked, with quick "Bỏ chọn" affordances per item.
  *
- * Word import is a separate flow (covered in task H4). The button
- * shortcut here drops users into the existing /admin/question-bank
- * import dialog; questions land in their personal kho, then the
- * teacher picks them via the same checkbox list.
+ * "Xem trước / Làm thử" gives the teacher a sanity-check of how the
+ * homework will render to students before publishing.
  */
 export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
   const session = useAuthStore((s) => s.session);
@@ -68,8 +80,11 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
   const [assignedAt, setAssignedAt] = useState(() => todayISO());
   const [dueAt, setDueAt] = useState(() => addDaysISO(todayISO(), 7));
   const [status, setStatus] = useState<HomeworkStatus>("published");
-  const [search, setSearch] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  const [questionPickerOpen, setQuestionPickerOpen] = useState(false);
+  const [materialPickerOpen, setMaterialPickerOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const isEdit = Boolean(editing);
 
@@ -98,7 +113,6 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
       setDueAt(addDaysISO(todayISO(), 7));
       setStatus("published");
     }
-    setSearch("");
   }, [open, editing?.id]);
 
   const campusId =
@@ -106,91 +120,55 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
       ? activeCampusId ?? null
       : session?.campusId ?? null;
 
-  // Class picker — narrow to chosen grade + campus.
-  const classesForGrade = useMemo(() => {
-    return allClasses.filter(
-      (c) =>
-        (!campusId || c.campusId === campusId) &&
-        (!gradeId || c.gradeId === gradeId),
-    );
-  }, [allClasses, campusId, gradeId]);
+  const classesForGrade = useMemo(
+    () =>
+      allClasses.filter(
+        (c) =>
+          (!campusId || c.campusId === campusId) &&
+          (!gradeId || c.gradeId === gradeId),
+      ),
+    [allClasses, campusId, gradeId],
+  );
 
-  // Question pool — auto-gradable only, matching subject+grade+campus,
-  // approved (campus kho) or owned by me (personal kho). Filter by
-  // search text.
-  const pool = useMemo(() => {
-    const sq = search.trim().toLowerCase();
-    return allQuestions.filter((q) => {
-      if (!HOMEWORK_QUESTION_TYPES.has(q.type)) return false;
-      if (q.archivedAt) return false;
-      if (subjectId && q.subjectId !== subjectId) return false;
-      if (gradeId && q.gradeId && q.gradeId !== gradeId) return false;
-      if (campusId && q.campusId && q.campusId !== campusId) return false;
-      // Visible: approved in campus kho OR my own personal kho
-      const visible =
-        q.status === "approved" ||
-        (q.kho === "personal" && q.ownerId === session?.userId);
-      if (!visible) return false;
-      if (sq) {
-        const hay = `${q.content} ${q.tags.join(" ")} ${q.id}`.toLowerCase();
-        if (!hay.includes(sq)) return false;
-      }
-      return true;
-    });
-  }, [allQuestions, search, subjectId, gradeId, campusId, session?.userId]);
+  // Materialized question + material rows for the summary cards.
+  const selectedQuestions = useMemo(
+    () =>
+      questionIds
+        .map((qid) => allQuestions.find((q) => q.id === qid))
+        .filter((q): q is NonNullable<typeof q> => !!q),
+    [questionIds, allQuestions],
+  );
+  const selectedMaterials = useMemo(
+    () =>
+      materialIds
+        .map((mid) => allMaterials.find((m) => m.id === mid))
+        .filter((m): m is NonNullable<typeof m> => !!m),
+    [materialIds, allMaterials],
+  );
 
-  // Material pool — same subject + approved-in-campus OR personal.
-  const materialPool = useMemo(() => {
-    return allMaterials.filter((m) => {
-      if (m.archivedAt) return false;
-      if (subjectId && m.subjectId !== subjectId) return false;
-      const visible =
-        m.status === "approved" ||
-        (m.kho === "personal" && m.ownerId === session?.userId);
-      if (!visible) return false;
-      if (campusId && m.campusId && m.campusId !== campusId) return false;
-      return true;
-    });
-  }, [allMaterials, subjectId, campusId, session?.userId]);
-
-  function toggleQuestion(id: string) {
-    setQuestionIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    );
-  }
-  function toggleMaterial(id: string) {
-    setMaterialIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    );
-  }
   function toggleClass(id: string) {
     setSelectedClassIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
   }
+  function removeQuestion(id: string) {
+    setQuestionIds((prev) => prev.filter((x) => x !== id));
+  }
+  function removeMaterial(id: string) {
+    setMaterialIds((prev) => prev.filter((x) => x !== id));
+  }
 
   function handleSubmit() {
     if (!session) return;
-    if (!title.trim()) {
-      toast.error("Nhập tiêu đề BTVN");
-      return;
-    }
-    if (!subjectId) {
-      toast.error("Chọn môn học");
-      return;
-    }
-    if (selectedClassIds.length === 0) {
-      toast.error("Chọn ít nhất 1 lớp được giao");
-      return;
-    }
-    if (questionIds.length === 0) {
-      toast.error("Chọn ít nhất 1 câu hỏi");
-      return;
-    }
-    if (assignedAt > dueAt) {
-      toast.error("Ngày hết hạn phải sau ngày giao");
-      return;
-    }
+    if (!title.trim()) return toast.error("Nhập tiêu đề BTVN");
+    if (!subjectId) return toast.error("Chọn môn học");
+    if (selectedClassIds.length === 0)
+      return toast.error("Chọn ít nhất 1 lớp được giao");
+    if (questionIds.length === 0)
+      return toast.error("Chọn ít nhất 1 câu hỏi");
+    if (assignedAt > dueAt)
+      return toast.error("Ngày hết hạn phải sau ngày giao");
+
     setSubmitting(true);
     try {
       const payload: Omit<Homework, "id" | "createdAt" | "updatedAt"> = {
@@ -226,318 +204,402 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
   }
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(o) => {
-        if (submitting) return;
-        onOpenChange(o);
-      }}
-    >
-      <DialogContent
-        className="max-w-3xl max-h-[92vh] overflow-y-auto"
-        onPointerDownOutside={(e) => e.preventDefault()}
-        onInteractOutside={(e) => e.preventDefault()}
+    <>
+      <Dialog
+        open={open}
+        onOpenChange={(o) => {
+          if (submitting) return;
+          onOpenChange(o);
+        }}
       >
-        <DialogHeader>
-          <DialogTitle>
-            {isEdit ? "Chỉnh sửa BTVN" : "Giao BTVN mới"}
-          </DialogTitle>
-          <DialogDescription>
-            Học sinh có thể làm bất kỳ lúc nào trong khoảng [ngày giao,
-            ngày hết hạn]. Đính kèm học liệu để HS tham khảo khi làm.
-          </DialogDescription>
-        </DialogHeader>
+        <DialogContent
+          className="max-w-3xl max-h-[92vh] overflow-y-auto"
+          onPointerDownOutside={(e) => e.preventDefault()}
+          onInteractOutside={(e) => e.preventDefault()}
+        >
+          <DialogHeader>
+            <DialogTitle>
+              {isEdit ? "Chỉnh sửa BTVN" : "Giao BTVN mới"}
+            </DialogTitle>
+            <DialogDescription>
+              Học sinh có thể làm bất kỳ lúc nào trong khoảng [ngày giao,
+              ngày hết hạn]. Đính kèm học liệu để HS tham khảo khi làm.
+            </DialogDescription>
+          </DialogHeader>
 
-        <div className="space-y-4">
-          {/* Meta */}
-          <div className="space-y-1.5">
-            <Label>Tiêu đề *</Label>
-            <Input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="VD: BTVN Chương 1 — Phương trình bậc 1"
-              disabled={submitting}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Mô tả / Hướng dẫn cho HS</Label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={2}
-              className="w-full rounded-md border bg-background px-3 py-2 text-[13px] disabled:opacity-50"
-              disabled={submitting}
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-4">
+            {/* Title + description */}
             <div className="space-y-1.5">
-              <Label>Môn *</Label>
-              <Select
-                value={subjectId}
-                onChange={(e) => {
-                  setSubjectId(e.target.value);
-                  setQuestionIds([]);
-                  setMaterialIds([]);
-                }}
-                disabled={submitting}
-              >
-                <option value="">— Chọn môn —</option>
-                {subjects.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Khối</Label>
-              <Select
-                value={gradeId}
-                onChange={(e) => {
-                  setGradeId(e.target.value);
-                  setSelectedClassIds([]);
-                  setQuestionIds([]);
-                }}
-                disabled={submitting}
-              >
-                <option value="">— Mọi khối —</option>
-                {grades.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.name}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>Ngày giao *</Label>
+              <Label>Tiêu đề *</Label>
               <Input
-                type="date"
-                value={assignedAt}
-                onChange={(e) => setAssignedAt(e.target.value)}
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="VD: BTVN Chương 1 — Phương trình bậc 1"
                 disabled={submitting}
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Ngày hết hạn *</Label>
-              <Input
-                type="date"
-                value={dueAt}
-                onChange={(e) => setDueAt(e.target.value)}
+              <Label>Mô tả / Hướng dẫn cho HS</Label>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={2}
+                className="w-full rounded-md border bg-background px-3 py-2 text-[13px] disabled:opacity-50"
                 disabled={submitting}
               />
             </div>
-          </div>
 
-          {/* Class picker */}
-          <div className="space-y-1.5">
-            <Label>Lớp được giao *</Label>
-            {classesForGrade.length === 0 ? (
-              <p className="text-meta">
-                {gradeId
-                  ? "Chưa có lớp nào ở khối này"
-                  : "Chọn khối để hiển thị danh sách lớp"}
-              </p>
-            ) : (
-              <div className="flex flex-wrap gap-1.5 rounded-md border bg-card p-2">
-                {classesForGrade.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => toggleClass(c.id)}
-                    disabled={submitting}
-                    className={cn(
-                      "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[12px] font-medium",
-                      selectedClassIds.includes(c.id)
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border bg-background text-foreground/70 hover:bg-accent",
-                    )}
-                  >
-                    {selectedClassIds.includes(c.id) ? (
-                      <Check className="h-3 w-3" />
-                    ) : null}
-                    {c.name}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Question picker */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between gap-2">
-              <Label>
-                Câu hỏi *
-                <span className="ml-2 text-[11px] font-normal text-muted-foreground">
-                  ({questionIds.length} đã chọn)
-                </span>
-              </Label>
-              <div className="flex items-center gap-2">
-                <a
-                  href="/admin/question-bank"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex h-8 items-center gap-1 rounded-md border bg-card px-2 text-[11.5px] font-medium hover:bg-accent/30"
-                  title="Mở Ngân hàng câu hỏi trong tab mới để import từ Word → quay lại tick chọn"
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Môn *</Label>
+                <Select
+                  value={subjectId}
+                  onChange={(e) => {
+                    setSubjectId(e.target.value);
+                    setQuestionIds([]);
+                    setMaterialIds([]);
+                  }}
+                  disabled={submitting}
                 >
-                  📄 Import Word
-                </a>
+                  <option value="">— Chọn môn —</option>
+                  {subjects.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Khối</Label>
+                <Select
+                  value={gradeId}
+                  onChange={(e) => {
+                    setGradeId(e.target.value);
+                    setSelectedClassIds([]);
+                    setQuestionIds([]);
+                  }}
+                  disabled={submitting}
+                >
+                  <option value="">— Mọi khối —</option>
+                  {grades.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.name}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Ngày giao *</Label>
                 <Input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Tìm theo nội dung / tag / mã…"
-                  className="h-8 max-w-[260px]"
+                  type="date"
+                  value={assignedAt}
+                  onChange={(e) => setAssignedAt(e.target.value)}
+                  disabled={submitting}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Ngày hết hạn *</Label>
+                <Input
+                  type="date"
+                  value={dueAt}
+                  onChange={(e) => setDueAt(e.target.value)}
                   disabled={submitting}
                 />
               </div>
             </div>
-            <div className="max-h-[260px] overflow-y-auto rounded-md border bg-card">
-              {pool.length === 0 ? (
-                <p className="px-3 py-6 text-center text-meta">
-                  {subjectId
-                    ? "Không có câu hỏi nào phù hợp với bộ lọc."
-                    : "Chọn môn trước để hiển thị câu hỏi."}
+
+            {/* Class picker */}
+            <div className="space-y-1.5">
+              <Label>Lớp được giao *</Label>
+              {classesForGrade.length === 0 ? (
+                <p className="text-meta">
+                  {gradeId
+                    ? "Chưa có lớp nào ở khối này"
+                    : "Chọn khối để hiển thị danh sách lớp"}
                 </p>
               ) : (
-                <ul className="divide-y">
-                  {pool.map((q) => (
-                    <li key={q.id}>
-                      <button
-                        type="button"
-                        onClick={() => toggleQuestion(q.id)}
-                        disabled={submitting}
-                        className={cn(
-                          "flex w-full items-start gap-2 px-3 py-2 text-left text-[12.5px] hover:bg-accent/30",
-                          questionIds.includes(q.id) && "bg-primary/8",
-                        )}
+                <div className="flex flex-wrap gap-1.5 rounded-md border bg-card p-2">
+                  {classesForGrade.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => toggleClass(c.id)}
+                      disabled={submitting}
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[12px] font-medium",
+                        selectedClassIds.includes(c.id)
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border bg-background text-foreground/70 hover:bg-accent",
+                      )}
+                    >
+                      {selectedClassIds.includes(c.id) ? (
+                        <Check className="h-3 w-3" />
+                      ) : null}
+                      {c.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Question picker — button + summary */}
+            <SummarySection
+              title="Câu hỏi *"
+              count={selectedQuestions.length}
+              icon={CheckSquare}
+              tone="blue"
+              actions={
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    if (!subjectId)
+                      return toast.error("Chọn môn trước khi chọn câu hỏi");
+                    setQuestionPickerOpen(true);
+                  }}
+                  disabled={submitting}
+                >
+                  <Plus className="h-4 w-4" />
+                  {selectedQuestions.length > 0
+                    ? "Thêm / sửa câu hỏi"
+                    : "Chọn câu hỏi từ ngân hàng"}
+                </Button>
+              }
+            >
+              {selectedQuestions.length === 0 ? (
+                <p className="text-meta">
+                  Chưa chọn câu hỏi nào. Bấm nút phía trên để chọn từ kho cá
+                  nhân hoặc kho trường.
+                </p>
+              ) : (
+                <ul className="space-y-1.5">
+                  {selectedQuestions.map((q, i) => {
+                    const meta = findQuestionType(q.type);
+                    return (
+                      <li
+                        key={q.id}
+                        className="flex items-start gap-2 rounded-md border bg-card px-2.5 py-1.5"
                       >
-                        <span
-                          className={cn(
-                            "mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border",
-                            questionIds.includes(q.id)
-                              ? "border-primary bg-primary text-primary-foreground"
-                              : "border-border bg-background",
-                          )}
-                        >
-                          {questionIds.includes(q.id) ? (
-                            <Check className="h-3 w-3" strokeWidth={3} />
-                          ) : null}
+                        <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-foreground/8 text-[10.5px] font-bold text-foreground/70">
+                          {i + 1}
                         </span>
                         <div className="min-w-0 flex-1">
-                          <p className="line-clamp-2 leading-snug">
+                          <p className="line-clamp-1 text-[12.5px]">
                             {plainText(q.content)}
                           </p>
-                          <p className="mt-0.5 text-[10.5px] text-muted-foreground">
-                            {q.id} · {q.type} · {q.difficulty}{" "}
-                            {q.tags.length > 0
-                              ? ` · ${q.tags.map((t) => `#${t}`).join(" ")}`
-                              : ""}
+                          <p className="text-[10.5px] text-muted-foreground">
+                            {q.id}
+                            {meta ? ` · ${meta.name}` : ""} · {q.difficulty}
                           </p>
                         </div>
-                      </button>
-                    </li>
-                  ))}
+                        <button
+                          type="button"
+                          onClick={() => removeQuestion(q.id)}
+                          className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                          title="Bỏ chọn"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
-            </div>
-          </div>
+            </SummarySection>
 
-          {/* Material picker */}
-          <div className="space-y-1.5">
-            <Label>
-              Đính kèm học liệu
-              <span className="ml-2 text-[11px] font-normal text-muted-foreground">
-                ({materialIds.length} đã chọn — HS sẽ xem được khi làm bài)
-              </span>
-            </Label>
-            <div className="max-h-[180px] overflow-y-auto rounded-md border bg-card">
-              {materialPool.length === 0 ? (
-                <p className="px-3 py-6 text-center text-meta">
-                  Chưa có học liệu nào trong môn này.
+            {/* Material picker */}
+            <SummarySection
+              title="Học liệu đính kèm"
+              count={selectedMaterials.length}
+              icon={Paperclip}
+              tone="emerald"
+              actions={
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    if (!subjectId)
+                      return toast.error("Chọn môn trước khi chọn học liệu");
+                    setMaterialPickerOpen(true);
+                  }}
+                  disabled={submitting}
+                >
+                  <Plus className="h-4 w-4" />
+                  {selectedMaterials.length > 0
+                    ? "Thêm / sửa học liệu"
+                    : "Chọn học liệu"}
+                </Button>
+              }
+            >
+              {selectedMaterials.length === 0 ? (
+                <p className="text-meta">
+                  Tuỳ chọn. Đính kèm bài giảng / video để HS xem khi làm bài.
                 </p>
               ) : (
-                <ul className="divide-y">
-                  {materialPool.map((m) => (
-                    <li key={m.id}>
+                <ul className="space-y-1.5">
+                  {selectedMaterials.map((m) => (
+                    <li
+                      key={m.id}
+                      className="flex items-start gap-2 rounded-md border bg-card px-2.5 py-1.5"
+                    >
+                      {m.sourceType === "link" ? (
+                        <Link2 className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                      ) : (
+                        <FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="line-clamp-1 text-[12.5px] font-medium">
+                          {m.title}
+                        </p>
+                        <p className="text-[10.5px] text-muted-foreground">
+                          {FILE_TYPE_LABEL[m.fileType]}
+                          {m.sourceType === "link" ? " · liên kết" : ""}
+                        </p>
+                      </div>
                       <button
                         type="button"
-                        onClick={() => toggleMaterial(m.id)}
-                        disabled={submitting}
-                        className={cn(
-                          "flex w-full items-start gap-2 px-3 py-2 text-left text-[12.5px] hover:bg-accent/30",
-                          materialIds.includes(m.id) && "bg-primary/8",
-                        )}
+                        onClick={() => removeMaterial(m.id)}
+                        className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                        title="Bỏ chọn"
                       >
-                        <span
-                          className={cn(
-                            "mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border",
-                            materialIds.includes(m.id)
-                              ? "border-primary bg-primary text-primary-foreground"
-                              : "border-border bg-background",
-                          )}
-                        >
-                          {materialIds.includes(m.id) ? (
-                            <Check className="h-3 w-3" strokeWidth={3} />
-                          ) : null}
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <p className="line-clamp-1 font-medium">{m.title}</p>
-                          <p className="mt-0.5 text-[10.5px] text-muted-foreground">
-                            {m.fileType}{" "}
-                            {m.sourceType === "link" ? "· Liên kết" : ""}
-                          </p>
-                        </div>
+                        <X className="h-3.5 w-3.5" />
                       </button>
                     </li>
                   ))}
                 </ul>
               )}
+            </SummarySection>
+
+            {/* Status */}
+            <div className="space-y-1.5">
+              <Label>Trạng thái</Label>
+              <Select
+                value={status}
+                onChange={(e) => setStatus(e.target.value as HomeworkStatus)}
+                disabled={submitting}
+              >
+                <option value="draft">Nháp (HS chưa thấy)</option>
+                <option value="published">
+                  Đã giao (HS thấy được trong khoảng ngày)
+                </option>
+                <option value="closed">Đã đóng (không cho nộp thêm)</option>
+              </Select>
             </div>
           </div>
 
-          {/* Status */}
-          <div className="space-y-1.5">
-            <Label>Trạng thái</Label>
-            <Select
-              value={status}
-              onChange={(e) => setStatus(e.target.value as HomeworkStatus)}
+          <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setPreviewOpen(true)}
+              disabled={submitting || questionIds.length === 0}
+              title={
+                questionIds.length === 0
+                  ? "Cần chọn ít nhất 1 câu hỏi để xem trước"
+                  : undefined
+              }
+            >
+              <Eye className="h-4 w-4" />
+              Xem trước / Làm thử
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => onOpenChange(false)}
               disabled={submitting}
             >
-              <option value="draft">Nháp (HS chưa thấy)</option>
-              <option value="published">
-                Đã giao (HS thấy được trong khoảng ngày)
-              </option>
-              <option value="closed">Đã đóng (không cho nộp thêm)</option>
-            </Select>
+              Huỷ
+            </Button>
+            <Button onClick={handleSubmit} disabled={submitting}>
+              {submitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Đang lưu…
+                </>
+              ) : isEdit ? (
+                <>
+                  <Pencil className="h-4 w-4" />
+                  Lưu thay đổi
+                </>
+              ) : (
+                "Tạo BTVN"
+              )}
+            </Button>
           </div>
-        </div>
+        </DialogContent>
+      </Dialog>
 
-        <div className="flex justify-end gap-2 pt-2">
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={submitting}
-          >
-            Huỷ
-          </Button>
-          <Button onClick={handleSubmit} disabled={submitting}>
-            {submitting ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Đang lưu…
-              </>
-            ) : isEdit ? (
-              "Lưu thay đổi"
-            ) : (
-              "Tạo BTVN"
+      {/* Pickers */}
+      <QuestionPickerDialog
+        open={questionPickerOpen}
+        onOpenChange={setQuestionPickerOpen}
+        selectedIds={questionIds}
+        onConfirm={setQuestionIds}
+        subjectId={subjectId}
+        gradeId={gradeId || null}
+        campusId={campusId}
+      />
+      <MaterialPickerDialog
+        open={materialPickerOpen}
+        onOpenChange={setMaterialPickerOpen}
+        selectedIds={materialIds}
+        onConfirm={setMaterialIds}
+        subjectId={subjectId}
+        campusId={campusId}
+      />
+      <HomeworkPreviewDialog
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        questionIds={questionIds}
+        materialIds={materialIds}
+        title={title || "BTVN chưa đặt tên"}
+      />
+    </>
+  );
+}
+
+function SummarySection({
+  title,
+  count,
+  icon: Icon,
+  tone,
+  actions,
+  children,
+}: {
+  title: string;
+  count: number;
+  icon: React.ComponentType<{ className?: string }>;
+  tone: "blue" | "emerald";
+  actions: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const accent =
+    tone === "blue"
+      ? "border-blue-200 bg-blue-50/50 text-blue-700"
+      : "border-emerald-200 bg-emerald-50/50 text-emerald-700";
+  return (
+    <section className="space-y-1.5 rounded-lg border bg-card p-3">
+      <div className="flex items-center justify-between gap-2">
+        <Label className="inline-flex items-center gap-1.5">
+          <Icon className="h-4 w-4 text-foreground/60" />
+          {title}
+          <span
+            className={cn(
+              "inline-flex h-5 min-w-[1.5rem] items-center justify-center rounded-md border px-1.5 text-[10.5px] font-bold",
+              accent,
             )}
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
+          >
+            {count}
+          </span>
+        </Label>
+        {actions}
+      </div>
+      {children}
+    </section>
   );
 }
 
@@ -550,7 +612,6 @@ function addDaysISO(iso: string, days: number): string {
   d.setDate(d.getDate() + days);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
-/** Strip markdown / HTML markers so the question preview row stays tight. */
 function plainText(s: string): string {
   return s
     .replace(/!\[.*?\]\(.*?\)/g, "[ảnh]")
