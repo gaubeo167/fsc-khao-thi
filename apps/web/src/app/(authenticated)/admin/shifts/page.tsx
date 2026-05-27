@@ -36,6 +36,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { Select } from "@/components/ui/select";
+import { Tooltip } from "@/components/ui/tooltip";
 import { ConfirmActionDialog } from "@/features/admin/users/dialogs/confirm-action-dialog";
 import { useCanCreate, useUserScope } from "@/features/auth/lib/use-scope";
 import { useAuthStore } from "@/features/auth/state/auth-store";
@@ -571,30 +572,33 @@ export default function ShiftsPage() {
                 </td>
                 <td className="px-3 py-2.5">
                   <div className="flex items-center justify-center gap-1.5 text-[12px] text-foreground/80">
-                    <span
-                      className="inline-flex cursor-help items-center gap-1 rounded-md px-1.5 py-0.5 hover:bg-blue-50"
-                      title={`Số lớp được giao: ${classes.length}`}
-                      aria-label={`${classes.length} lớp được giao`}
+                    <Tooltip
+                      text={`Số lớp được giao: ${classes.length}`}
+                      className="gap-1 rounded-md px-1.5 py-0.5 hover:bg-blue-50"
                     >
                       <GraduationCap className="h-3.5 w-3.5 text-blue-600" />
-                      <span className="font-semibold">{classes.length}</span>
-                    </span>
-                    <span
-                      className="inline-flex cursor-help items-center gap-1 rounded-md px-1.5 py-0.5 hover:bg-violet-50"
-                      title={`Số học sinh: ${totalStudents}`}
-                      aria-label={`${totalStudents} học sinh`}
+                      <span className="ml-1 font-semibold">
+                        {classes.length}
+                      </span>
+                    </Tooltip>
+                    <Tooltip
+                      text={`Số học sinh: ${totalStudents}`}
+                      className="gap-1 rounded-md px-1.5 py-0.5 hover:bg-violet-50"
                     >
                       <Users className="h-3.5 w-3.5 text-violet-600" />
-                      <span className="font-semibold">{totalStudents}</span>
-                    </span>
-                    <span
-                      className="inline-flex cursor-help items-center gap-1 rounded-md px-1.5 py-0.5 hover:bg-emerald-50"
-                      title={`Số phòng thi: ${sh.rooms.length}`}
-                      aria-label={`${sh.rooms.length} phòng thi`}
+                      <span className="ml-1 font-semibold">
+                        {totalStudents}
+                      </span>
+                    </Tooltip>
+                    <Tooltip
+                      text={`Số phòng thi: ${sh.rooms.length}`}
+                      className="gap-1 rounded-md px-1.5 py-0.5 hover:bg-emerald-50"
                     >
                       <DoorOpen className="h-3.5 w-3.5 text-emerald-600" />
-                      <span className="font-semibold">{sh.rooms.length}</span>
-                    </span>
+                      <span className="ml-1 font-semibold">
+                        {sh.rooms.length}
+                      </span>
+                    </Tooltip>
                   </div>
                 </td>
                 <td className="px-3 py-2.5 text-foreground/80">

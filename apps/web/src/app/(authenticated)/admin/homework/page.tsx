@@ -25,6 +25,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { Select } from "@/components/ui/select";
+import { Tooltip } from "@/components/ui/tooltip";
 import { useAuthStore } from "@/features/auth/state/auth-store";
 import { useCampusStore } from "@/features/campus/state/campus-store";
 import { useGradesStore } from "@/features/grades/state/grades-store";
@@ -327,26 +328,24 @@ export default function HomeworkAdminPage() {
                       </td>
                       <td className="px-4 py-2.5">
                         <div className="flex items-center justify-center gap-1.5 text-[12px] text-foreground/80">
-                          <span
-                            className="inline-flex cursor-help items-center gap-1 rounded-md px-1.5 py-0.5 hover:bg-blue-50"
-                            title={`Số lớp được giao: ${h.classIds.length}`}
-                            aria-label={`${h.classIds.length} lớp được giao`}
+                          <Tooltip
+                            text={`Số lớp được giao: ${h.classIds.length}`}
+                            className="gap-1 rounded-md px-1.5 py-0.5 hover:bg-blue-50"
                           >
                             <GraduationCap className="h-3.5 w-3.5 text-blue-600" />
-                            <span className="font-semibold">
+                            <span className="ml-1 font-semibold">
                               {h.classIds.length}
                             </span>
-                          </span>
-                          <span
-                            className="inline-flex cursor-help items-center gap-1 rounded-md px-1.5 py-0.5 hover:bg-violet-50"
-                            title={`Số học sinh được giao: ${totalRoster}`}
-                            aria-label={`${totalRoster} học sinh được giao`}
+                          </Tooltip>
+                          <Tooltip
+                            text={`Số học sinh được giao: ${totalRoster}`}
+                            className="gap-1 rounded-md px-1.5 py-0.5 hover:bg-violet-50"
                           >
                             <Users className="h-3.5 w-3.5 text-violet-600" />
-                            <span className="font-semibold">
+                            <span className="ml-1 font-semibold">
                               {totalRoster}
                             </span>
-                          </span>
+                          </Tooltip>
                         </div>
                       </td>
                       <td className="px-4 py-2.5 text-foreground/80">
