@@ -100,6 +100,11 @@ interface Props {
   open: boolean;
   onOpenChange(open: boolean): void;
   editing?: ExamShift | null;
+  /** When true the wizard becomes a read-only viewer: inputs are
+   *  disabled, Save buttons are hidden, but navigation between steps
+   *  still works so the teacher can browse what was configured. Used
+   *  to "Xem" shifts that already have student attempt data. */
+  readOnly?: boolean;
 }
 
 type StepId = 1 | 2 | 3 | 4 | 5;
@@ -260,7 +265,12 @@ async function materializeAndSave(args: MaterializeArgs): Promise<void> {
   await store.saveForm(form);
 }
 
-export function ShiftWizard({ open, onOpenChange, editing }: Props) {
+export function ShiftWizard({
+  open,
+  onOpenChange,
+  editing,
+  readOnly = false,
+}: Props) {
   const session = useAuthStore((s) => s.session);
   const activeCampusId = useCampusStore((s) => s.activeCampusId);
   const grades = useGradesStore((s) => s.grades);
@@ -674,10 +684,16 @@ export function ShiftWizard({ open, onOpenChange, editing }: Props) {
           </span>
           <div className="min-w-0">
             <DialogTitle className="text-section-title">
-              {editing ? "Sửa ca thi" : "Tạo ca thi mới"}
+              {readOnly
+                ? "Xem ca thi"
+                : editing
+                  ? "Sửa ca thi"
+                  : "Tạo ca thi mới"}
             </DialogTitle>
             <p className="text-meta mt-0.5">
-              Lên lịch & cấu hình ca thi cho học sinh
+              {readOnly
+                ? "Chế độ chỉ đọc — ca thi đã có HS làm bài nên không thể chỉnh sửa."
+                : "Lên lịch & cấu hình ca thi cho học sinh"}
             </p>
           </div>
         </header>
@@ -734,7 +750,16 @@ export function ShiftWizard({ open, onOpenChange, editing }: Props) {
           </ol>
         </div>
 
-        <div className="px-6 py-5">{stepBody}</div>
+        {/* fieldset with `disabled` natively disables every native form
+            control inside (input, select, textarea, button). This is
+            how readOnly mode is enforced — saves us threading the prop
+            through each step's individual component. */}
+        <fieldset
+          disabled={readOnly}
+          className="px-6 py-5 disabled:opacity-90"
+        >
+          {stepBody}
+        </fieldset>
 
         {error && (
           <div className="mx-6 mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[13px] text-amber-800">
@@ -749,12 +774,20 @@ export function ShiftWizard({ open, onOpenChange, editing }: Props) {
             onClick={step === 1 ? () => onOpenChange(false) : handleBack}
           >
             {step === 1 ? <X className="h-4 w-4" /> : <ArrowLeft className="h-4 w-4" />}
-            {step === 1 ? "Huỷ" : "Quay lại"}
+            {step === 1 ? (readOnly ? "Đóng" : "Huỷ") : "Quay lại"}
           </Button>
           {step < 5 ? (
             <Button type="button" onClick={handleNext}>
               Tiếp theo
               <ArrowRight className="h-4 w-4" />
+            </Button>
+          ) : readOnly ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+            >
+              Đóng
             </Button>
           ) : (
             <Button type="button" onClick={handleSubmit}>

@@ -13,6 +13,7 @@ import {
   RotateCcw,
   Sparkles,
   Trash2,
+  X,
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
@@ -176,6 +177,11 @@ export default function ExamBlueprintsPage() {
   const { canMutate } = useCampusGate();
 
   const [tab, setTab] = useState<Tab>("blueprints");
+  // When the user clicks the "Đã sinh" pill on a package row we switch
+  // to the Generated tab AND narrow the list to that package only.
+  const [generatedPackageFilter, setGeneratedPackageFilter] = useState<
+    string | null
+  >(null);
   const [search, setSearch] = useState("");
   const [subjectFilter, setSubjectFilter] = useState("all");
   const [gradeFilter, setGradeFilter] = useState("all");
@@ -269,6 +275,12 @@ export default function ExamBlueprintsPage() {
       const pkg = packages.find((p) => p.id === g.packageId);
       const bp = pkg ? blueprints.find((b) => b.id === pkg.blueprintId) : null;
       if (!pkg || !bp) return false;
+      if (
+        generatedPackageFilter &&
+        g.packageId !== generatedPackageFilter
+      ) {
+        return false;
+      }
       if (subjectFilter !== "all" && bp.subjectId !== subjectFilter) return false;
       if (gradeFilter !== "all" && bp.gradeId !== gradeFilter) return false;
       if (search.trim()) {
@@ -277,7 +289,15 @@ export default function ExamBlueprintsPage() {
       }
       return true;
     });
-  }, [scopedGenerated, packages, blueprints, subjectFilter, gradeFilter, search]);
+  }, [
+    scopedGenerated,
+    packages,
+    blueprints,
+    generatedPackageFilter,
+    subjectFilter,
+    gradeFilter,
+    search,
+  ]);
 
   const kpis = useMemo(() => {
     return {
@@ -409,25 +429,49 @@ export default function ExamBlueprintsPage() {
         />
       </section>
 
-      <div className="mb-3 inline-flex rounded-xl border bg-card p-1">
-        <Tab
-          active={tab === "blueprints"}
-          onClick={() => setTab("blueprints")}
-          icon={LayoutGrid}
-          label="Khung đề"
-        />
-        <Tab
-          active={tab === "packages"}
-          onClick={() => setTab("packages")}
-          icon={Package2}
-          label="Gói đề"
-        />
-        <Tab
-          active={tab === "generated"}
-          onClick={() => setTab("generated")}
-          icon={Sparkles}
-          label="Đề đã sinh"
-        />
+      <div className="mb-3 flex items-center gap-2">
+        <div className="inline-flex rounded-xl border bg-card p-1">
+          <Tab
+            active={tab === "blueprints"}
+            onClick={() => {
+              setTab("blueprints");
+              setGeneratedPackageFilter(null);
+            }}
+            icon={LayoutGrid}
+            label="Khung đề"
+          />
+          <Tab
+            active={tab === "packages"}
+            onClick={() => {
+              setTab("packages");
+              setGeneratedPackageFilter(null);
+            }}
+            icon={Package2}
+            label="Gói đề"
+          />
+          <Tab
+            active={tab === "generated"}
+            onClick={() => setTab("generated")}
+            icon={Sparkles}
+            label="Đề đã sinh"
+          />
+        </div>
+        {/* Active package filter chip — shows when the user clicked
+            "Đã sinh" from a package row, narrowing the generated list. */}
+        {tab === "generated" && generatedPackageFilter && (
+          <span className="inline-flex items-center gap-1.5 rounded-md border border-violet-200 bg-violet-50 px-2 py-1 text-[11.5px] font-medium text-violet-800">
+            Đang lọc theo gói:{" "}
+            <span className="font-mono">{generatedPackageFilter}</span>
+            <button
+              type="button"
+              onClick={() => setGeneratedPackageFilter(null)}
+              className="rounded p-0.5 hover:bg-violet-100"
+              title="Bỏ lọc"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </span>
+        )}
       </div>
 
       <div className="mb-3 flex flex-wrap items-center gap-2.5 rounded-xl border bg-card p-3">
@@ -494,6 +538,10 @@ export default function ExamBlueprintsPage() {
             restorePackage(p.id, session.userId);
           }}
           onGenerate={setGeneratingFor}
+          onViewGenerated={(p) => {
+            setGeneratedPackageFilter(p.id);
+            setTab("generated");
+          }}
         />
       )}
 
@@ -976,6 +1024,7 @@ function PackagesView({
   onDelete,
   onRestore,
   onGenerate,
+  onViewGenerated,
 }: {
   packages: ExamPackage[];
   blueprints: ExamBlueprint[];
@@ -987,6 +1036,9 @@ function PackagesView({
   onDelete(p: ExamPackage): void;
   onRestore(p: ExamPackage): void;
   onGenerate(p: ExamPackage): void;
+  /** Click on the "Đã sinh" pill — jump to the Generated tab,
+   *  pre-filtered to this package. */
+  onViewGenerated(p: ExamPackage): void;
 }) {
   if (packages.length === 0) {
     return (
@@ -1118,13 +1170,25 @@ function PackagesView({
                     {p.duration}p
                   </td>
                   <td className="px-3 py-2.5 text-center">
-                    <span
-                      className="inline-flex items-center gap-1 rounded bg-violet-50 px-1.5 py-0.5 text-violet-700"
-                      title={`${genCount} đề đã sinh ra từ gói này`}
-                    >
-                      <Sparkles className="h-3 w-3" />
-                      <b>{genCount}</b>
-                    </span>
+                    {genCount > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => onViewGenerated(p)}
+                        title={`Xem ${genCount} đề đã sinh từ gói này`}
+                        className="inline-flex cursor-pointer items-center gap-1 rounded bg-violet-50 px-1.5 py-0.5 text-violet-700 transition-colors hover:bg-violet-100"
+                      >
+                        <Sparkles className="h-3 w-3" />
+                        <b>{genCount}</b>
+                      </button>
+                    ) : (
+                      <span
+                        className="inline-flex items-center gap-1 rounded bg-muted/40 px-1.5 py-0.5 text-muted-foreground"
+                        title="Chưa sinh đề nào từ gói này"
+                      >
+                        <Sparkles className="h-3 w-3" />
+                        <b>0</b>
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-2.5">
                     <PackageStatusBadge status={p.status} />

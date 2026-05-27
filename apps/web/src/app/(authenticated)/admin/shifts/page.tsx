@@ -111,6 +111,11 @@ export default function ShiftsPage() {
 
   const [wizardOpen, setWizardOpen] = useState(false);
   const [editing, setEditing] = useState<ExamShift | null>(null);
+  // Separate state for read-only viewing. The "Xem" eye icon always
+  // works (even for shifts locked by attempt data) — it opens the
+  // wizard in a disabled state so the teacher can browse the config
+  // without being allowed to save changes.
+  const [viewing, setViewing] = useState<ExamShift | null>(null);
   const [deleting, setDeleting] = useState<ExamShift | null>(null);
   // When the user tries to edit/delete an in-progress shift we stash the
   // attempted action here and show the force-stop warning instead. Acting
@@ -565,24 +570,27 @@ export default function ShiftsPage() {
                   </p>
                 </td>
                 <td className="px-3 py-2.5">
-                  <div className="flex items-center justify-center gap-2.5 text-[12px] text-foreground/80">
+                  <div className="flex items-center justify-center gap-1.5 text-[12px] text-foreground/80">
                     <span
-                      className="inline-flex items-center gap-1"
-                      title={`${classes.length} lớp được giao`}
+                      className="inline-flex cursor-help items-center gap-1 rounded-md px-1.5 py-0.5 hover:bg-blue-50"
+                      title={`Số lớp được giao: ${classes.length}`}
+                      aria-label={`${classes.length} lớp được giao`}
                     >
                       <GraduationCap className="h-3.5 w-3.5 text-blue-600" />
                       <span className="font-semibold">{classes.length}</span>
                     </span>
                     <span
-                      className="inline-flex items-center gap-1"
-                      title={`${totalStudents} học sinh`}
+                      className="inline-flex cursor-help items-center gap-1 rounded-md px-1.5 py-0.5 hover:bg-violet-50"
+                      title={`Số học sinh: ${totalStudents}`}
+                      aria-label={`${totalStudents} học sinh`}
                     >
                       <Users className="h-3.5 w-3.5 text-violet-600" />
                       <span className="font-semibold">{totalStudents}</span>
                     </span>
                     <span
-                      className="inline-flex items-center gap-1"
-                      title={`${sh.rooms.length} phòng thi`}
+                      className="inline-flex cursor-help items-center gap-1 rounded-md px-1.5 py-0.5 hover:bg-emerald-50"
+                      title={`Số phòng thi: ${sh.rooms.length}`}
+                      aria-label={`${sh.rooms.length} phòng thi`}
                     >
                       <DoorOpen className="h-3.5 w-3.5 text-emerald-600" />
                       <span className="font-semibold">{sh.rooms.length}</span>
@@ -726,8 +734,8 @@ export default function ShiftsPage() {
                       })()}
                       <IconButton
                         size="sm"
-                        title="Xem chi tiết"
-                        onClick={() => openEdit(sh)}
+                        title="Xem chi tiết (chỉ đọc)"
+                        onClick={() => setViewing(sh)}
                       >
                         <Eye className="h-3.5 w-3.5" strokeWidth={1.75} />
                       </IconButton>
@@ -786,6 +794,18 @@ export default function ShiftsPage() {
           if (!o) setEditing(null);
         }}
         editing={editing}
+      />
+
+      {/* Read-only viewer — reuses the wizard with all inputs disabled
+          and Save buttons hidden. Lets teachers browse a locked
+          shift's configuration without bypassing the integrity gate. */}
+      <ShiftWizard
+        open={viewing != null}
+        onOpenChange={(o) => {
+          if (!o) setViewing(null);
+        }}
+        editing={viewing}
+        readOnly
       />
 
       <ConfirmActionDialog
