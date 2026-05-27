@@ -14,6 +14,7 @@ import {
   LayoutGrid,
   ListChecks,
   Library,
+  Play,
   Settings,
   Users,
   type LucideIcon,
@@ -72,6 +73,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/my-exams", icon: CalendarClock, label: "Lịch thi của tôi", roles: STUDENT },
       { href: "/my-exams/history", icon: History, label: "Lịch sử bài thi", roles: STUDENT },
+      { href: "/my-materials", icon: Play, label: "Học liệu", roles: STUDENT },
     ],
   },
   {

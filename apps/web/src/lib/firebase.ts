@@ -19,11 +19,17 @@ import {
   getFirestore,
   type Firestore,
 } from "firebase/firestore";
+import {
+  connectStorageEmulator,
+  getStorage,
+  type FirebaseStorage,
+} from "firebase/storage";
 
 interface FirebaseBundle {
   app: FirebaseApp;
   auth: Auth;
   db: Firestore;
+  storage: FirebaseStorage;
 }
 
 let cached: FirebaseBundle | null = null;
@@ -74,6 +80,7 @@ export function getFirebase(): FirebaseBundle {
     getApps().length > 0 ? getApp() : initializeApp(readConfig());
   const auth = getAuth(app);
   const db = getFirestore(app);
+  const storage = getStorage(app);
 
   if (process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATOR === "true") {
     // Idempotent: Firebase SDK throws on second call; guard with a flag.
@@ -83,11 +90,12 @@ export function getFirebase(): FirebaseBundle {
         disableWarnings: true,
       });
       connectFirestoreEmulator(db, "127.0.0.1", 8080);
+      connectStorageEmulator(storage, "127.0.0.1", 9199);
       w.__fsc_emu = true;
     }
   }
 
-  cached = { app, auth, db };
+  cached = { app, auth, db, storage };
   return cached;
 }
 
@@ -97,4 +105,8 @@ export function getDb(): Firestore {
 
 export function getAuthSafe(): Auth {
   return getFirebase().auth;
+}
+
+export function getStorageSafe(): FirebaseStorage {
+  return getFirebase().storage;
 }

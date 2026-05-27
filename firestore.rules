@@ -262,6 +262,23 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ───── /learning_materials — uploaded videos / PDFs / docs ────────────
+    // Mirrors /questions: read by signed-in (UI filters by kho/campus/
+    // approval), strict writes.
+    match /learning_materials/{id} {
+      allow read: if isSignedIn();
+      allow create: if isTeacherOrAbove() &&
+        request.resource.data.ownerId == uid() &&
+        (request.resource.data.kho == "personal" ||
+          request.resource.data.status == "pending");
+      allow update: if isSignedIn() && (
+        (isAdmin() && inSameCampus(resource.data.campusId)) ||
+        (resource.data.ownerId == uid() &&
+          (resource.data.kho == "personal" || resource.data.status == "pending"))
+      );
+      allow delete: if false; // soft-archive only
+    }
+
     // ───── /audit_events — append-only audit log ──────────────────────────
     // Every mutation of a production entity emits one of these. The
     // contract: create-only, never update or delete. Reads scoped to

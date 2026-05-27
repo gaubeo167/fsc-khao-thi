@@ -39,6 +39,7 @@ export const COLLECTIONS = {
   proctorEvents: "proctor_events",
   examForms: "exam_forms",
   auditEvents: "audit_events",
+  learningMaterials: "learning_materials",
 } as const;
 
 export function colRef<T>(name: keyof typeof COLLECTIONS): CollectionReference<WithId<T>> {

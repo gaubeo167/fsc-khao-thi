@@ -1,0 +1,202 @@
+"use client";
+
+import {
+  Eye,
+  FileSpreadsheet,
+  FileText,
+  FileType,
+  ImageIcon,
+  Music2,
+  Play,
+  RotateCcw,
+  Trash2,
+} from "lucide-react";
+import { memo } from "react";
+
+import { IconButton } from "@/components/ui/icon-button";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { useGradesStore } from "@/features/grades/state/grades-store";
+import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
+import { versionOf } from "@/lib/version";
+
+import {
+  FILE_TYPE_LABEL,
+  formatFileSize,
+  type LearningMaterial,
+  type MaterialFileType,
+} from "../data/types";
+
+const STATUS_LABEL: Record<LearningMaterial["status"], string> = {
+  approved: "Đã duyệt",
+  pending: "Chờ duyệt",
+  draft: "Bản nháp",
+  rejected: "Từ chối",
+};
+
+interface Props {
+  material: LearningMaterial;
+  onView: (m: LearningMaterial) => void;
+  onArchive?: (m: LearningMaterial) => void;
+  onRestore?: (m: LearningMaterial) => void;
+}
+
+function MaterialCardImpl({ material, onView, onArchive, onRestore }: Props) {
+  const subjects = useSubjectsStore((s) => s.subjects);
+  const grades = useGradesStore((s) => s.grades);
+
+  const subject = subjects.find((s) => s.id === material.subjectId);
+  const grade = material.gradeId
+    ? grades.find((g) => g.id === material.gradeId)
+    : null;
+  const Icon = iconForType(material.fileType);
+
+  return (
+    <article className="overflow-hidden rounded-xl border bg-card">
+      <header className="flex items-center gap-3 border-b bg-muted/30 px-4 py-3">
+        <span
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-white"
+          style={{ backgroundColor: colorForType(material.fileType) }}
+        >
+          <Icon className="h-5 w-5" strokeWidth={1.85} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[14px] font-semibold text-foreground">
+            {material.title}
+          </p>
+          <p className="truncate text-meta">
+            {FILE_TYPE_LABEL[material.fileType]} · {formatFileSize(material.sizeBytes)}{" "}
+            · {material.originalFilename}
+          </p>
+        </div>
+        <div className="flex items-center gap-1">
+          <IconButton
+            size="sm"
+            title={material.fileType === "video" ? "Phát" : "Xem"}
+            onClick={() => onView(material)}
+          >
+            {material.fileType === "video" ? (
+              <Play className="h-3.5 w-3.5" strokeWidth={1.75} />
+            ) : (
+              <Eye className="h-3.5 w-3.5" strokeWidth={1.75} />
+            )}
+          </IconButton>
+          {material.archivedAt && onRestore ? (
+            <IconButton
+              size="sm"
+              variant="primary"
+              title="Khôi phục"
+              onClick={() => onRestore(material)}
+            >
+              <RotateCcw className="h-3.5 w-3.5" strokeWidth={1.75} />
+            </IconButton>
+          ) : onArchive ? (
+            <IconButton
+              size="sm"
+              variant="destructive"
+              title="Lưu trữ"
+              onClick={() => onArchive(material)}
+            >
+              <Trash2 className="h-3.5 w-3.5" strokeWidth={1.75} />
+            </IconButton>
+          ) : null}
+        </div>
+      </header>
+
+      {material.description ? (
+        <div className="px-4 py-3 text-[12.5px] leading-relaxed text-foreground/80">
+          {material.description}
+        </div>
+      ) : null}
+
+      <footer className="flex flex-wrap items-center gap-2 border-t bg-card/50 px-4 py-2.5 text-[11.5px]">
+        {subject && (
+          <span
+            className="rounded px-1.5 py-0.5 font-semibold"
+            style={{
+              backgroundColor: `${subject.color}1A`,
+              color: subject.color,
+            }}
+          >
+            {subject.name}
+          </span>
+        )}
+        {grade && (
+          <span className="rounded bg-foreground/8 px-1.5 py-0.5 text-foreground/70">
+            {grade.name}
+          </span>
+        )}
+        <span className="text-muted-foreground">
+          Tải lên bởi{" "}
+          <span className="font-medium text-foreground/75">{material.ownerName}</span>
+        </span>
+        <span className="text-muted-foreground">
+          ·{" "}
+          {material.kho === "campus" ? (
+            <span className="text-blue-700">Kho trường</span>
+          ) : (
+            <span>Kho cá nhân</span>
+          )}
+        </span>
+
+        {versionOf(material) > 1 ? (
+          <span className="ml-auto rounded-md border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">
+            v{versionOf(material)}
+          </span>
+        ) : null}
+        <StatusBadge
+          variant={material.status}
+          className={versionOf(material) > 1 ? "" : "ml-auto"}
+        >
+          {STATUS_LABEL[material.status]}
+        </StatusBadge>
+        {material.archivedAt ? (
+          <span className="rounded-md border border-zinc-300 bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600">
+            🗄 Đã lưu trữ
+          </span>
+        ) : null}
+      </footer>
+    </article>
+  );
+}
+
+function iconForType(t: MaterialFileType) {
+  switch (t) {
+    case "video":
+      return Play;
+    case "pdf":
+    case "word":
+      return FileText;
+    case "powerpoint":
+      return FileType;
+    case "excel":
+      return FileSpreadsheet;
+    case "image":
+      return ImageIcon;
+    case "audio":
+      return Music2;
+    default:
+      return FileText;
+  }
+}
+function colorForType(t: MaterialFileType): string {
+  switch (t) {
+    case "video":
+      return "#DC2626";
+    case "pdf":
+      return "#D97706";
+    case "word":
+      return "#1D4ED8";
+    case "powerpoint":
+      return "#EA580C";
+    case "excel":
+      return "#059669";
+    case "image":
+      return "#7C3AED";
+    case "audio":
+      return "#0891B2";
+    default:
+      return "#525252";
+  }
+}
+
+export const MaterialCard = memo(MaterialCardImpl);

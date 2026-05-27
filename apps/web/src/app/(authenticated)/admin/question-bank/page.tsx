@@ -65,6 +65,7 @@ const CopyQuestionDialog = dynamic(
   { ssr: false, loading: () => null },
 );
 import { useExamFormsStore } from "@/features/exam-forms/state/exam-forms-store";
+import { MaterialsTab } from "@/features/learning-materials/components/materials-tab";
 import { useQuestionsStore } from "@/features/question-bank/state/questions-store";
 import { buildLockedMessage, questionInUse } from "@/lib/in-use";
 import { getLatestVersionsOf, versionOf } from "@/lib/version";
@@ -81,6 +82,7 @@ export default function QuestionBankPage() {
   const campuses = useCampusesStore((s) => s.campuses);
   const grades = useGradesStore((s) => s.grades);
   const subjects = useSubjectsStore((s) => s.subjects);
+  const [mainTab, setMainTab] = useState<"questions" | "materials">("questions");
   const allQuestionsRaw = useQuestionsStore((s) => s.questions);
   const archiveQuestion = useQuestionsStore((s) => s.archive);
   const restoreQuestion = useQuestionsStore((s) => s.restore);
@@ -314,8 +316,8 @@ export default function QuestionBankPage() {
   return (
     <>
       <PageHeader
-        title="Ngân hàng câu hỏi"
-        description="Quản lý câu hỏi của kho campus và kho cá nhân — Quản lý & khảo thí thông minh."
+        title="Ngân hàng câu hỏi & Học liệu"
+        description="Quản lý câu hỏi và tài liệu giảng dạy theo kho cá nhân / kho trường."
         actions={
           <>
             <label className="inline-flex items-center gap-1.5 text-[11.5px] font-medium text-muted-foreground">
@@ -361,6 +363,38 @@ export default function QuestionBankPage() {
 
       <CampusGateBanner />
 
+      {/* Top-level switcher: Câu hỏi (existing) vs Học liệu (new
+          Phase M). Keeps both UIs co-located in the same admin shell
+          while letting each render its own KPIs + filters. */}
+      <div className="mb-4 inline-flex rounded-xl border bg-card p-1">
+        <button
+          type="button"
+          onClick={() => setMainTab("questions")}
+          className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12.5px] font-medium transition-colors ${
+            mainTab === "questions"
+              ? "bg-foreground text-background"
+              : "text-foreground/65 hover:bg-accent hover:text-foreground"
+          }`}
+        >
+          📚 Câu hỏi
+        </button>
+        <button
+          type="button"
+          onClick={() => setMainTab("materials")}
+          className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12.5px] font-medium transition-colors ${
+            mainTab === "materials"
+              ? "bg-foreground text-background"
+              : "text-foreground/65 hover:bg-accent hover:text-foreground"
+          }`}
+        >
+          🎬 Học liệu
+        </button>
+      </div>
+
+      {mainTab === "materials" ? (
+        <MaterialsTab />
+      ) : (
+      <>
       <section className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <KpiCard label="Tổng câu hỏi" value={kpis.total.toLocaleString("vi-VN")} icon={FileText} tone="blue" />
         <KpiCard label="Đã duyệt" value={kpis.approved.toLocaleString("vi-VN")} icon={CheckCircle2} tone="green" />
@@ -525,6 +559,8 @@ export default function QuestionBankPage() {
           );
         }}
       />
+      </>
+      )}
 
       <CopyQuestionDialog
         question={copying}

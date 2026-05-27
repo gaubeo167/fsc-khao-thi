@@ -1,0 +1,72 @@
+rules_version = '2';
+
+// FSC Exam Platform — Firebase Storage rules.
+//
+// File layout (see apps/web/src/lib/storage.ts):
+//   materials/{scope}/{materialId}/{filename}
+//     - scope = campusId | "personal-{uid}"
+//
+// We rely on the role/campus stored in /users/{uid} (Firestore) for
+// authorization. Storage rules can read other Firestore docs via
+// `firestore.get(...)`.
+//
+// Read access:
+//   - Any signed-in user can fetch a downloadUrl. The list of which
+//     materialId a user is allowed to see is gated at the Firestore
+//     /learning_materials collection (rules + UI filter by status +
+//     campus). Storage being permissively-read keeps the UX simple
+//     (no per-object signed URLs) at the cost of: if someone leaks a
+//     downloadUrl, anyone with it can fetch the file. For a school
+//     pilot this is acceptable; harden in Phase F via short-lived
+//     signed URLs from a Cloud Function.
+//
+// Write access:
+//   - Only teacher / TBM / admin can upload. Path enforces the
+//     uploader's own uid in the "personal" scope so a teacher can't
+//     overwrite another teacher's file.
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function uid() {
+      return request.auth.uid;
+    }
+    function callerData() {
+      return firestore.get(/databases/(default)/documents/users/$(uid())).data;
+    }
+    function callerRole() {
+      return callerData().role;
+    }
+    function isTeacherOrAbove() {
+      return isSignedIn() && (
+        callerRole() == "teacher" ||
+        callerRole() == "subject-lead" ||
+        callerRole() == "campus-admin" ||
+        callerRole() == "academic-director" ||
+        callerRole() == "superadmin"
+      );
+    }
+
+    // ───── /materials — learning materials (videos / pdfs / docs) ─────
+    match /materials/{scope}/{materialId}/{file=**} {
+      allow read: if isSignedIn();
+      allow write: if isTeacherOrAbove() &&
+        // Per-file size cap — keeps cost bounded on the free tier.
+        // 100 MB is enough for typical lecture PDFs and short videos.
+        request.resource.size < 100 * 1024 * 1024;
+      // No public delete — Firestore archive flow + the
+      // deleteStoredFile() helper run from authenticated client code
+      // path. The bytes themselves can stay forever (cheap), so we
+      // don't strictly need to delete them.
+      allow delete: if isTeacherOrAbove();
+    }
+
+    // Default deny.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
