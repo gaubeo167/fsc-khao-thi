@@ -1,16 +1,25 @@
 "use client";
 
 import {
+  Activity,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   ClipboardList,
+  Download,
   Eye,
   FileText,
+  Lightbulb,
+  ListChecks,
   Paperclip,
   Play,
   XCircle,
 } from "lucide-react";
+
+import {
+  FILE_TYPE_LABEL,
+  formatFileSize,
+} from "@/features/learning-materials/data/types";
 import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 
@@ -94,6 +103,67 @@ export function HomeworkPreviewDialog({
   // return null`, which produced different hook counts between open
   // and closed states and crashed React with "Rendered more hooks
   // than during the previous render."
+  /** Group questions by type and emit a sidebar-friendly count list.
+   *  Each entry has a colored dot that doubles as a visual key. */
+  const typeCounts = useMemo(() => {
+    const groups = new Map<string, number>();
+    for (const q of questions) {
+      groups.set(q.type, (groups.get(q.type) ?? 0) + 1);
+    }
+    const TYPE_META: Record<
+      string,
+      { label: string; dotClass: string }
+    > = {
+      "mcq-single": { label: "Trắc nghiệm", dotClass: "bg-blue-500" },
+      "mcq-multi": { label: "Nhiều đáp án", dotClass: "bg-blue-400" },
+      "true-false": { label: "Đúng / Sai", dotClass: "bg-emerald-500" },
+      "multi-tf": { label: "Đa Đ/S", dotClass: "bg-emerald-400" },
+      "short-answer": { label: "Trả lời ngắn", dotClass: "bg-violet-500" },
+      "fill-blank": { label: "Điền từ", dotClass: "bg-cyan-500" },
+      matching: { label: "Ghép cặp", dotClass: "bg-rose-500" },
+      ordering: { label: "Sắp xếp", dotClass: "bg-amber-500" },
+      "drag-drop": { label: "Kéo thả", dotClass: "bg-fuchsia-500" },
+      underline: { label: "Gạch chân", dotClass: "bg-teal-500" },
+    };
+    return [...groups.entries()]
+      .map(([type, count]) => ({
+        type,
+        count,
+        label: TYPE_META[type]?.label ?? type,
+        dotClass: TYPE_META[type]?.dotClass ?? "bg-zinc-400",
+      }))
+      .sort((a, b) => b.count - a.count);
+  }, [questions]);
+
+  /** Difficulty breakdown — fixed 3 buckets so the sidebar layout
+   *  doesn't jump when easy/medium/hard counts change. */
+  const difficultyCounts = useMemo(() => {
+    const counts = { easy: 0, medium: 0, hard: 0 };
+    for (const q of questions) {
+      counts[q.difficulty]++;
+    }
+    return [
+      {
+        value: "easy" as const,
+        label: "Dễ",
+        count: counts.easy,
+        iconClass: "text-emerald-600",
+      },
+      {
+        value: "medium" as const,
+        label: "Trung bình",
+        count: counts.medium,
+        iconClass: "text-amber-600",
+      },
+      {
+        value: "hard" as const,
+        label: "Khó",
+        count: counts.hard,
+        iconClass: "text-rose-600",
+      },
+    ];
+  }, [questions]);
+
   const trialScore = useMemo(() => {
     if (!trialSubmitted) return null;
     let correct = 0;
@@ -239,8 +309,8 @@ export function HomeworkPreviewDialog({
               ) : null}
             </div>
 
-            {/* Sidebar — question grid + materials */}
-            <aside className="space-y-3 overflow-y-auto border-l bg-muted/10 px-3 py-4">
+            {/* Sidebar — materials + breakdown + tip */}
+            <aside className="space-y-4 overflow-y-auto border-l bg-muted/10 px-4 py-4">
               {mode === "trial" && !trialSubmitted && (
                 <div>
                   <p className="mb-2 text-[12px] font-semibold text-foreground/70">
@@ -270,10 +340,11 @@ export function HomeworkPreviewDialog({
                   </div>
                 </div>
               )}
+
               {materials.length > 0 && (
                 <div>
-                  <p className="mb-2 inline-flex items-center gap-1 text-[12px] font-semibold text-foreground/70">
-                    <Paperclip className="h-3.5 w-3.5" />
+                  <p className="mb-2 inline-flex items-center gap-1.5 text-[12px] font-semibold text-foreground/80">
+                    <Paperclip className="h-3.5 w-3.5 text-amber-600" />
                     Học liệu đính kèm
                   </p>
                   <ul className="space-y-1.5">
@@ -282,21 +353,97 @@ export function HomeworkPreviewDialog({
                         <button
                           type="button"
                           onClick={() => setViewingMaterial(m)}
-                          className="flex w-full items-start gap-2 rounded-md border bg-card p-2 text-left hover:bg-accent/30"
+                          className="flex w-full items-start gap-2 rounded-lg border bg-card p-2.5 text-left hover:bg-accent/30"
                         >
-                          <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                          <div className="min-w-0">
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-amber-50 text-amber-700">
+                            <FileText className="h-4 w-4" />
+                          </span>
+                          <div className="min-w-0 flex-1">
                             <p className="line-clamp-1 text-[12px] font-medium">
                               {m.title}
                             </p>
-                            <p className="text-[10px] text-muted-foreground">
-                              {m.fileType}
+                            <p className="text-[10.5px] text-muted-foreground">
+                              {FILE_TYPE_LABEL[m.fileType]}
+                              {m.sizeBytes > 0 ? ` · ${formatFileSize(m.sizeBytes)}` : ""}
                             </p>
                           </div>
+                          <Download className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                         </button>
                       </li>
                     ))}
                   </ul>
+                </div>
+              )}
+
+              {/* Tổng quan bài — counts by type + difficulty */}
+              {mode === "review" && (
+                <div>
+                  <p className="mb-2 text-[12px] font-semibold text-foreground/80">
+                    Tổng quan bài
+                  </p>
+                  <ul className="space-y-1.5 text-[12px]">
+                    <li className="flex items-center justify-between rounded-md bg-card px-2.5 py-1.5">
+                      <span className="inline-flex items-center gap-1.5 text-foreground/85">
+                        <ListChecks className="h-3.5 w-3.5 text-blue-600" />
+                        Tổng số câu
+                      </span>
+                      <span className="font-bold tabular-nums">
+                        {questions.length}
+                      </span>
+                    </li>
+                    {typeCounts.map((tc) => (
+                      <li
+                        key={tc.type}
+                        className="flex items-center justify-between rounded-md bg-card px-2.5 py-1.5"
+                      >
+                        <span className="inline-flex items-center gap-1.5 text-foreground/85">
+                          <span
+                            className={cn(
+                              "h-2 w-2 rounded-full",
+                              tc.dotClass,
+                            )}
+                          />
+                          {tc.label}
+                        </span>
+                        <span className="font-bold tabular-nums">
+                          {tc.count}
+                        </span>
+                      </li>
+                    ))}
+                    {/* Difficulty distribution — shows only buckets with
+                        at least one question to avoid noise. */}
+                    {difficultyCounts.map((dc) =>
+                      dc.count > 0 ? (
+                        <li
+                          key={dc.value}
+                          className="flex items-center justify-between rounded-md bg-card px-2.5 py-1.5"
+                        >
+                          <span className="inline-flex items-center gap-1.5 text-foreground/85">
+                            <Activity
+                              className={cn("h-3.5 w-3.5", dc.iconClass)}
+                            />
+                            Mức độ {dc.label.toLowerCase()}
+                          </span>
+                          <span className="font-bold tabular-nums">
+                            {dc.count}
+                          </span>
+                        </li>
+                      ) : null,
+                    )}
+                  </ul>
+                </div>
+              )}
+
+              {/* Mẹo — friendly tip */}
+              {mode === "review" && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                  <p className="mb-1 inline-flex items-center gap-1.5 text-[12px] font-semibold text-amber-900">
+                    <Lightbulb className="h-3.5 w-3.5 text-amber-600" />
+                    Mẹo
+                  </p>
+                  <p className="text-[11.5px] leading-relaxed text-amber-800">
+                    Nhấn <b>"Làm thử"</b> để trải nghiệm bài tập như học sinh.
+                  </p>
                 </div>
               )}
             </aside>
@@ -337,23 +484,76 @@ export function HomeworkPreviewDialog({
   );
 }
 
+/** Cycling palette for the numbered question badges — matches the
+ *  mockup where each card gets a different colored block. */
+const BADGE_COLORS = [
+  "bg-violet-100 text-violet-700",
+  "bg-blue-100 text-blue-700",
+  "bg-emerald-100 text-emerald-700",
+  "bg-amber-100 text-amber-700",
+  "bg-rose-100 text-rose-700",
+  "bg-cyan-100 text-cyan-700",
+  "bg-fuchsia-100 text-fuchsia-700",
+] as const;
+
+const QUESTION_TYPE_LABEL: Record<string, string> = {
+  "mcq-single": "trắc nghiệm",
+  "mcq-multi": "trắc nghiệm",
+  "true-false": "đúng / sai",
+  "multi-tf": "đa Đ/S",
+  "short-answer": "trả lời ngắn",
+  "fill-blank": "điền từ",
+  matching: "ghép cặp",
+  ordering: "sắp xếp",
+  "drag-drop": "kéo thả",
+  underline: "gạch chân",
+  essay: "tự luận",
+};
+
+const DIFFICULTY_LABEL: Record<string, string> = {
+  easy: "dễ",
+  medium: "trung bình",
+  hard: "khó",
+};
+
 function ReviewBody({ questions }: { questions: Question[] }) {
   return (
-    <ol className="space-y-4">
-      {questions.map((q, i) => (
-        <li key={q.id} className="rounded-lg border bg-card p-4">
-          <div className="mb-2 flex items-center gap-2 text-[11.5px] text-muted-foreground">
-            <span className="font-mono">{q.id}</span>
-            <span>· {q.type}</span>
-            <span>· {q.difficulty}</span>
-          </div>
-          <div className="mb-3 text-[13.5px] font-semibold">
-            <span className="mr-1">Câu {i + 1}:</span>
-            <RenderedContent content={q.content} />
-          </div>
-          <CorrectAnswerHint q={q} />
-        </li>
-      ))}
+    <ol className="space-y-3">
+      {questions.map((q, i) => {
+        const badgeColor = BADGE_COLORS[i % BADGE_COLORS.length]!;
+        return (
+          <li
+            key={q.id}
+            className="overflow-hidden rounded-xl border bg-card shadow-sm"
+          >
+            <div className="flex items-start gap-3 p-4">
+              {/* Numbered colored badge on the left */}
+              <span
+                className={cn(
+                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[14px] font-bold",
+                  badgeColor,
+                )}
+              >
+                {i + 1}
+              </span>
+              <div className="min-w-0 flex-1 space-y-2">
+                <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <span className="font-mono">{q.id}</span>
+                  <span>·</span>
+                  <span>{QUESTION_TYPE_LABEL[q.type] ?? q.type}</span>
+                  <span>·</span>
+                  <span>{DIFFICULTY_LABEL[q.difficulty]}</span>
+                </div>
+                <div className="text-[13.5px] font-semibold text-foreground">
+                  <span className="mr-1">Câu {i + 1}:</span>
+                  <RenderedContent content={q.content} />
+                </div>
+                <CorrectAnswerHint q={q} />
+              </div>
+            </div>
+          </li>
+        );
+      })}
     </ol>
   );
 }
@@ -363,19 +563,38 @@ function CorrectAnswerHint({ q }: { q: Question }) {
     case "mcq-single":
     case "mcq-multi":
       return (
-        <ul className="space-y-1 text-[12.5px]">
+        <ul className="grid grid-cols-2 gap-2 text-[12.5px]">
           {q.options.map((o) => (
             <li
               key={o.id}
               className={cn(
-                "rounded-md border px-2 py-1",
+                "flex items-center gap-2 rounded-lg border px-3 py-2",
                 o.isCorrect
-                  ? "border-emerald-300 bg-emerald-50 text-emerald-800"
-                  : "border-border bg-card text-foreground/70",
+                  ? "border-emerald-300 bg-emerald-50/60 text-emerald-800"
+                  : "border-border bg-background text-foreground/75",
               )}
             >
-              {o.isCorrect ? "✓ " : "○ "}
-              {o.content}
+              <span
+                className={cn(
+                  "flex h-4 w-4 shrink-0 items-center justify-center rounded-full border",
+                  o.isCorrect
+                    ? "border-emerald-600 bg-emerald-500 text-white"
+                    : "border-border bg-background",
+                )}
+              >
+                {o.isCorrect ? (
+                  <CheckCircle2
+                    className="h-3 w-3"
+                    strokeWidth={3}
+                  />
+                ) : null}
+              </span>
+              <span className="min-w-0 flex-1 truncate">{o.content}</span>
+              {o.isCorrect && (
+                <span className="rounded-md bg-emerald-200/60 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-800">
+                  Đã chọn
+                </span>
+              )}
             </li>
           ))}
         </ul>

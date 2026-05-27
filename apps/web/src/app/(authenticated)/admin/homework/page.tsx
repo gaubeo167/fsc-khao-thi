@@ -19,6 +19,7 @@ import {
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -416,24 +417,53 @@ export default function HomeworkAdminPage() {
                                   strokeWidth={1.75}
                                 />
                               </IconButton>
-                              <IconButton
-                                size="sm"
-                                variant="destructive"
-                                title="Lưu trữ"
-                                onClick={() => {
-                                  if (!session) return;
-                                  archive(
-                                    h.id,
-                                    session.userId,
-                                    "GV lưu trữ BTVN",
+                              {(() => {
+                                const hasData = attempts.some(
+                                  (a) => a.homeworkId === h.id,
+                                );
+                                if (hasData) {
+                                  // BTVN đã có HS làm — không cho lưu trữ.
+                                  return (
+                                    <IconButton
+                                      size="sm"
+                                      variant="destructive"
+                                      title="🔒 BTVN đã có HS làm bài — không thể lưu trữ"
+                                      onClick={() => {
+                                        toast.error(
+                                          "🔒 BTVN đã có HS làm bài — không thể lưu trữ. Có thể đổi sang trạng thái 'Đã đóng' để ngừng nhận bài mới.",
+                                          { duration: 6000 },
+                                        );
+                                      }}
+                                      className="opacity-50"
+                                    >
+                                      <Trash2
+                                        className="h-3.5 w-3.5"
+                                        strokeWidth={1.75}
+                                      />
+                                    </IconButton>
                                   );
-                                }}
-                              >
-                                <Trash2
-                                  className="h-3.5 w-3.5"
-                                  strokeWidth={1.75}
-                                />
-                              </IconButton>
+                                }
+                                return (
+                                  <IconButton
+                                    size="sm"
+                                    variant="destructive"
+                                    title="Lưu trữ"
+                                    onClick={() => {
+                                      if (!session) return;
+                                      archive(
+                                        h.id,
+                                        session.userId,
+                                        "GV lưu trữ BTVN",
+                                      );
+                                    }}
+                                  >
+                                    <Trash2
+                                      className="h-3.5 w-3.5"
+                                      strokeWidth={1.75}
+                                    />
+                                  </IconButton>
+                                );
+                              })()}
                             </>
                           )}
                         </div>

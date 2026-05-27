@@ -110,6 +110,23 @@ export const useHomeworkStore = create<State & Actions>()((set, get) => ({
   archive(id, actorUid, reason) {
     const before = get().homework.find((h) => h.id === id);
     if (!before) return;
+    // Data-integrity guard: BTVN that has ANY student attempt cannot
+    // be archived (let alone hard-deleted). The list page surfaces a
+    // CTA explaining this; this is defense-in-depth for any other
+    // caller that bypasses the UI guard.
+    const attempts =
+      // Lazy import to avoid a circular store dependency.
+      (
+        require("./homework-attempts-store") as typeof import("./homework-attempts-store")
+      ).useHomeworkAttemptsStore.getState().attempts;
+    const hasData = attempts.some((a) => a.homeworkId === id);
+    if (hasData) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[homework-store] archive blocked for ${id}: has ${attempts.filter((a) => a.homeworkId === id).length} attempts`,
+      );
+      return;
+    }
     const now = new Date().toISOString();
     const patch: Partial<Homework> = {
       archivedAt: now,

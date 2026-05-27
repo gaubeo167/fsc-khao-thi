@@ -50,8 +50,11 @@ import { cn } from "@/lib/utils";
 
 import dynamic from "next/dynamic";
 
+import { homeworkInUse } from "@/lib/in-use";
+
 import type { Homework, HomeworkStatus } from "../data/types";
 import { useHomeworkStore } from "../state/homework-store";
+import { useHomeworkAttemptsStore } from "../state/homework-attempts-store";
 import { HomeworkPreviewDialog } from "./homework-preview-dialog";
 import { MaterialPickerDialog } from "./material-picker-dialog";
 import { QuestionPickerDialog } from "./question-picker-dialog";
@@ -97,6 +100,16 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
   const allMaterials = useMaterialsStore((s) => s.materials);
   const createHomework = useHomeworkStore((s) => s.create);
   const updateHomework = useHomeworkStore((s) => s.update);
+  const homeworkAttempts = useHomeworkAttemptsStore((s) => s.attempts);
+
+  // Lock: when editing a homework that has any student attempt,
+  // questions + materials become read-only — only roster + dueAt can
+  // change. Matches the data integrity rule applied to shifts.
+  const lockUsage = useMemo(
+    () => (editing ? homeworkInUse(editing.id, homeworkAttempts) : { inUse: false }),
+    [editing, homeworkAttempts],
+  );
+  const isLocked = lockUsage.inUse;
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -318,8 +331,41 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
         status,
       };
       if (editing) {
-        updateHomework(editing.id, payload);
-        toast.success("Đã cập nhật BTVN");
+        // Integrity guard: when locked, keep the original question +
+        // material lists and dueAt-extension-only semantics. The UI
+        // already hides the pickers but defense-in-depth here means
+        // a stale state mutation (e.g. dialog reused without
+        // re-syncing on a re-edit) can't accidentally strip the
+        // frozen lists.
+        if (isLocked) {
+          if (
+            new Date(dueAt) < new Date(editing.dueAt) ||
+            assignedAt !== editing.assignedAt
+          ) {
+            toast.error(
+              "BTVN đã có HS làm — chỉ được phép GIA HẠN (đẩy ngày hết hạn xa hơn). Ngày giao không thể đổi.",
+            );
+            setSubmitting(false);
+            return;
+          }
+          updateHomework(editing.id, {
+            title: payload.title,
+            description: payload.description,
+            classIds: payload.classIds,
+            studentIds: payload.studentIds,
+            dueAt: payload.dueAt,
+            status: payload.status,
+            // questionIds / materialIds / subjectId / gradeId / assignedAt
+            // intentionally NOT in the patch — locked fields stay
+            // immutable.
+          });
+          toast.success(
+            "Đã cập nhật BTVN (chỉ HS + ngày hết hạn — câu hỏi giữ nguyên do đã có dữ liệu HS).",
+          );
+        } else {
+          updateHomework(editing.id, payload);
+          toast.success("Đã cập nhật BTVN");
+        }
       } else {
         createHomework(payload);
         toast.success("Đã tạo BTVN");
@@ -378,6 +424,18 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
           <div className="grid min-h-0 flex-1 grid-cols-1 gap-0 overflow-y-auto lg:grid-cols-[1fr_320px]">
             {/* Left column — form sections */}
             <div className="space-y-5 px-6 py-5">
+              {isLocked && (
+                <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3">
+                  <p className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-amber-900">
+                    🔒 BTVN đã có HS làm bài
+                  </p>
+                  <p className="mt-1 text-[12px] leading-relaxed text-amber-800">
+                    {lockUsage.reason} Tuân thủ nguyên tắc bảo toàn dữ liệu,
+                    bạn chỉ có thể: thêm HS vào danh sách được giao và gia
+                    hạn ngày hết hạn.
+                  </p>
+                </div>
+              )}
               <FormSection
                 step={1}
                 tone="violet"
@@ -543,33 +601,42 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
                 title="Câu hỏi"
                 count={selectedQuestions.length}
                 actions={
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <a
-                      href="/admin/question-bank"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex h-7 items-center gap-1 rounded-md border bg-card px-2 text-[11.5px] font-medium hover:bg-accent/30"
-                      title="Import từ Word ở Ngân hàng câu hỏi → quay lại tick chọn"
+                  isLocked ? (
+                    <span
+                      className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-800"
+                      title="BTVN đã có HS làm bài — không thể đổi danh sách câu hỏi"
                     >
-                      <FileText className="h-3.5 w-3.5" />
-                      Import từ Word
-                    </a>
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={() => {
-                        if (!subjectId)
-                          return toast.error(
-                            "Chọn môn trước khi chọn câu hỏi",
-                          );
-                        setQuestionPickerOpen(true);
-                      }}
-                      disabled={submitting}
-                    >
-                      <Plus className="h-4 w-4" />
-                      {selectedQuestions.length > 0 ? "Thêm" : "Thêm câu hỏi"}
-                    </Button>
-                  </div>
+                      🔒 Đã khoá
+                    </span>
+                  ) : (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <a
+                        href="/admin/question-bank"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex h-7 items-center gap-1 rounded-md border bg-card px-2 text-[11.5px] font-medium hover:bg-accent/30"
+                        title="Import từ Word ở Ngân hàng câu hỏi → quay lại tick chọn"
+                      >
+                        <FileText className="h-3.5 w-3.5" />
+                        Import từ Word
+                      </a>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => {
+                          if (!subjectId)
+                            return toast.error(
+                              "Chọn môn trước khi chọn câu hỏi",
+                            );
+                          setQuestionPickerOpen(true);
+                        }}
+                        disabled={submitting}
+                      >
+                        <Plus className="h-4 w-4" />
+                        {selectedQuestions.length > 0 ? "Thêm" : "Thêm câu hỏi"}
+                      </Button>
+                    </div>
+                  )
                 }
               >
                 {selectedQuestions.length === 0 ? (
@@ -619,14 +686,16 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
                           >
                             <Eye className="h-3.5 w-3.5" />
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => removeQuestion(q.id)}
-                            className="rounded p-1 text-muted-foreground hover:bg-rose-50 hover:text-rose-600"
-                            title="Bỏ chọn"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
+                          {!isLocked && (
+                            <button
+                              type="button"
+                              onClick={() => removeQuestion(q.id)}
+                              className="rounded p-1 text-muted-foreground hover:bg-rose-50 hover:text-rose-600"
+                              title="Bỏ chọn"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                         </li>
                       );
                     })}
@@ -640,21 +709,30 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
                 title="Đính kèm học liệu"
                 count={selectedMaterials.length}
                 actions={
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() => {
-                      if (!subjectId)
-                        return toast.error(
-                          "Chọn môn trước khi chọn học liệu",
-                        );
-                      setMaterialPickerOpen(true);
-                    }}
-                    disabled={submitting}
-                  >
-                    <Plus className="h-4 w-4" />
-                    Thêm học liệu
-                  </Button>
+                  isLocked ? (
+                    <span
+                      className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-800"
+                      title="BTVN đã có HS làm bài — không thể đổi danh sách học liệu"
+                    >
+                      🔒 Đã khoá
+                    </span>
+                  ) : (
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => {
+                        if (!subjectId)
+                          return toast.error(
+                            "Chọn môn trước khi chọn học liệu",
+                          );
+                        setMaterialPickerOpen(true);
+                      }}
+                      disabled={submitting}
+                    >
+                      <Plus className="h-4 w-4" />
+                      Thêm học liệu
+                    </Button>
+                  )
                 }
               >
                 {selectedMaterials.length === 0 ? (
@@ -693,14 +771,16 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
                         >
                           <Eye className="h-3.5 w-3.5" />
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => removeMaterial(m.id)}
-                          className="rounded p-1 text-muted-foreground hover:bg-rose-50 hover:text-rose-600"
-                          title="Bỏ chọn"
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </button>
+                        {!isLocked && (
+                          <button
+                            type="button"
+                            onClick={() => removeMaterial(m.id)}
+                            className="rounded p-1 text-muted-foreground hover:bg-rose-50 hover:text-rose-600"
+                            title="Bỏ chọn"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                       </li>
                     ))}
                   </ul>

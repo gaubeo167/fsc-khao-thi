@@ -85,6 +85,24 @@ export function packageInUse(
   };
 }
 
+/** A homework is in use if ANY HomeworkAttempt exists. Once even one
+ *  student has opened the homework, the question + material list
+ *  must stay frozen (only roster expansion + dueAt extension are
+ *  allowed). Mirrors the shifts integrity rule. */
+export function homeworkInUse(
+  homeworkId: string,
+  attempts: Array<{ homeworkId: string; studentId: string; submittedAt: string | null }>,
+): InUseResult {
+  const blocking = attempts.filter((a) => a.homeworkId === homeworkId);
+  if (blocking.length === 0) return { inUse: false };
+  const submitted = blocking.filter((a) => a.submittedAt != null).length;
+  return {
+    inUse: true,
+    reason: `BTVN đã có ${blocking.length} HS bắt đầu làm (${submitted} đã nộp). Không thể sửa câu hỏi / học liệu / xoá ca — chỉ được thêm HS hoặc gia hạn thời hạn.`,
+    blockers: blocking.slice(0, 5).map((a) => a.studentId),
+  };
+}
+
 /** A shift is in use if ANY attempt exists for it (even archived
  *  attempts count — once a student opened the shift, the historical
  *  record locks the shift's content). */
