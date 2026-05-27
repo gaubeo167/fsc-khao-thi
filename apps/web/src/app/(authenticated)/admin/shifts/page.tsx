@@ -11,6 +11,8 @@ import {
   Plus,
   Shield,
   ShieldOff,
+  DoorOpen,
+  GraduationCap,
   RotateCcw,
   Trash2,
   Users,
@@ -469,7 +471,7 @@ export default function ShiftsPage() {
             <th className="px-3 py-2.5 text-left font-semibold">Tên ca</th>
             <th className="px-3 py-2.5 text-left font-semibold">Môn · Khối</th>
             <th className="px-3 py-2.5 text-left font-semibold">Thời gian</th>
-            <th className="px-3 py-2.5 text-left font-semibold">Lớp · HS · Phòng</th>
+            <th className="px-3 py-2.5 text-center font-semibold">Quy mô</th>
             <th className="px-3 py-2.5 text-left font-semibold">Bộ đề</th>
             <th className="px-3 py-2.5 text-left font-semibold">Trạng thái</th>
             <th className="px-3 py-2.5 text-right font-semibold">Thao tác</th>
@@ -562,8 +564,30 @@ export default function ShiftsPage() {
                     → {formatDateTime(sh.endAt)}
                   </p>
                 </td>
-                <td className="px-3 py-2.5 whitespace-nowrap text-foreground/80">
-                  {classes.length} lớp · {totalStudents} HS · {sh.rooms.length} phòng
+                <td className="px-3 py-2.5">
+                  <div className="flex items-center justify-center gap-2.5 text-[12px] text-foreground/80">
+                    <span
+                      className="inline-flex items-center gap-1"
+                      title={`${classes.length} lớp được giao`}
+                    >
+                      <GraduationCap className="h-3.5 w-3.5 text-blue-600" />
+                      <span className="font-semibold">{classes.length}</span>
+                    </span>
+                    <span
+                      className="inline-flex items-center gap-1"
+                      title={`${totalStudents} học sinh`}
+                    >
+                      <Users className="h-3.5 w-3.5 text-violet-600" />
+                      <span className="font-semibold">{totalStudents}</span>
+                    </span>
+                    <span
+                      className="inline-flex items-center gap-1"
+                      title={`${sh.rooms.length} phòng thi`}
+                    >
+                      <DoorOpen className="h-3.5 w-3.5 text-emerald-600" />
+                      <span className="font-semibold">{sh.rooms.length}</span>
+                    </span>
+                  </div>
                 </td>
                 <td className="px-3 py-2.5 text-foreground/80">
                   {pkg ? (

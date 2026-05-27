@@ -10,6 +10,7 @@ import {
   PencilLine,
   PlayCircle,
   Plus,
+  RotateCcw,
   Sparkles,
   Trash2,
 } from "lucide-react";
@@ -466,6 +467,8 @@ export default function ExamBlueprintsPage() {
         <BlueprintsView
           blueprints={filteredBlueprints}
           allQuestions={allQuestions}
+          subjects={subjects}
+          grades={grades}
           onEdit={openEditBlueprint}
           onDelete={setDeletingBlueprint}
           onRestore={(b) => {
@@ -482,6 +485,8 @@ export default function ExamBlueprintsPage() {
           blueprints={blueprints}
           allQuestions={allQuestions}
           generated={generated}
+          subjects={subjects}
+          grades={grades}
           onEdit={openEditPackage}
           onDelete={setDeletingPackage}
           onRestore={(p) => {
@@ -768,6 +773,8 @@ function Tab({
 function BlueprintsView({
   blueprints,
   allQuestions,
+  subjects,
+  grades,
   onEdit,
   onDelete,
   onRestore,
@@ -775,6 +782,8 @@ function BlueprintsView({
 }: {
   blueprints: ExamBlueprint[];
   allQuestions: Parameters<typeof BlueprintCard>[0]["questions"];
+  subjects: Array<{ id: string; name: string; color: string }>;
+  grades: Array<{ id: string; name: string; code: string }>;
   onEdit(b: ExamBlueprint): void;
   onDelete(b: ExamBlueprint): void;
   onRestore(b: ExamBlueprint): void;
@@ -788,43 +797,169 @@ function BlueprintsView({
       />
     );
   }
+  // Newest first.
+  const sorted = blueprints
+    .slice()
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  const idx = indexQuestions(allQuestions);
   return (
-    <ul className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
-      {blueprints.map((b) => (
-        <li key={b.id} className="relative">
-          <BlueprintCard
-            blueprint={b}
-            questions={allQuestions}
-            onEdit={onEdit}
-            onDelete={onDelete}
-            onCreatePackage={onCreatePackage}
-          />
-          {/* Version + archive badges sit over the card top-right.
-              The card itself isn't version-aware (legacy component),
-              so we overlay; this avoids touching BlueprintCard. */}
-          <div className="pointer-events-none absolute right-2 top-2 flex gap-1">
-            {versionOf(b) > 1 && (
-              <span className="rounded-md border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">
-                v{versionOf(b)}
-              </span>
-            )}
-            {b.archivedAt && (
-              <span className="pointer-events-auto inline-flex items-center gap-1 rounded-md border border-zinc-300 bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600">
-                🗄 Đã lưu trữ
-                <button
-                  type="button"
-                  onClick={() => onRestore(b)}
-                  className="rounded px-1 font-bold text-blue-700 hover:bg-blue-50"
-                  title="Khôi phục"
+    <div className="overflow-hidden rounded-xl border bg-card">
+      <div className="overflow-x-auto">
+        <table className="w-full text-[12.5px]">
+          <thead className="bg-muted/30 text-[11px] uppercase tracking-wide text-muted-foreground">
+            <tr>
+              <th className="px-3 py-2.5 text-left font-semibold">Mã</th>
+              <th className="px-3 py-2.5 text-left font-semibold">Tên khung đề</th>
+              <th className="px-3 py-2.5 text-left font-semibold">Môn · Khối</th>
+              <th className="px-3 py-2.5 text-center font-semibold">Cấu trúc</th>
+              <th className="px-3 py-2.5 text-center font-semibold">Số câu</th>
+              <th className="px-3 py-2.5 text-center font-semibold">Thời lượng</th>
+              <th className="px-3 py-2.5 text-left font-semibold">Trạng thái</th>
+              <th className="px-3 py-2.5 text-right font-semibold">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {sorted.map((b) => {
+              const subject = subjects.find((s) => s.id === b.subjectId);
+              const grade = grades.find((g) => g.id === b.gradeId);
+              const totals = countBlueprintByDifficulty(b, idx);
+              const totalQ = totals.easy + totals.medium + totals.hard;
+              return (
+                <tr
+                  key={b.id}
+                  className={`hover:bg-accent/15 ${b.archivedAt ? "opacity-60" : ""}`}
                 >
-                  Khôi phục
-                </button>
-              </span>
-            )}
-          </div>
-        </li>
-      ))}
-    </ul>
+                  <td className="px-3 py-2.5 font-mono text-[11px] text-muted-foreground">
+                    {b.id}
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <p className="line-clamp-1 font-semibold">{b.name}</p>
+                    <p className="line-clamp-1 text-[11px] text-muted-foreground">
+                      GV {b.ownerName}
+                    </p>
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <div className="flex flex-wrap items-center gap-1">
+                      {subject && (
+                        <span
+                          className="rounded px-1.5 py-0.5 text-[10.5px] font-semibold"
+                          style={{
+                            backgroundColor: `${subject.color}1A`,
+                            color: subject.color,
+                          }}
+                        >
+                          {subject.name}
+                        </span>
+                      )}
+                      {grade && (
+                        <span className="rounded bg-foreground/8 px-1.5 py-0.5 text-[10.5px]">
+                          {grade.code}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <div className="flex items-center justify-center gap-1.5 text-[11px]">
+                      <span
+                        className="inline-flex items-center gap-0.5 rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700"
+                        title={`${totals.easy} câu Dễ`}
+                      >
+                        D <b>{totals.easy}</b>
+                      </span>
+                      <span
+                        className="inline-flex items-center gap-0.5 rounded bg-amber-50 px-1.5 py-0.5 text-amber-700"
+                        title={`${totals.medium} câu Trung bình`}
+                      >
+                        TB <b>{totals.medium}</b>
+                      </span>
+                      <span
+                        className="inline-flex items-center gap-0.5 rounded bg-rose-50 px-1.5 py-0.5 text-rose-700"
+                        title={`${totals.hard} câu Khó`}
+                      >
+                        K <b>{totals.hard}</b>
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2.5 text-center font-semibold">
+                    {totalQ}
+                  </td>
+                  <td className="px-3 py-2.5 text-center text-foreground/80">
+                    {b.duration}p
+                  </td>
+                  <td className="px-3 py-2.5">
+                    {versionOf(b) > 1 && (
+                      <span className="mr-1 rounded-md border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">
+                        v{versionOf(b)}
+                      </span>
+                    )}
+                    {b.archivedAt ? (
+                      <span className="rounded-md border border-zinc-300 bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600">
+                        🗄 Đã lưu trữ
+                      </span>
+                    ) : (
+                      <span className="rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+                        Đang dùng
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <div className="flex items-center justify-end gap-1">
+                      {b.archivedAt ? (
+                        <IconButton
+                          size="sm"
+                          variant="primary"
+                          title="Khôi phục"
+                          onClick={() => onRestore(b)}
+                        >
+                          <RotateCcw
+                            className="h-3.5 w-3.5"
+                            strokeWidth={1.75}
+                          />
+                        </IconButton>
+                      ) : (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => onCreatePackage(b)}
+                            title="Tạo gói đề từ khung này"
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                            Gói đề
+                          </Button>
+                          <IconButton
+                            size="sm"
+                            variant="primary"
+                            title="Sửa khung đề"
+                            onClick={() => onEdit(b)}
+                          >
+                            <PencilLine
+                              className="h-3.5 w-3.5"
+                              strokeWidth={1.75}
+                            />
+                          </IconButton>
+                          <IconButton
+                            size="sm"
+                            variant="destructive"
+                            title="Lưu trữ"
+                            onClick={() => onDelete(b)}
+                          >
+                            <Trash2
+                              className="h-3.5 w-3.5"
+                              strokeWidth={1.75}
+                            />
+                          </IconButton>
+                        </>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
@@ -835,6 +970,8 @@ function PackagesView({
   blueprints,
   allQuestions,
   generated,
+  subjects,
+  grades,
   onEdit,
   onDelete,
   onRestore,
@@ -844,6 +981,8 @@ function PackagesView({
   blueprints: ExamBlueprint[];
   allQuestions: Parameters<typeof BlueprintCard>[0]["questions"];
   generated: GeneratedExam[];
+  subjects: Array<{ id: string; name: string; color: string }>;
+  grades: Array<{ id: string; name: string; code: string }>;
   onEdit(p: ExamPackage): void;
   onDelete(p: ExamPackage): void;
   onRestore(p: ExamPackage): void;
@@ -858,117 +997,210 @@ function PackagesView({
     );
   }
   const idx = indexQuestions(allQuestions);
+  // Newest first.
+  const sorted = packages
+    .slice()
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
   return (
-    <ul className="grid gap-3 lg:grid-cols-2">
-      {packages.map((p) => {
-        const bp = blueprints.find((b) => b.id === p.blueprintId);
-        const perExam = p.matrix.reduce(
-          (s, r) => s + r.easyCount + r.mediumCount + r.hardCount,
-          0,
-        );
-        const count = generated.filter((g) => g.packageId === p.id).length;
-        const bpTotals = bp
-          ? countBlueprintByDifficulty(bp, idx)
-          : { easy: 0, medium: 0, hard: 0 };
-        return (
-          <li key={p.id}>
-            <article className="overflow-hidden rounded-xl border bg-surface">
-              <header className="flex items-center gap-2 border-b bg-[var(--color-surface-2)] px-4 py-2.5">
-                <span className="rounded-md bg-foreground/8 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-foreground/65">
-                  {p.id}
-                </span>
-                <PackageStatusBadge status={p.status} />
-                {versionOf(p) > 1 ? (
-                  <span className="rounded-md border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">
-                    v{versionOf(p)}
-                  </span>
-                ) : null}
-                {p.archivedAt ? (
-                  <span className="inline-flex items-center gap-1 rounded-md border border-zinc-300 bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600">
-                    🗄 Đã lưu trữ
-                    <button
-                      type="button"
-                      onClick={() => onRestore(p)}
-                      className="rounded px-1 font-bold text-blue-700 hover:bg-blue-50"
+    <div className="overflow-hidden rounded-xl border bg-card">
+      <div className="overflow-x-auto">
+        <table className="w-full text-[12.5px]">
+          <thead className="bg-muted/30 text-[11px] uppercase tracking-wide text-muted-foreground">
+            <tr>
+              <th className="px-3 py-2.5 text-left font-semibold">Mã</th>
+              <th className="px-3 py-2.5 text-left font-semibold">Tên gói đề</th>
+              <th className="px-3 py-2.5 text-left font-semibold">Khung đề</th>
+              <th className="px-3 py-2.5 text-left font-semibold">Môn · Khối</th>
+              <th className="px-3 py-2.5 text-center font-semibold">Cấu trúc</th>
+              <th className="px-3 py-2.5 text-center font-semibold">Câu/đề</th>
+              <th className="px-3 py-2.5 text-center font-semibold">Thời lượng</th>
+              <th className="px-3 py-2.5 text-center font-semibold">Đã sinh</th>
+              <th className="px-3 py-2.5 text-left font-semibold">Duyệt</th>
+              <th className="px-3 py-2.5 text-right font-semibold">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {sorted.map((p) => {
+              const bp = blueprints.find((b) => b.id === p.blueprintId);
+              const subject = bp
+                ? subjects.find((s) => s.id === bp.subjectId)
+                : null;
+              const grade = bp
+                ? grades.find((g) => g.id === bp.gradeId)
+                : null;
+              const perExam = p.matrix.reduce(
+                (s, r) => s + r.easyCount + r.mediumCount + r.hardCount,
+                0,
+              );
+              const genCount = generated.filter(
+                (g) => g.packageId === p.id,
+              ).length;
+              const bpTotals = bp
+                ? countBlueprintByDifficulty(bp, idx)
+                : { easy: 0, medium: 0, hard: 0 };
+              return (
+                <tr
+                  key={p.id}
+                  className={`hover:bg-accent/15 ${p.archivedAt ? "opacity-60" : ""}`}
+                >
+                  <td className="px-3 py-2.5 font-mono text-[11px] text-muted-foreground">
+                    {p.id}
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <p className="line-clamp-1 font-semibold">{p.name}</p>
+                    <p className="line-clamp-1 text-[11px] text-muted-foreground">
+                      GV {p.ownerName}
+                      {versionOf(p) > 1 ? (
+                        <>
+                          {" · "}
+                          <span className="rounded border border-blue-200 bg-blue-50 px-1 text-[10px] font-bold text-blue-700">
+                            v{versionOf(p)}
+                          </span>
+                        </>
+                      ) : null}
+                    </p>
+                  </td>
+                  <td className="px-3 py-2.5">
+                    {bp ? (
+                      <p className="line-clamp-1 text-foreground/80">
+                        {bp.name}
+                      </p>
+                    ) : (
+                      <span className="text-rose-700">— Khung đã xoá</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <div className="flex flex-wrap items-center gap-1">
+                      {subject && (
+                        <span
+                          className="rounded px-1.5 py-0.5 text-[10.5px] font-semibold"
+                          style={{
+                            backgroundColor: `${subject.color}1A`,
+                            color: subject.color,
+                          }}
+                        >
+                          {subject.name}
+                        </span>
+                      )}
+                      {grade && (
+                        <span className="rounded bg-foreground/8 px-1.5 py-0.5 text-[10.5px]">
+                          {grade.code}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <div className="flex items-center justify-center gap-1.5 text-[11px]">
+                      <span
+                        className="inline-flex items-center gap-0.5 rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700"
+                        title={`Pool ${bpTotals.easy} câu Dễ`}
+                      >
+                        D <b>{bpTotals.easy}</b>
+                      </span>
+                      <span
+                        className="inline-flex items-center gap-0.5 rounded bg-amber-50 px-1.5 py-0.5 text-amber-700"
+                        title={`Pool ${bpTotals.medium} câu Trung bình`}
+                      >
+                        TB <b>{bpTotals.medium}</b>
+                      </span>
+                      <span
+                        className="inline-flex items-center gap-0.5 rounded bg-rose-50 px-1.5 py-0.5 text-rose-700"
+                        title={`Pool ${bpTotals.hard} câu Khó`}
+                      >
+                        K <b>{bpTotals.hard}</b>
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2.5 text-center font-semibold">
+                    {perExam}
+                  </td>
+                  <td className="px-3 py-2.5 text-center text-foreground/80">
+                    {p.duration}p
+                  </td>
+                  <td className="px-3 py-2.5 text-center">
+                    <span
+                      className="inline-flex items-center gap-1 rounded bg-violet-50 px-1.5 py-0.5 text-violet-700"
+                      title={`${genCount} đề đã sinh ra từ gói này`}
                     >
-                      Khôi phục
-                    </button>
-                  </span>
-                ) : null}
-                <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-                  ⏱ {p.duration}p · {perExam} câu/đề
-                </span>
-              </header>
-              <div className="space-y-3 px-4 py-3.5">
-                <p className="text-[15px] font-semibold text-foreground">
-                  {p.name}
-                </p>
-                {bp ? (
-                  <p className="text-[12px] text-muted-foreground">
-                    Khung đề:{" "}
-                    <span className="font-semibold text-foreground/85">
-                      {bp.name}
+                      <Sparkles className="h-3 w-3" />
+                      <b>{genCount}</b>
                     </span>
-                  </p>
-                ) : (
-                  <p className="text-[12px] text-rose-700">
-                    Khung đề đã bị xoá. Gói đề không thể sinh đề.
-                  </p>
-                )}
-                <DifficultyPills counts={bpTotals} />
-                <p className="text-meta">
-                  Đã sinh:{" "}
-                  <span className="font-semibold text-foreground/85">{count}</span> đề
-                </p>
-                {p.status === "rejected" && p.rejectionNote && (
-                  <p className="rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-[12px] text-rose-700">
-                    <span className="font-semibold">Lý do từ chối:</span>{" "}
-                    {p.rejectionNote}
-                  </p>
-                )}
-                {p.status === "pending" && (
-                  <p className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[12px] text-amber-700">
-                    Đang chờ Admin campus duyệt — chưa thể bốc vào ca kíp thi.
-                  </p>
-                )}
-              </div>
-              <footer className="flex items-center gap-2 border-t bg-[var(--color-surface-2)] px-4 py-2.5">
-                <Layers className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.85} />
-                <span className="text-[11px] text-muted-foreground">
-                  {p.ownerName}
-                </span>
-                <div className="ml-auto flex items-center gap-1">
-                  <IconButton
-                    size="sm"
-                    title="Sửa gói đề"
-                    onClick={() => onEdit(p)}
-                  >
-                    <PencilLine className="h-3.5 w-3.5" strokeWidth={1.75} />
-                  </IconButton>
-                  <IconButton
-                    size="sm"
-                    variant="destructive"
-                    title="Xoá gói đề"
-                    onClick={() => onDelete(p)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" strokeWidth={1.75} />
-                  </IconButton>
-                  <Button
-                    size="sm"
-                    className="ml-1.5"
-                    disabled={!bp}
-                    onClick={() => onGenerate(p)}
-                  >
-                    <Sparkles className="h-3.5 w-3.5" />
-                    Sinh đề
-                  </Button>
-                </div>
-              </footer>
-            </article>
-          </li>
-        );
-      })}
-    </ul>
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <PackageStatusBadge status={p.status} />
+                    {p.archivedAt ? (
+                      <span className="ml-1 rounded-md border border-zinc-300 bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600">
+                        🗄
+                      </span>
+                    ) : null}
+                    {p.status === "rejected" && p.rejectionNote && (
+                      <p
+                        className="mt-1 line-clamp-1 text-[10.5px] text-rose-700"
+                        title={p.rejectionNote}
+                      >
+                        ⚠ {p.rejectionNote}
+                      </p>
+                    )}
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <div className="flex items-center justify-end gap-1">
+                      {p.archivedAt ? (
+                        <IconButton
+                          size="sm"
+                          variant="primary"
+                          title="Khôi phục"
+                          onClick={() => onRestore(p)}
+                        >
+                          <RotateCcw
+                            className="h-3.5 w-3.5"
+                            strokeWidth={1.75}
+                          />
+                        </IconButton>
+                      ) : (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={!bp}
+                            onClick={() => onGenerate(p)}
+                            title="Sinh đề tự động từ gói này"
+                          >
+                            <Sparkles className="h-3.5 w-3.5" />
+                            Sinh đề
+                          </Button>
+                          <IconButton
+                            size="sm"
+                            variant="primary"
+                            title="Sửa gói đề"
+                            onClick={() => onEdit(p)}
+                          >
+                            <PencilLine
+                              className="h-3.5 w-3.5"
+                              strokeWidth={1.75}
+                            />
+                          </IconButton>
+                          <IconButton
+                            size="sm"
+                            variant="destructive"
+                            title="Lưu trữ"
+                            onClick={() => onDelete(p)}
+                          >
+                            <Trash2
+                              className="h-3.5 w-3.5"
+                              strokeWidth={1.75}
+                            />
+                          </IconButton>
+                        </>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 

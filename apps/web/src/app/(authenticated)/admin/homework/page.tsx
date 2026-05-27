@@ -7,11 +7,13 @@ import {
   CheckCircle2,
   ClipboardEdit,
   Eye,
+  GraduationCap,
   PencilLine,
   Plus,
   RotateCcw,
   Search,
   Trash2,
+  Users,
   X,
 } from "lucide-react";
 import dynamic from "next/dynamic";
@@ -265,7 +267,7 @@ export default function HomeworkAdminPage() {
                   <th className="px-4 py-2.5 text-left font-semibold">Mã</th>
                   <th className="px-4 py-2.5 text-left font-semibold">Tiêu đề</th>
                   <th className="px-4 py-2.5 text-left font-semibold">Môn · Khối</th>
-                  <th className="px-4 py-2.5 text-left font-semibold">Lớp / HS</th>
+                  <th className="px-4 py-2.5 text-center font-semibold">Quy mô</th>
                   <th className="px-4 py-2.5 text-left font-semibold">Hạn nộp</th>
                   <th className="px-4 py-2.5 text-left font-semibold">Tiến độ</th>
                   <th className="px-4 py-2.5 text-left font-semibold">Trạng thái</th>
@@ -323,8 +325,27 @@ export default function HomeworkAdminPage() {
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-2.5 text-foreground/80">
-                        {h.classIds.length} lớp · {totalRoster} HS
+                      <td className="px-4 py-2.5">
+                        <div className="flex items-center justify-center gap-2.5 text-[12px] text-foreground/80">
+                          <span
+                            className="inline-flex items-center gap-1"
+                            title={`${h.classIds.length} lớp được giao`}
+                          >
+                            <GraduationCap className="h-3.5 w-3.5 text-blue-600" />
+                            <span className="font-semibold">
+                              {h.classIds.length}
+                            </span>
+                          </span>
+                          <span
+                            className="inline-flex items-center gap-1"
+                            title={`${totalRoster} học sinh`}
+                          >
+                            <Users className="h-3.5 w-3.5 text-violet-600" />
+                            <span className="font-semibold">
+                              {totalRoster}
+                            </span>
+                          </span>
+                        </div>
                       </td>
                       <td className="px-4 py-2.5 text-foreground/80">
                         {h.dueAt}
