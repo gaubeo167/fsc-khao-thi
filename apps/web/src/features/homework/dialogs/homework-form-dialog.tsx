@@ -1,15 +1,24 @@
 "use client";
 
 import {
+  BookOpen,
+  Calendar,
   Check,
   CheckSquare,
+  ClipboardList,
   Eye,
   FileText,
+  GraduationCap,
+  Layers,
+  Lightbulb,
   Link2,
   Loader2,
   Paperclip,
   Pencil,
   Plus,
+  Save,
+  Send,
+  Users,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -39,11 +48,28 @@ import { useQuestionsStore } from "@/features/question-bank/state/questions-stor
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import { cn } from "@/lib/utils";
 
+import dynamic from "next/dynamic";
+
 import type { Homework, HomeworkStatus } from "../data/types";
 import { useHomeworkStore } from "../state/homework-store";
 import { HomeworkPreviewDialog } from "./homework-preview-dialog";
 import { MaterialPickerDialog } from "./material-picker-dialog";
 import { QuestionPickerDialog } from "./question-picker-dialog";
+
+const ViewQuestionDialog = dynamic(
+  () =>
+    import("@/features/question-bank/dialogs/view-question-dialog").then(
+      (m) => m.ViewQuestionDialog,
+    ),
+  { ssr: false, loading: () => null },
+);
+const MaterialViewerDialog = dynamic(
+  () =>
+    import(
+      "@/features/learning-materials/dialogs/material-viewer-dialog"
+    ).then((m) => m.MaterialViewerDialog),
+  { ssr: false, loading: () => null },
+);
 
 interface Props {
   open: boolean;
@@ -88,6 +114,12 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
   const [questionPickerOpen, setQuestionPickerOpen] = useState(false);
   const [materialPickerOpen, setMaterialPickerOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [viewingQuestionId, setViewingQuestionId] = useState<string | null>(
+    null,
+  );
+  const [viewingMaterialId, setViewingMaterialId] = useState<string | null>(
+    null,
+  );
 
   const isEdit = Boolean(editing);
 
@@ -302,6 +334,14 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
     }
   }
 
+  const subjectName =
+    subjects.find((s) => s.id === subjectId)?.name ?? null;
+  const gradeName =
+    grades.find((g) => g.id === gradeId)?.name ?? null;
+  const selectedClassNames = selectedClassIds
+    .map((cid) => allClasses.find((c) => c.id === cid)?.name)
+    .filter(Boolean);
+
   return (
     <>
       <Dialog
@@ -312,336 +352,493 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
         }}
       >
         <DialogContent
-          className="max-w-3xl max-h-[92vh] overflow-y-auto"
+          className="max-w-6xl max-h-[94vh] overflow-hidden p-0"
           onPointerDownOutside={(e) => e.preventDefault()}
           onInteractOutside={(e) => e.preventDefault()}
         >
-          <DialogHeader>
-            <DialogTitle>
-              {isEdit ? "Chỉnh sửa BTVN" : "Giao BTVN mới"}
-            </DialogTitle>
-            <DialogDescription>
-              Học sinh có thể làm bất kỳ lúc nào trong khoảng [ngày giao,
-              ngày hết hạn]. Đính kèm học liệu để HS tham khảo khi làm.
-            </DialogDescription>
+          {/* Header */}
+          <DialogHeader className="border-b bg-gradient-to-r from-violet-50 to-purple-50 px-6 py-4">
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-600 text-white shadow-sm">
+                <ClipboardList className="h-5 w-5" strokeWidth={1.85} />
+              </span>
+              <div>
+                <DialogTitle className="text-[17px]">
+                  {isEdit ? "Chỉnh sửa BTVN" : "Giao bài tập về nhà mới"}
+                </DialogTitle>
+                <DialogDescription className="mt-0.5">
+                  Tạo bài tập HS có thể làm bất kỳ lúc nào trong khoảng buổi
+                  học chính khoá.
+                </DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
 
-          <div className="space-y-4">
-            {/* Title + description */}
-            <div className="space-y-1.5">
-              <Label>Tiêu đề *</Label>
-              <Input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="VD: BTVN Chương 1 — Phương trình bậc 1"
-                disabled={submitting}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Mô tả / Hướng dẫn cho HS</Label>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={2}
-                className="w-full rounded-md border bg-background px-3 py-2 text-[13px] disabled:opacity-50"
-                disabled={submitting}
-              />
-            </div>
+          {/* Body — 2 columns */}
+          <div className="grid max-h-[calc(94vh-9rem)] grid-cols-1 gap-0 overflow-y-auto lg:grid-cols-[1fr_320px]">
+            {/* Left column — form sections */}
+            <div className="space-y-5 px-6 py-5">
+              <FormSection
+                step={1}
+                tone="violet"
+                title="Thông tin chung"
+              >
+                <div className="space-y-3">
+                  <FieldLabel required>Tiêu đề bài tập</FieldLabel>
+                  <Input
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="VD: BTVN Chương 1 — Phương trình bậc 1"
+                    disabled={submitting}
+                  />
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Môn *</Label>
-                <Select
-                  value={subjectId}
-                  onChange={(e) => {
-                    setSubjectId(e.target.value);
-                    setQuestionIds([]);
-                    setMaterialIds([]);
-                  }}
-                  disabled={submitting}
-                >
-                  <option value="">— Chọn môn —</option>
-                  {subjects.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Khối</Label>
-                <Select
-                  value={gradeId}
-                  onChange={(e) => {
-                    setGradeId(e.target.value);
-                    setSelectedClassIds([]);
-                    setQuestionIds([]);
-                  }}
-                  disabled={submitting}
-                >
-                  <option value="">— Mọi khối —</option>
-                  {grades.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.name}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-            </div>
+                  <FieldLabel>Mô tả / Hướng dẫn cho HS</FieldLabel>
+                  <textarea
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    rows={2}
+                    placeholder="Mô tả ngắn gọn bài tập hoặc lưu ý cho HS…"
+                    className="w-full rounded-md border bg-background px-3 py-2 text-[13px] disabled:opacity-50"
+                    disabled={submitting}
+                  />
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Ngày giao *</Label>
-                <Input
-                  type="date"
-                  value={assignedAt}
-                  onChange={(e) => setAssignedAt(e.target.value)}
-                  disabled={submitting}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Ngày hết hạn *</Label>
-                <Input
-                  type="date"
-                  value={dueAt}
-                  onChange={(e) => setDueAt(e.target.value)}
-                  disabled={submitting}
-                />
-              </div>
-            </div>
-
-            {/* Class picker — only shown once a Khối is chosen, so the
-                flow is linear: Môn → Khối → Lớp → HS → ... */}
-            {gradeId ? (
-              <div className="space-y-1.5">
-                <Label>Lớp được giao *</Label>
-                {classesForGrade.length === 0 ? (
-                  <p className="text-meta">Chưa có lớp nào ở khối này</p>
-                ) : (
-                  <div className="flex flex-wrap gap-1.5 rounded-md border bg-card p-2">
-                    {classesForGrade.map((c) => (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onClick={() => toggleClass(c.id)}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <FieldLabel required>Môn học</FieldLabel>
+                      <Select
+                        value={subjectId}
+                        onChange={(e) => {
+                          setSubjectId(e.target.value);
+                          setQuestionIds([]);
+                          setMaterialIds([]);
+                        }}
                         disabled={submitting}
-                        className={cn(
-                          "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[12px] font-medium",
-                          selectedClassIds.includes(c.id)
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : "border-border bg-background text-foreground/70 hover:bg-accent",
-                        )}
                       >
-                        {selectedClassIds.includes(c.id) ? (
-                          <Check className="h-3 w-3" />
-                        ) : null}
-                        {c.name}
-                      </button>
-                    ))}
+                        <option value="">— Chọn môn —</option>
+                        {subjects.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                    <div>
+                      <FieldLabel>Khối</FieldLabel>
+                      <Select
+                        value={gradeId}
+                        onChange={(e) => {
+                          setGradeId(e.target.value);
+                          setSelectedClassIds([]);
+                          setQuestionIds([]);
+                        }}
+                        disabled={submitting}
+                      >
+                        <option value="">— Mọi khối —</option>
+                        {grades.map((g) => (
+                          <option key={g.id} value={g.id}>
+                            {g.name}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
                   </div>
-                )}
-              </div>
-            ) : (
-              <div className="rounded-md border border-dashed bg-muted/15 px-3 py-3 text-center text-meta">
-                Chọn <b>khối</b> ở trên để hiển thị danh sách lớp.
-              </div>
-            )}
 
-            {/* Student roster — appears once a class is selected. The
-                gradeId guard above already hides this layer; this
-                second guard handles "khối chosen but no class ticked". */}
-            {gradeId && rosterByClass.length > 0 ? (
-              <RosterPanel
-                rosterByClass={rosterByClass}
-                selectedStudentIds={selectedStudentIds}
-                onToggle={(sid) =>
-                  setSelectedStudentIds((prev) =>
-                    prev.includes(sid)
-                      ? prev.filter((x) => x !== sid)
-                      : [...prev, sid],
-                  )
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <FieldLabel required>Ngày giao</FieldLabel>
+                      <Input
+                        type="date"
+                        value={assignedAt}
+                        onChange={(e) => setAssignedAt(e.target.value)}
+                        disabled={submitting}
+                      />
+                    </div>
+                    <div>
+                      <FieldLabel required>Ngày hết hạn</FieldLabel>
+                      <Input
+                        type="date"
+                        value={dueAt}
+                        onChange={(e) => setDueAt(e.target.value)}
+                        disabled={submitting}
+                      />
+                    </div>
+                  </div>
+
+                  {gradeId ? (
+                    <>
+                      <FieldLabel required>Lớp được giao</FieldLabel>
+                      {classesForGrade.length === 0 ? (
+                        <p className="text-meta">
+                          Chưa có lớp nào ở khối này.
+                        </p>
+                      ) : (
+                        <div className="flex flex-wrap gap-1.5 rounded-md border bg-card p-2">
+                          {classesForGrade.map((c) => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => toggleClass(c.id)}
+                              disabled={submitting}
+                              className={cn(
+                                "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[12px] font-medium",
+                                selectedClassIds.includes(c.id)
+                                  ? "border-violet-300 bg-violet-100 text-violet-800"
+                                  : "border-border bg-background text-foreground/70 hover:bg-accent",
+                              )}
+                            >
+                              {selectedClassIds.includes(c.id) ? (
+                                <Check className="h-3 w-3" />
+                              ) : null}
+                              {c.name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="rounded-md border border-dashed bg-muted/15 px-3 py-3 text-center text-meta">
+                      Chọn <b>khối</b> ở trên để hiển thị danh sách lớp.
+                    </div>
+                  )}
+
+                  {gradeId && rosterByClass.length > 0 ? (
+                    <RosterPanel
+                      rosterByClass={rosterByClass}
+                      selectedStudentIds={selectedStudentIds}
+                      onToggle={(sid) =>
+                        setSelectedStudentIds((prev) =>
+                          prev.includes(sid)
+                            ? prev.filter((x) => x !== sid)
+                            : [...prev, sid],
+                        )
+                      }
+                      onToggleClass={(classId, allOn) => {
+                        const group = rosterByClass.find(
+                          (g) => g.classId === classId,
+                        );
+                        if (!group) return;
+                        const classStudentIds = group.students.map(
+                          (s) => s.id,
+                        );
+                        setSelectedStudentIds((prev) => {
+                          if (allOn) {
+                            const set = new Set(prev);
+                            for (const id of classStudentIds) set.add(id);
+                            return [...set];
+                          }
+                          return prev.filter(
+                            (id) => !classStudentIds.includes(id),
+                          );
+                        });
+                      }}
+                      disabled={submitting}
+                    />
+                  ) : null}
+                </div>
+              </FormSection>
+
+              <FormSection
+                step={2}
+                tone="emerald"
+                title="Câu hỏi"
+                count={selectedQuestions.length}
+                actions={
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <a
+                      href="/admin/question-bank"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex h-7 items-center gap-1 rounded-md border bg-card px-2 text-[11.5px] font-medium hover:bg-accent/30"
+                      title="Import từ Word ở Ngân hàng câu hỏi → quay lại tick chọn"
+                    >
+                      <FileText className="h-3.5 w-3.5" />
+                      Import từ Word
+                    </a>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => {
+                        if (!subjectId)
+                          return toast.error(
+                            "Chọn môn trước khi chọn câu hỏi",
+                          );
+                        setQuestionPickerOpen(true);
+                      }}
+                      disabled={submitting}
+                    >
+                      <Plus className="h-4 w-4" />
+                      {selectedQuestions.length > 0 ? "Thêm" : "Thêm câu hỏi"}
+                    </Button>
+                  </div>
                 }
-                onToggleClass={(classId, allOn) => {
-                  const group = rosterByClass.find(
-                    (g) => g.classId === classId,
-                  );
-                  if (!group) return;
-                  const classStudentIds = group.students.map((s) => s.id);
-                  setSelectedStudentIds((prev) => {
-                    if (allOn) {
-                      const set = new Set(prev);
-                      for (const id of classStudentIds) set.add(id);
-                      return [...set];
-                    }
-                    return prev.filter((id) => !classStudentIds.includes(id));
-                  });
-                }}
-                disabled={submitting}
-              />
-            ) : null}
+              >
+                {selectedQuestions.length === 0 ? (
+                  <p className="text-meta">
+                    Chưa chọn câu hỏi nào. Bấm "Thêm câu hỏi" để chọn từ kho
+                    cá nhân hoặc kho trường.
+                  </p>
+                ) : (
+                  <ul className="space-y-1.5">
+                    {selectedQuestions.map((q, i) => {
+                      const meta = findQuestionType(q.type);
+                      return (
+                        <li
+                          key={q.id}
+                          className="group flex items-start gap-2.5 rounded-md border bg-card px-2.5 py-2 hover:bg-accent/20"
+                        >
+                          <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-emerald-100 text-[11px] font-bold text-emerald-700">
+                            {i + 1}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="line-clamp-1 text-[12.5px]">
+                              {plainText(q.content)}
+                            </p>
+                            <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10.5px] text-muted-foreground">
+                              <span className="font-mono">{q.id}</span>
+                              {meta && (
+                                <span
+                                  className="rounded px-1.5 py-0.5 font-semibold"
+                                  style={{
+                                    backgroundColor: `${meta.color}1A`,
+                                    color: meta.color,
+                                  }}
+                                >
+                                  {meta.name}
+                                </span>
+                              )}
+                              <span className="rounded bg-foreground/8 px-1.5 py-0.5">
+                                {q.difficulty}
+                              </span>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setViewingQuestionId(q.id)}
+                            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                            title="Xem chi tiết"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => removeQuestion(q.id)}
+                            className="rounded p-1 text-muted-foreground hover:bg-rose-50 hover:text-rose-600"
+                            title="Bỏ chọn"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </FormSection>
 
-            {/* Question picker — button + summary */}
-            <SummarySection
-              title="Câu hỏi *"
-              count={selectedQuestions.length}
-              icon={CheckSquare}
-              tone="blue"
-              actions={
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    if (!subjectId)
-                      return toast.error("Chọn môn trước khi chọn câu hỏi");
-                    setQuestionPickerOpen(true);
-                  }}
-                  disabled={submitting}
-                >
-                  <Plus className="h-4 w-4" />
-                  {selectedQuestions.length > 0
-                    ? "Thêm / sửa câu hỏi"
-                    : "Chọn câu hỏi từ ngân hàng"}
-                </Button>
-              }
-            >
-              {selectedQuestions.length === 0 ? (
-                <p className="text-meta">
-                  Chưa chọn câu hỏi nào. Bấm nút phía trên để chọn từ kho cá
-                  nhân hoặc kho trường.
-                </p>
-              ) : (
-                <ul className="space-y-1.5">
-                  {selectedQuestions.map((q, i) => {
-                    const meta = findQuestionType(q.type);
-                    return (
+              <FormSection
+                step={3}
+                tone="amber"
+                title="Đính kèm học liệu"
+                count={selectedMaterials.length}
+                actions={
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => {
+                      if (!subjectId)
+                        return toast.error(
+                          "Chọn môn trước khi chọn học liệu",
+                        );
+                      setMaterialPickerOpen(true);
+                    }}
+                    disabled={submitting}
+                  >
+                    <Plus className="h-4 w-4" />
+                    Thêm học liệu
+                  </Button>
+                }
+              >
+                {selectedMaterials.length === 0 ? (
+                  <p className="text-meta">
+                    Tuỳ chọn. Đính kèm bài giảng / video / PDF để HS xem khi
+                    làm bài.
+                  </p>
+                ) : (
+                  <ul className="space-y-1.5">
+                    {selectedMaterials.map((m) => (
                       <li
-                        key={q.id}
-                        className="flex items-start gap-2 rounded-md border bg-card px-2.5 py-1.5"
+                        key={m.id}
+                        className="group flex items-start gap-2.5 rounded-md border bg-card px-2.5 py-2 hover:bg-accent/20"
                       >
-                        <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-foreground/8 text-[10.5px] font-bold text-foreground/70">
-                          {i + 1}
+                        <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-amber-100 text-amber-700">
+                          {m.sourceType === "link" ? (
+                            <Link2 className="h-3.5 w-3.5" />
+                          ) : (
+                            <FileText className="h-3.5 w-3.5" />
+                          )}
                         </span>
                         <div className="min-w-0 flex-1">
-                          <p className="line-clamp-1 text-[12.5px]">
-                            {plainText(q.content)}
+                          <p className="line-clamp-1 text-[12.5px] font-medium">
+                            {m.title}
                           </p>
                           <p className="text-[10.5px] text-muted-foreground">
-                            {q.id}
-                            {meta ? ` · ${meta.name}` : ""} · {q.difficulty}
+                            {FILE_TYPE_LABEL[m.fileType]}
+                            {m.sourceType === "link" ? " · liên kết" : ""}
                           </p>
                         </div>
                         <button
                           type="button"
-                          onClick={() => removeQuestion(q.id)}
-                          className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                          onClick={() => setViewingMaterialId(m.id)}
+                          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                          title="Xem"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeMaterial(m.id)}
+                          className="rounded p-1 text-muted-foreground hover:bg-rose-50 hover:text-rose-600"
                           title="Bỏ chọn"
                         >
                           <X className="h-3.5 w-3.5" />
                         </button>
                       </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </SummarySection>
+                    ))}
+                  </ul>
+                )}
+              </FormSection>
 
-            {/* Material picker */}
-            <SummarySection
-              title="Học liệu đính kèm"
-              count={selectedMaterials.length}
-              icon={Paperclip}
-              tone="emerald"
-              actions={
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    if (!subjectId)
-                      return toast.error("Chọn môn trước khi chọn học liệu");
-                    setMaterialPickerOpen(true);
-                  }}
+              <FormSection
+                step={4}
+                tone="zinc"
+                title="Trạng thái phát hành"
+              >
+                <Select
+                  value={status}
+                  onChange={(e) =>
+                    setStatus(e.target.value as HomeworkStatus)
+                  }
                   disabled={submitting}
                 >
-                  <Plus className="h-4 w-4" />
-                  {selectedMaterials.length > 0
-                    ? "Thêm / sửa học liệu"
-                    : "Chọn học liệu"}
-                </Button>
-              }
-            >
-              {selectedMaterials.length === 0 ? (
-                <p className="text-meta">
-                  Tuỳ chọn. Đính kèm bài giảng / video để HS xem khi làm bài.
-                </p>
-              ) : (
-                <ul className="space-y-1.5">
-                  {selectedMaterials.map((m) => (
-                    <li
-                      key={m.id}
-                      className="flex items-start gap-2 rounded-md border bg-card px-2.5 py-1.5"
-                    >
-                      {m.sourceType === "link" ? (
-                        <Link2 className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                      ) : (
-                        <FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <p className="line-clamp-1 text-[12.5px] font-medium">
-                          {m.title}
-                        </p>
-                        <p className="text-[10.5px] text-muted-foreground">
-                          {FILE_TYPE_LABEL[m.fileType]}
-                          {m.sourceType === "link" ? " · liên kết" : ""}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => removeMaterial(m.id)}
-                        className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                        title="Bỏ chọn"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </SummarySection>
-
-            {/* Status */}
-            <div className="space-y-1.5">
-              <Label>Trạng thái</Label>
-              <Select
-                value={status}
-                onChange={(e) => setStatus(e.target.value as HomeworkStatus)}
-                disabled={submitting}
-              >
-                <option value="draft">Nháp (HS chưa thấy)</option>
-                <option value="published">
-                  Đã giao (HS thấy được trong khoảng ngày)
-                </option>
-                <option value="closed">Đã đóng (không cho nộp thêm)</option>
-              </Select>
+                  <option value="draft">Nháp (HS chưa thấy)</option>
+                  <option value="published">
+                    Đã giao (HS thấy được trong khoảng ngày)
+                  </option>
+                  <option value="closed">
+                    Đã đóng (không cho nộp thêm)
+                  </option>
+                </Select>
+              </FormSection>
             </div>
+
+            {/* Right column — sticky summary */}
+            <aside className="border-l bg-muted/15 px-5 py-5 lg:sticky lg:top-0">
+              <div className="rounded-xl border bg-card p-4 shadow-sm">
+                <div className="mb-3 flex items-center gap-2">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-violet-100 text-violet-700">
+                    <ClipboardList className="h-4 w-4" />
+                  </span>
+                  <div>
+                    <p className="text-[14px] font-semibold">
+                      Tổng quan bài tập
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Cập nhật theo lựa chọn
+                    </p>
+                  </div>
+                </div>
+                <ul className="space-y-2.5 text-[12.5px]">
+                  <SummaryItem
+                    icon={BookOpen}
+                    label="Môn"
+                    value={subjectName ?? "—"}
+                  />
+                  <SummaryItem
+                    icon={GraduationCap}
+                    label="Khối"
+                    value={gradeName ?? "—"}
+                  />
+                  <SummaryItem
+                    icon={Users}
+                    label="Lớp"
+                    value={
+                      selectedClassNames.length === 0
+                        ? "—"
+                        : (selectedClassNames.join(", ") as string)
+                    }
+                  />
+                  <SummaryItem
+                    icon={Users}
+                    label="HS được giao"
+                    value={`${selectedStudentIds.length} HS`}
+                  />
+                  <SummaryItem
+                    icon={CheckSquare}
+                    label="Số câu hỏi"
+                    value={`${selectedQuestions.length} câu`}
+                  />
+                  <SummaryItem
+                    icon={Paperclip}
+                    label="Học liệu"
+                    value={`${selectedMaterials.length} mục`}
+                  />
+                  <SummaryItem
+                    icon={Calendar}
+                    label="Ngày giao"
+                    value={assignedAt || "—"}
+                  />
+                  <SummaryItem
+                    icon={Calendar}
+                    label="Hạn nộp"
+                    value={dueAt || "—"}
+                    highlight
+                  />
+                  <SummaryItem
+                    icon={Layers}
+                    label="Trạng thái"
+                    value={
+                      status === "draft"
+                        ? "Nháp"
+                        : status === "published"
+                          ? "Đã giao"
+                          : "Đã đóng"
+                    }
+                  />
+                </ul>
+              </div>
+
+              <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                <div className="flex items-center gap-2">
+                  <Lightbulb className="h-4 w-4 text-amber-600" />
+                  <p className="text-[12.5px] font-semibold text-amber-900">
+                    Mẹo hay
+                  </p>
+                </div>
+                <p className="mt-1 text-[11.5px] leading-relaxed text-amber-800">
+                  Hãy kèm video bài giảng hoặc tài liệu để HS có thể xem lại
+                  khi làm BTVN. Nội dung sẽ hiển thị bên cạnh câu hỏi.
+                </p>
+              </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setPreviewOpen(true)}
+                disabled={submitting || questionIds.length === 0}
+                title={
+                  questionIds.length === 0
+                    ? "Cần chọn ít nhất 1 câu hỏi để xem trước"
+                    : undefined
+                }
+                className="mt-3 w-full"
+              >
+                <Eye className="h-4 w-4" />
+                Xem trước / Làm thử
+              </Button>
+            </aside>
           </div>
 
-          <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setPreviewOpen(true)}
-              disabled={submitting || questionIds.length === 0}
-              title={
-                questionIds.length === 0
-                  ? "Cần chọn ít nhất 1 câu hỏi để xem trước"
-                  : undefined
-              }
-            >
-              <Eye className="h-4 w-4" />
-              Xem trước / Làm thử
-            </Button>
+          {/* Footer */}
+          <div className="flex flex-wrap items-center justify-end gap-2 border-t bg-card px-6 py-3">
             <Button
               variant="outline"
               onClick={() => onOpenChange(false)}
@@ -649,7 +846,23 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
             >
               Huỷ
             </Button>
-            <Button onClick={handleSubmit} disabled={submitting}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setStatus("draft");
+                handleSubmit();
+              }}
+              disabled={submitting}
+            >
+              <Save className="h-4 w-4" />
+              Lưu nháp
+            </Button>
+            <Button
+              onClick={handleSubmit}
+              disabled={submitting}
+              className="bg-violet-600 hover:bg-violet-700"
+            >
               {submitting ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -661,7 +874,10 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
                   Lưu thay đổi
                 </>
               ) : (
-                "Tạo BTVN"
+                <>
+                  <Send className="h-4 w-4" />
+                  Giao bài tập
+                </>
               )}
             </Button>
           </div>
@@ -693,48 +909,142 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
         materialIds={materialIds}
         title={title || "BTVN chưa đặt tên"}
       />
+      <ViewQuestionDialog
+        question={
+          viewingQuestionId
+            ? allQuestions.find((q) => q.id === viewingQuestionId) ?? null
+            : null
+        }
+        onClose={() => setViewingQuestionId(null)}
+      />
+      <MaterialViewerDialog
+        material={
+          viewingMaterialId
+            ? allMaterials.find((m) => m.id === viewingMaterialId) ?? null
+            : null
+        }
+        onClose={() => setViewingMaterialId(null)}
+      />
     </>
   );
 }
 
-function SummarySection({
+/** Numbered section header with a colored badge — used to break the
+ *  form into "1. Thông tin chung", "2. Câu hỏi", etc. The whole section
+ *  is wrapped in a subtle card so each block reads as its own unit. */
+function FormSection({
+  step,
+  tone,
   title,
   count,
-  icon: Icon,
-  tone,
   actions,
   children,
 }: {
+  step: number;
+  tone: "violet" | "emerald" | "amber" | "zinc";
   title: string;
-  count: number;
-  icon: React.ComponentType<{ className?: string }>;
-  tone: "blue" | "emerald";
-  actions: React.ReactNode;
+  count?: number;
+  actions?: React.ReactNode;
   children: React.ReactNode;
 }) {
-  const accent =
-    tone === "blue"
-      ? "border-blue-200 bg-blue-50/50 text-blue-700"
-      : "border-emerald-200 bg-emerald-50/50 text-emerald-700";
+  const styles = {
+    violet: {
+      badge: "bg-violet-600 text-white",
+      header: "text-violet-900",
+      countPill: "border-violet-200 bg-violet-50 text-violet-700",
+    },
+    emerald: {
+      badge: "bg-emerald-600 text-white",
+      header: "text-emerald-900",
+      countPill: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    },
+    amber: {
+      badge: "bg-amber-500 text-white",
+      header: "text-amber-900",
+      countPill: "border-amber-200 bg-amber-50 text-amber-700",
+    },
+    zinc: {
+      badge: "bg-zinc-600 text-white",
+      header: "text-zinc-900",
+      countPill: "border-zinc-200 bg-zinc-50 text-zinc-700",
+    },
+  }[tone];
   return (
-    <section className="space-y-1.5 rounded-lg border bg-card p-3">
-      <div className="flex items-center justify-between gap-2">
-        <Label className="inline-flex items-center gap-1.5">
-          <Icon className="h-4 w-4 text-foreground/60" />
-          {title}
+    <section className="rounded-xl border bg-card shadow-sm">
+      <header className="flex items-center justify-between gap-2 border-b bg-muted/15 px-4 py-2.5">
+        <div className="flex items-center gap-2">
           <span
             className={cn(
-              "inline-flex h-5 min-w-[1.5rem] items-center justify-center rounded-md border px-1.5 text-[10.5px] font-bold",
-              accent,
+              "flex h-6 w-6 items-center justify-center rounded-md text-[12px] font-bold",
+              styles.badge,
             )}
           >
-            {count}
+            {step}
           </span>
-        </Label>
+          <h3 className={cn("text-[14px] font-semibold", styles.header)}>
+            {title}
+          </h3>
+          {count != null && (
+            <span
+              className={cn(
+                "inline-flex h-5 min-w-[1.5rem] items-center justify-center rounded-md border px-1.5 text-[10.5px] font-bold",
+                styles.countPill,
+              )}
+            >
+              {count}
+            </span>
+          )}
+        </div>
         {actions}
-      </div>
-      {children}
+      </header>
+      <div className="px-4 py-3">{children}</div>
     </section>
+  );
+}
+
+function FieldLabel({
+  children,
+  required,
+}: {
+  children: React.ReactNode;
+  required?: boolean;
+}) {
+  return (
+    <Label className="mb-1 block text-[12.5px] font-medium text-foreground/80">
+      {children}
+      {required ? <span className="ml-1 text-rose-500">*</span> : null}
+    </Label>
+  );
+}
+
+function SummaryItem({
+  icon: Icon,
+  label,
+  value,
+  highlight,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+  highlight?: boolean;
+}) {
+  return (
+    <li className="flex items-center gap-2">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted/40 text-foreground/60">
+        <Icon className="h-3.5 w-3.5" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[10.5px] text-muted-foreground">{label}</p>
+        <p
+          className={cn(
+            "truncate font-medium",
+            highlight ? "text-rose-700" : "text-foreground",
+          )}
+        >
+          {value}
+        </p>
+      </div>
+    </li>
   );
 }
 

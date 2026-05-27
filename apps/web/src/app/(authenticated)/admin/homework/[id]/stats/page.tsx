@@ -1,19 +1,28 @@
 "use client";
 
-import { ArrowLeft, Check, ChevronDown, ChevronUp, X } from "lucide-react";
+import { ArrowLeft, Eye } from "lucide-react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { notFound, useParams } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import { useUsersStore } from "@/features/admin/users/users-store";
 import { useGradesStore } from "@/features/grades/state/grades-store";
 import { useQuestionsStore } from "@/features/question-bank/state/questions-store";
-import { RenderedContent } from "@/features/question-bank/components/rendered-content";
 import { isCorrect } from "@/features/shift-exam/lib/is-correct";
 import { PageHeader } from "@/features/shell/components/page-header";
 
+import type { HomeworkAttempt } from "@/features/homework/data/types";
 import { useHomeworkStore } from "@/features/homework/state/homework-store";
 import { useHomeworkAttemptsStore } from "@/features/homework/state/homework-attempts-store";
+
+const HomeworkAttemptDetailDialog = dynamic(
+  () =>
+    import(
+      "@/features/homework/dialogs/homework-attempt-detail-dialog"
+    ).then((m) => m.HomeworkAttemptDetailDialog),
+  { ssr: false, loading: () => null },
+);
 
 export default function HomeworkStatsPage() {
   const params = useParams<{ id: string }>();
@@ -25,7 +34,7 @@ export default function HomeworkStatsPage() {
   const users = useUsersStore((s) => s.users);
   const allClasses = useGradesStore((s) => s.classes);
 
-  const [expandedStudent, setExpandedStudent] = useState<string | null>(null);
+  const [detailStudentId, setDetailStudentId] = useState<string | null>(null);
 
   if (!homework) return notFound();
 
@@ -175,7 +184,6 @@ export default function HomeworkStatsPage() {
             </p>
           ) : (
             studentRows.map((row) => {
-              const isExpanded = expandedStudent === row.studentId;
               const submittedAt = row.attempt?.submittedAt;
               const score = row.attempt?.correctCount ?? null;
               const totalQ = row.attempt?.totalQuestions ?? questions.length;
@@ -184,86 +192,57 @@ export default function HomeworkStatsPage() {
                   ? Math.round((score / totalQ) * 100)
                   : null;
               return (
-                <div key={row.studentId}>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setExpandedStudent(isExpanded ? null : row.studentId)
-                    }
-                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-accent/15"
-                  >
-                    {isExpanded ? (
-                      <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                    ) : (
-                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[13px] font-semibold">{row.name}</p>
-                      <p className="text-meta truncate">{row.username}</p>
-                    </div>
-                    {submittedAt ? (
-                      <>
-                        <span className="rounded-md border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[10.5px] font-semibold text-emerald-700">
-                          Đã nộp
-                        </span>
-                        <span className="font-mono text-[12.5px]">
-                          {score}/{totalQ}
-                        </span>
-                        <span className="text-meta">{pct}%</span>
-                      </>
-                    ) : (
-                      <span className="rounded-md border border-zinc-300 bg-zinc-50 px-1.5 py-0.5 text-[10.5px] font-semibold text-zinc-600">
-                        Chưa nộp
+                <button
+                  key={row.studentId}
+                  type="button"
+                  onClick={() => setDetailStudentId(row.studentId)}
+                  className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-accent/15"
+                  title="Xem chi tiết bài làm"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13px] font-semibold">{row.name}</p>
+                    <p className="text-meta truncate">{row.username}</p>
+                  </div>
+                  {submittedAt ? (
+                    <>
+                      <span className="rounded-md border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[10.5px] font-semibold text-emerald-700">
+                        Đã nộp
                       </span>
-                    )}
-                  </button>
-                  {isExpanded && row.attempt?.submittedAt ? (
-                    <div className="space-y-2 border-t bg-muted/15 px-6 py-3">
-                      <p className="text-meta">
-                        Nộp lúc {new Date(row.attempt.submittedAt).toLocaleString("vi-VN")}
-                      </p>
-                      <ol className="space-y-2">
-                        {questions.map((q, idx) => {
-                          const ans = row.attempt!.answers[q.id];
-                          const right = ans ? isCorrect(q, ans) : false;
-                          return (
-                            <li
-                              key={q.id}
-                              className="flex items-start gap-2 rounded-md border bg-card px-3 py-2"
-                            >
-                              <span
-                                className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${
-                                  right
-                                    ? "bg-emerald-100 text-emerald-700"
-                                    : "bg-rose-100 text-rose-700"
-                                }`}
-                              >
-                                {right ? (
-                                  <Check className="h-3 w-3" strokeWidth={3} />
-                                ) : (
-                                  <X className="h-3 w-3" strokeWidth={3} />
-                                )}
-                              </span>
-                              <div className="min-w-0 flex-1">
-                                <p className="text-[11.5px] text-muted-foreground">
-                                  Câu {idx + 1} · {q.type}
-                                </p>
-                                <div className="mt-0.5 text-[12.5px]">
-                                  <RenderedContent content={q.content} />
-                                </div>
-                              </div>
-                            </li>
-                          );
-                        })}
-                      </ol>
-                    </div>
-                  ) : null}
-                </div>
+                      <span className="font-mono text-[12.5px]">
+                        {score}/{totalQ}
+                      </span>
+                      <span className="text-meta">{pct}%</span>
+                    </>
+                  ) : (
+                    <span className="rounded-md border border-zinc-300 bg-zinc-50 px-1.5 py-0.5 text-[10.5px] font-semibold text-zinc-600">
+                      Chưa nộp
+                    </span>
+                  )}
+                  <Eye className="ml-1 h-4 w-4 text-muted-foreground" />
+                </button>
               );
             })
           )}
         </div>
       </section>
+
+      <HomeworkAttemptDetailDialog
+        open={detailStudentId != null}
+        onOpenChange={(o) => !o && setDetailStudentId(null)}
+        studentName={
+          studentRows.find((r) => r.studentId === detailStudentId)?.name ?? ""
+        }
+        studentUsername={
+          studentRows.find((r) => r.studentId === detailStudentId)?.username
+        }
+        attempt={
+          (detailStudentId
+            ? studentRows.find((r) => r.studentId === detailStudentId)
+                ?.attempt ?? null
+            : null) as HomeworkAttempt | null
+        }
+        questions={questions}
+      />
     </>
   );
 }

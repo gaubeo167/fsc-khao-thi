@@ -88,24 +88,11 @@ export function HomeworkPreviewDialog({
   const [viewingMaterial, setViewingMaterial] =
     useState<LearningMaterial | null>(null);
 
-  function reset() {
-    setIdx(0);
-    setTrialAnswers({});
-    setTrialSubmitted(false);
-  }
-
-  if (!open) return null;
-  const currentQ = questions[idx];
-
-  function trialSubmit() {
-    setTrialSubmitted(true);
-  }
-  function trialReset() {
-    setTrialAnswers({});
-    setTrialSubmitted(false);
-    setIdx(0);
-  }
-
+  // IMPORTANT: keep all hook calls above any early returns. A previous
+  // version of this file ran `useMemo(trialScore)` AFTER `if (!open)
+  // return null`, which produced different hook counts between open
+  // and closed states and crashed React with "Rendered more hooks
+  // than during the previous render."
   const trialScore = useMemo(() => {
     if (!trialSubmitted) return null;
     let correct = 0;
@@ -115,6 +102,24 @@ export function HomeworkPreviewDialog({
     }
     return { correct, total: questions.length };
   }, [trialSubmitted, questions, trialAnswers]);
+
+  function reset() {
+    setIdx(0);
+    setTrialAnswers({});
+    setTrialSubmitted(false);
+  }
+  function trialSubmit() {
+    setTrialSubmitted(true);
+  }
+  function trialReset() {
+    setTrialAnswers({});
+    setTrialSubmitted(false);
+    setIdx(0);
+  }
+
+  const currentQ = questions[idx];
+  // The outer Dialog component already handles open=false by not
+  // rendering anything, so no manual early return is necessary.
 
   return (
     <Dialog
