@@ -19,6 +19,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { Input } from "@/components/ui/input";
+import { Tooltip } from "@/components/ui/tooltip";
 import { useUsersStore } from "@/features/admin/users/users-store";
 import { useUserScope } from "@/features/auth/lib/use-scope";
 import { useAuthStore } from "@/features/auth/state/auth-store";
@@ -810,112 +811,193 @@ export default function ReportsPage() {
           </p>
         </div>
       ) : (
-        <ul className="space-y-2.5">
-          {filtered.map(({ shift, report, criticalCount, warnCount }) => {
-            const subject = subjects.find((s) => s.id === shift.subjectId);
-            const grade = grades.find((g) => g.id === shift.gradeId);
-            const scoring = shift.scoring ?? DEFAULT_SCORING;
-            const passColor =
-              report.totals.passRate >= 70
-                ? "text-emerald-700"
-                : report.totals.passRate >= 50
-                  ? "text-blue-700"
-                  : report.totals.passRate >= 30
-                    ? "text-amber-700"
-                    : "text-rose-700";
-            return (
-              <li key={shift.id}>
-                <Link
-                  href={`/reports/${shift.id}`}
-                  className="flex flex-wrap items-center gap-3 rounded-xl border bg-card px-4 py-3 transition hover:border-foreground/30 hover:bg-accent/10"
-                >
-                  <div
-                    className={cn(
-                      "flex h-12 w-14 shrink-0 flex-col items-center justify-center rounded-xl text-center",
-                      report.totals.passRate >= 70
-                        ? "bg-emerald-50 text-emerald-700"
-                        : report.totals.passRate >= 50
-                          ? "bg-blue-50 text-blue-700"
-                          : report.totals.passRate >= 30
-                            ? "bg-amber-50 text-amber-700"
-                            : "bg-rose-50 text-rose-700",
-                    )}
-                  >
-                    <span className="text-[15px] font-bold leading-none">
-                      {report.totals.passRate}%
-                    </span>
-                    <span className="text-[9px] uppercase tracking-[0.06em]">
-                      đạt
-                    </span>
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-foreground/65">
-                        {shift.id}
-                      </span>
-                      {subject && (
-                        <span className="rounded bg-blue-100 px-2 py-0.5 text-[11px] font-semibold text-blue-800">
-                          {subject.name}
-                        </span>
-                      )}
-                      {grade && (
-                        <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-foreground/70">
-                          {grade.code}
-                        </span>
-                      )}
-                      {criticalCount > 0 && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-800">
-                          🚨 {criticalCount} khẩn
-                        </span>
-                      )}
-                      {warnCount > 0 && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
-                          ⚠ {warnCount} cảnh báo
-                        </span>
-                      )}
-                      {report.totals.pendingEssayCount > 0 && (
-                        <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-800">
-                          🕒 {report.totals.pendingEssayCount} chờ chấm
-                        </span>
-                      )}
-                    </div>
-                    <p className="mt-1 truncate text-[13.5px] font-semibold">
-                      {shift.name}
-                    </p>
-                    <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11.5px] text-muted-foreground">
-                      <span className="inline-flex items-center gap-1">
-                        <Users className="h-3 w-3" />
-                        {report.totals.submitted}/{report.totals.eligible} nộp
-                      </span>
-                      <span className="inline-flex items-center gap-1">
-                        TB:{" "}
-                        <span className={cn("font-semibold", passColor)}>
-                          {formatScore(report.totals.avgRaw)}/{formatScore(scoring.maxScore)}
-                        </span>
-                      </span>
-                      <span className="inline-flex items-center gap-1">
-                        <Hourglass className="h-3 w-3" />
-                        {report.totals.avgDurationMin != null
-                          ? `${report.totals.avgDurationMin}p TB`
-                          : "—"}
-                      </span>
-                      <span>
-                        Nộp{" "}
-                        {new Date(shift.endAt).toLocaleString("vi-VN", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                          day: "2-digit",
-                          month: "2-digit",
-                        })}
-                      </span>
-                    </div>
-                  </div>
-                  <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
+        <div className="overflow-hidden rounded-xl border bg-card">
+          <div className="overflow-x-auto">
+            <table className="w-full text-[12.5px]">
+              <thead className="bg-muted/30 text-[11px] uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2.5 text-left font-semibold">STT</th>
+                  <th className="px-3 py-2.5 text-left font-semibold">Ca thi · Môn</th>
+                  <th className="px-3 py-2.5 text-left font-semibold">Khối</th>
+                  <th className="px-3 py-2.5 text-left font-semibold">Thời gian</th>
+                  <th className="px-3 py-2.5 text-center font-semibold">Học sinh</th>
+                  <th className="px-3 py-2.5 text-center font-semibold">TB điểm</th>
+                  <th className="px-3 py-2.5 text-left font-semibold">Trạng thái</th>
+                  <th className="px-3 py-2.5 text-left font-semibold">Cảnh báo</th>
+                  <th className="px-3 py-2.5 text-right font-semibold">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {filtered.map(
+                  ({ shift, report, criticalCount, warnCount }, idx) => {
+                    const subject = subjects.find(
+                      (s) => s.id === shift.subjectId,
+                    );
+                    const grade = grades.find((g) => g.id === shift.gradeId);
+                    const scoring = shift.scoring ?? DEFAULT_SCORING;
+                    const passRate = report.totals.passRate;
+                    const passColor =
+                      passRate >= 70
+                        ? "text-emerald-700"
+                        : passRate >= 50
+                          ? "text-blue-700"
+                          : passRate >= 30
+                            ? "text-amber-700"
+                            : "text-rose-700";
+                    const statusLabel =
+                      passRate >= 80
+                        ? { text: "Đạt giỏi", tone: "emerald" as const }
+                        : passRate >= 65
+                          ? { text: "Đạt khá", tone: "blue" as const }
+                          : passRate >= 50
+                            ? { text: "Đạt TB", tone: "amber" as const }
+                            : passRate > 0
+                              ? { text: "Chưa đạt", tone: "rose" as const }
+                              : { text: "Chưa có nộp", tone: "muted" as const };
+                    const statusToneClass = {
+                      emerald:
+                        "border-emerald-300 bg-emerald-50 text-emerald-700",
+                      blue: "border-blue-300 bg-blue-50 text-blue-700",
+                      amber: "border-amber-300 bg-amber-50 text-amber-700",
+                      rose: "border-rose-300 bg-rose-50 text-rose-700",
+                      muted: "border-zinc-300 bg-zinc-50 text-zinc-600",
+                    }[statusLabel.tone];
+                    return (
+                      <tr
+                        key={shift.id}
+                        className="hover:bg-accent/15"
+                      >
+                        <td className="px-3 py-2.5 font-mono text-[11px] text-muted-foreground">
+                          {idx + 1}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <p className="line-clamp-1 font-semibold">
+                            {shift.name}
+                          </p>
+                          <p className="line-clamp-1 text-[11px] text-muted-foreground">
+                            {shift.id}
+                            {subject ? (
+                              <span
+                                className="ml-2 rounded px-1.5 py-0.5 text-[10.5px] font-semibold"
+                                style={{
+                                  backgroundColor: `${subject.color}1A`,
+                                  color: subject.color,
+                                }}
+                              >
+                                {subject.name}
+                              </span>
+                            ) : null}
+                          </p>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          {grade ? (
+                            <span className="rounded bg-foreground/8 px-1.5 py-0.5 text-[10.5px] font-semibold">
+                              {grade.code}
+                            </span>
+                          ) : (
+                            <span className="text-meta">—</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5 whitespace-nowrap text-foreground/80">
+                          <p className="text-[11.5px]">
+                            {new Date(shift.startAt).toLocaleString("vi-VN", {
+                              day: "2-digit",
+                              month: "2-digit",
+                              year: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </p>
+                          <p className="text-[10.5px] text-muted-foreground">
+                            → {new Date(shift.endAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}
+                          </p>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <div className="flex items-center justify-center gap-1">
+                            <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                            <span className="font-semibold tabular-nums">
+                              {report.totals.submitted}
+                            </span>
+                            <span className="text-muted-foreground">/{report.totals.eligible}</span>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2.5 text-center">
+                          <span
+                            className={`font-mono text-[13px] font-bold ${passColor}`}
+                          >
+                            {formatScore(report.totals.avgRaw)}
+                            <span className="text-[10.5px] font-normal text-muted-foreground">
+                              /{formatScore(scoring.maxScore)}
+                            </span>
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <span
+                            className={`rounded-md border px-1.5 py-0.5 text-[10.5px] font-semibold ${statusToneClass}`}
+                          >
+                            {statusLabel.text}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <div className="flex flex-wrap items-center gap-1">
+                            {criticalCount > 0 && (
+                              <Tooltip
+                                text={`${criticalCount} cảnh báo khẩn từ AI`}
+                                className="gap-1"
+                              >
+                                <span className="inline-flex items-center gap-1 rounded-md border border-rose-300 bg-rose-50 px-1.5 py-0.5 text-[10.5px] font-bold text-rose-700">
+                                  🚨 {criticalCount}
+                                </span>
+                              </Tooltip>
+                            )}
+                            {warnCount > 0 && (
+                              <Tooltip
+                                text={`${warnCount} cảnh báo thường`}
+                                className="gap-1"
+                              >
+                                <span className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10.5px] font-bold text-amber-700">
+                                  ⚠ {warnCount}
+                                </span>
+                              </Tooltip>
+                            )}
+                            {report.totals.pendingEssayCount > 0 && (
+                              <Tooltip
+                                text={`${report.totals.pendingEssayCount} câu tự luận chờ chấm`}
+                                className="gap-1"
+                              >
+                                <span className="inline-flex items-center gap-1 rounded-md border border-violet-300 bg-violet-50 px-1.5 py-0.5 text-[10.5px] font-bold text-violet-700">
+                                  🕒 {report.totals.pendingEssayCount}
+                                </span>
+                              </Tooltip>
+                            )}
+                            {criticalCount === 0 &&
+                              warnCount === 0 &&
+                              report.totals.pendingEssayCount === 0 && (
+                                <span className="text-[10.5px] text-muted-foreground">
+                                  —
+                                </span>
+                              )}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <div className="flex items-center justify-end gap-1">
+                            <Link
+                              href={`/reports/${shift.id}`}
+                              className="inline-flex h-7 items-center gap-1 rounded-md border bg-card px-2 text-[11px] font-medium hover:bg-accent/30"
+                            >
+                              <BarChart3 className="h-3.5 w-3.5" />
+                              Báo cáo
+                            </Link>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  },
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
       </>
       )}
