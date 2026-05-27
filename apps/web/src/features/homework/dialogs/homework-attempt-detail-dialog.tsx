@@ -59,7 +59,7 @@ export function HomeworkAttemptDetailDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="flex max-h-[94vh] w-full max-w-4xl flex-col overflow-hidden p-0"
+        className="flex h-[90vh] w-full max-w-4xl flex-col gap-0 overflow-hidden p-0"
         onPointerDownOutside={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}
       >

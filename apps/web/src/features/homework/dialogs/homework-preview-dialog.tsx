@@ -131,7 +131,13 @@ export function HomeworkPreviewDialog({
       }}
     >
       <DialogContent
-        className="flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden p-0"
+        // Force a fixed height so the inner overflow-y-auto always has
+        // a concrete container to scroll inside. `max-h` was being
+        // beaten by the natural content height when a homework had
+        // many long questions in edit mode — the dialog grew taller
+        // than viewport instead of shrinking. `gap-0` overrides the
+        // base `gap-4` so flex children sit flush.
+        className="flex h-[90vh] w-full max-w-5xl flex-col gap-0 overflow-hidden p-0"
         onPointerDownOutside={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}
       >

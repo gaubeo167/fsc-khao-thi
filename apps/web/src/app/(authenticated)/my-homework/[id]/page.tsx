@@ -47,6 +47,7 @@ export default function HomeworkRuntimePage() {
 
   const session = useAuthStore((s) => s.session);
   const homework = useHomeworkStore((s) => s.findById(id));
+  const homeworkHydrated = useHomeworkStore((s) => s.hydrated);
   const allQuestions = useQuestionsStore((s) => s.questions);
   const allMaterials = useMaterialsStore((s) => s.materials);
   const startOrResume = useHomeworkAttemptsStore((s) => s.startOrResume);
@@ -97,7 +98,16 @@ export default function HomeworkRuntimePage() {
       .filter((m): m is LearningMaterial => !!m);
   }, [homework, allMaterials]);
 
-  if (!homework) return notFound();
+  if (!homework) {
+    if (!homeworkHydrated) {
+      return (
+        <div className="flex items-center justify-center py-20 text-muted-foreground">
+          Đang tải BTVN…
+        </div>
+      );
+    }
+    return notFound();
+  }
   if (!session) {
     return (
       <Gate title="Bạn chưa đăng nhập" backHref="/" />

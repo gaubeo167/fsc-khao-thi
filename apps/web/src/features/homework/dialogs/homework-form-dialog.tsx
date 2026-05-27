@@ -352,7 +352,7 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
         }}
       >
         <DialogContent
-          className="max-w-6xl max-h-[94vh] overflow-hidden p-0"
+          className="flex h-[92vh] w-full max-w-6xl flex-col gap-0 overflow-hidden p-0"
           onPointerDownOutside={(e) => e.preventDefault()}
           onInteractOutside={(e) => e.preventDefault()}
         >
@@ -375,7 +375,7 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
           </DialogHeader>
 
           {/* Body — 2 columns */}
-          <div className="grid max-h-[calc(94vh-9rem)] grid-cols-1 gap-0 overflow-y-auto lg:grid-cols-[1fr_320px]">
+          <div className="grid min-h-0 flex-1 grid-cols-1 gap-0 overflow-y-auto lg:grid-cols-[1fr_320px]">
             {/* Left column — form sections */}
             <div className="space-y-5 px-6 py-5">
               <FormSection
@@ -838,7 +838,7 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
           </div>
 
           {/* Footer */}
-          <div className="flex flex-wrap items-center justify-end gap-2 border-t bg-card px-6 py-3">
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t bg-card px-6 py-3">
             <Button
               variant="outline"
               onClick={() => onOpenChange(false)}

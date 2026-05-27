@@ -28,6 +28,7 @@ const MaterialViewerDialog = dynamic(
 export default function HomeworkPreviewPage() {
   const params = useParams<{ id: string }>();
   const homework = useHomeworkStore((s) => s.findById(params.id));
+  const homeworkHydrated = useHomeworkStore((s) => s.hydrated);
   const allQuestions = useQuestionsStore((s) => s.questions);
   const allMaterials = useMaterialsStore((s) => s.materials);
   const subjects = useSubjectsStore((s) => s.subjects);
@@ -37,7 +38,16 @@ export default function HomeworkPreviewPage() {
   const [viewingMaterial, setViewingMaterial] =
     useState<LearningMaterial | null>(null);
 
-  if (!homework) return notFound();
+  if (!homework) {
+    if (!homeworkHydrated) {
+      return (
+        <div className="flex items-center justify-center py-20 text-muted-foreground">
+          Đang tải BTVN…
+        </div>
+      );
+    }
+    return notFound();
+  }
 
   const subject = subjects.find((s) => s.id === homework.subjectId);
   const grade = homework.gradeId

@@ -168,7 +168,7 @@ export default function ShiftsPage() {
   }, [shifts, campusId, scope]);
 
   const filtered = useMemo(() => {
-    return scoped.filter((s) => {
+    const rows = scoped.filter((s) => {
       const eff = effectiveShiftStatus(s);
       if (statusFilter !== "all" && eff !== statusFilter) return false;
       if (gradeFilter !== "all" && s.gradeId !== gradeFilter) return false;
@@ -183,6 +183,14 @@ export default function ShiftsPage() {
           return false;
       }
       return true;
+    });
+    // Newest first by createdAt (then fall back to id) — admins almost
+    // always want to see what they just created at the top.
+    return rows.slice().sort((a, b) => {
+      if (a.createdAt !== b.createdAt) {
+        return a.createdAt < b.createdAt ? 1 : -1;
+      }
+      return a.id < b.id ? 1 : -1;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scoped, statusFilter, gradeFilter, subjectFilter, classFilter, search]);
@@ -452,7 +460,22 @@ export default function ShiftsPage() {
           </p>
         </div>
       ) : (
-        <ul className="grid gap-3 lg:grid-cols-2">
+        <div className="overflow-hidden rounded-xl border bg-card">
+        <div className="overflow-x-auto">
+        <table className="w-full text-[12.5px]">
+        <thead className="bg-muted/30 text-[11px] uppercase tracking-wide text-muted-foreground">
+          <tr>
+            <th className="px-3 py-2.5 text-left font-semibold">Mã</th>
+            <th className="px-3 py-2.5 text-left font-semibold">Tên ca</th>
+            <th className="px-3 py-2.5 text-left font-semibold">Môn · Khối</th>
+            <th className="px-3 py-2.5 text-left font-semibold">Thời gian</th>
+            <th className="px-3 py-2.5 text-left font-semibold">Lớp · HS · Phòng</th>
+            <th className="px-3 py-2.5 text-left font-semibold">Bộ đề</th>
+            <th className="px-3 py-2.5 text-left font-semibold">Trạng thái</th>
+            <th className="px-3 py-2.5 text-right font-semibold">Thao tác</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y">
           {filtered.map((sh) => {
             const grade = grades.find((g) => g.id === sh.gradeId);
             const subject = subjects.find((s) => s.id === sh.subjectId);
@@ -487,16 +510,37 @@ export default function ShiftsPage() {
               (s, r) => s + r.proctorIds.length,
               0,
             );
+            const eff = effectiveShiftStatus(sh);
             return (
-              <li key={sh.id}>
-                <article className="overflow-hidden rounded-xl border bg-surface shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-shadow hover:shadow-[0_4px_14px_-4px_rgba(15,23,42,0.08)]">
-                  <header className="flex flex-wrap items-center gap-2 border-b bg-[var(--color-surface-2)] px-4 py-2.5">
-                    <span className="rounded-md bg-foreground/8 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-foreground/65">
-                      {sh.id}
-                    </span>
+              <tr
+                key={sh.id}
+                className={cn(
+                  "hover:bg-accent/15",
+                  sh.archivedAt && "opacity-60",
+                )}
+              >
+                <td className="px-3 py-2.5 font-mono text-[11px] text-muted-foreground">
+                  {sh.id}
+                </td>
+                <td className="px-3 py-2.5">
+                  <p className="line-clamp-1 font-semibold text-foreground">
+                    {sh.name}
+                  </p>
+                  <p className="line-clamp-1 text-[11px] text-muted-foreground">
+                    GV {sh.ownerName}
+                    {activeAntiCheat > 0 && (
+                      <>
+                        {" · "}
+                        <Shield className="inline h-3 w-3" /> {activeAntiCheat}/{totalAntiCheat}
+                      </>
+                    )}
+                  </p>
+                </td>
+                <td className="px-3 py-2.5">
+                  <div className="flex flex-wrap items-center gap-1">
                     {subject && (
                       <span
-                        className="rounded px-1.5 py-0.5 text-[10px] font-semibold"
+                        className="rounded px-1.5 py-0.5 text-[10.5px] font-semibold"
                         style={{
                           backgroundColor: `${subject.color}1A`,
                           color: subject.color,
@@ -506,74 +550,52 @@ export default function ShiftsPage() {
                       </span>
                     )}
                     {grade && (
-                      <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-foreground/70">
+                      <span className="rounded bg-foreground/8 px-1.5 py-0.5 text-[10.5px]">
                         {grade.code}
                       </span>
                     )}
-                    {(() => {
-                      const eff = effectiveShiftStatus(sh);
-                      return (
-                        <span
-                          className={cn(
-                            "ml-auto rounded-md border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em]",
-                            STATUS_TONE[eff],
-                          )}
-                        >
-                          {STATUS_LABEL[eff]}
-                        </span>
-                      );
-                    })()}
-                  </header>
-
-                  <div className="space-y-2 px-4 py-3.5">
-                    <p className="text-[15px] font-semibold leading-snug text-foreground">
-                      {sh.name}
-                    </p>
-                    <div className="grid grid-cols-2 gap-2 text-[12px] text-muted-foreground">
-                      <p>
-                        <CalendarClock className="inline h-3 w-3" />{" "}
-                        {formatDateTime(sh.startAt)}
-                      </p>
-                      <p>→ {formatDateTime(sh.endAt)}</p>
-                      <p>
-                        <Users className="inline h-3 w-3" /> {classes.length} lớp ·{" "}
-                        {totalStudents} HS
-                      </p>
-                      <p>
-                        🏛 {sh.rooms.length} phòng · {proctors} giám thị
-                      </p>
-                    </div>
-                    {pkg && (
-                      <p className="text-[11px] text-muted-foreground">
-                        Bộ đề:{" "}
-                        <span className="font-semibold text-foreground/80">
-                          {pkg.name}
-                        </span>
-                        {bp && (
-                          <>
-                            {" "}
-                            <span className="text-muted-foreground">
-                              · Khung: {bp.name}
-                            </span>
-                          </>
-                        )}
-                      </p>
-                    )}
-                    <p className="inline-flex items-center gap-1 rounded-md bg-primary-soft px-2 py-0.5 text-[11px] font-semibold text-primary-text">
-                      {activeAntiCheat === totalAntiCheat ? (
-                        <Shield className="h-3 w-3" />
-                      ) : (
-                        <ShieldOff className="h-3 w-3" />
-                      )}
-                      Anti-cheat: {activeAntiCheat} / {totalAntiCheat} biện pháp
-                    </p>
                   </div>
-
-                  <footer className="flex items-center gap-1 border-t bg-[var(--color-surface-2)] px-3 py-2">
-                    <span className="text-[11px] text-muted-foreground">
-                      {sh.ownerName}
+                </td>
+                <td className="px-3 py-2.5 whitespace-nowrap text-foreground/80">
+                  <p>{formatDateTime(sh.startAt)}</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    → {formatDateTime(sh.endAt)}
+                  </p>
+                </td>
+                <td className="px-3 py-2.5 whitespace-nowrap text-foreground/80">
+                  {classes.length} lớp · {totalStudents} HS · {sh.rooms.length} phòng
+                </td>
+                <td className="px-3 py-2.5 text-foreground/80">
+                  {pkg ? (
+                    <>
+                      <p className="line-clamp-1">{pkg.name}</p>
+                      {bp && (
+                        <p className="line-clamp-1 text-[11px] text-muted-foreground">
+                          Khung: {bp.name}
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <span className="text-meta">—</span>
+                  )}
+                </td>
+                <td className="px-3 py-2.5">
+                  <span
+                    className={cn(
+                      "rounded-md border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em]",
+                      STATUS_TONE[eff],
+                    )}
+                  >
+                    {STATUS_LABEL[eff]}
+                  </span>
+                  {sh.archivedAt ? (
+                    <span className="ml-1 rounded-md border border-zinc-300 bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600">
+                      🗄
                     </span>
-                    <div className="ml-auto flex items-center gap-1">
+                  ) : null}
+                </td>
+                <td className="px-3 py-2.5">
+                  <div className="flex items-center justify-end gap-1">
                       {(() => {
                         // Count essay/ai-generated questions in this shift's
                         // blueprint topics so we know whether to surface the
@@ -722,13 +744,15 @@ export default function ShiftsPage() {
                           <Trash2 className="h-3.5 w-3.5" strokeWidth={1.75} />
                         </IconButton>
                       )}
-                    </div>
-                  </footer>
-                </article>
-              </li>
+                  </div>
+                </td>
+              </tr>
             );
           })}
-        </ul>
+        </tbody>
+        </table>
+        </div>
+        </div>
       )}
 
       <ShiftWizard

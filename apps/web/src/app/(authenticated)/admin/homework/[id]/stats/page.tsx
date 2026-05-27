@@ -29,6 +29,7 @@ export default function HomeworkStatsPage() {
   const id = params.id;
 
   const homework = useHomeworkStore((s) => s.findById(id));
+  const homeworkHydrated = useHomeworkStore((s) => s.hydrated);
   const allQuestions = useQuestionsStore((s) => s.questions);
   const attempts = useHomeworkAttemptsStore((s) => s.attempts);
   const users = useUsersStore((s) => s.users);
@@ -36,7 +37,16 @@ export default function HomeworkStatsPage() {
 
   const [detailStudentId, setDetailStudentId] = useState<string | null>(null);
 
-  if (!homework) return notFound();
+  if (!homework) {
+    if (!homeworkHydrated) {
+      return (
+        <div className="flex items-center justify-center py-20 text-muted-foreground">
+          Đang tải BTVN…
+        </div>
+      );
+    }
+    return notFound();
+  }
 
   const questions = homework.questionIds
     .map((qid) => allQuestions.find((q) => q.id === qid))

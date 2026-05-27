@@ -54,6 +54,7 @@ export default function ReportDetailPage() {
       : session?.campusId ?? null;
 
   const shift = useShiftsStore((s) => s.shifts.find((x) => x.id === shiftId));
+  const shiftsHydrated = useShiftsStore((s) => s.hydrated);
   const attempts = useAttemptsStore((s) => s.attempts);
   const allQuestions = useQuestionsStore((s) => s.questions);
   const subjects = useSubjectsStore((s) => s.subjects);
@@ -120,7 +121,20 @@ export default function ReportDetailPage() {
   // review dialog showing full content, options, correct answer, etc.
   const [reviewing, setReviewing] = useState<Question | null>(null);
 
-  if (!shift) return notFound();
+  // Wait for the shifts mirror to hydrate before deciding "not found".
+  // Without this guard, the first render (when shifts == []) would
+  // throw notFound() and the page renders 404 even when the shift
+  // does exist server-side.
+  if (!shift) {
+    if (!shiftsHydrated) {
+      return (
+        <div className="flex items-center justify-center py-20 text-muted-foreground">
+          Đang tải báo cáo…
+        </div>
+      );
+    }
+    return notFound();
+  }
   if (campusId && shift.campusId !== campusId) {
     return (
       <div className="rounded-xl border bg-card p-6 text-center text-sm text-muted-foreground">
