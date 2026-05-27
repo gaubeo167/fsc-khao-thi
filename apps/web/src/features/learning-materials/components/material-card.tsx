@@ -6,6 +6,7 @@ import {
   FileText,
   FileType,
   ImageIcon,
+  Link2,
   Music2,
   Play,
   RotateCcw,
@@ -42,11 +43,15 @@ interface Props {
 
 function MaterialCardImpl({ material, onView, onArchive, onRestore }: Props) {
   const subjects = useSubjectsStore((s) => s.subjects);
+  const tocNodes = useSubjectsStore((s) => s.tocNodes);
   const grades = useGradesStore((s) => s.grades);
 
   const subject = subjects.find((s) => s.id === material.subjectId);
   const grade = material.gradeId
     ? grades.find((g) => g.id === material.gradeId)
+    : null;
+  const tocLabel = material.tocNodeId
+    ? buildTocPathLocal(tocNodes, material.tocNodeId)
     : null;
   const Icon = iconForType(material.fileType);
 
@@ -63,9 +68,17 @@ function MaterialCardImpl({ material, onView, onArchive, onRestore }: Props) {
           <p className="truncate text-[14px] font-semibold text-foreground">
             {material.title}
           </p>
-          <p className="truncate text-meta">
-            {FILE_TYPE_LABEL[material.fileType]} · {formatFileSize(material.sizeBytes)}{" "}
-            · {material.originalFilename}
+          <p className="truncate text-meta inline-flex items-center gap-1">
+            {material.sourceType === "link" ? (
+              <>
+                <Link2 className="h-3 w-3" /> Liên kết · {FILE_TYPE_LABEL[material.fileType]}
+              </>
+            ) : (
+              <>
+                {FILE_TYPE_LABEL[material.fileType]} ·{" "}
+                {formatFileSize(material.sizeBytes)} · {material.originalFilename}
+              </>
+            )}
           </p>
         </div>
         <div className="flex items-center gap-1">
@@ -102,9 +115,26 @@ function MaterialCardImpl({ material, onView, onArchive, onRestore }: Props) {
         </div>
       </header>
 
-      {material.description ? (
-        <div className="px-4 py-3 text-[12.5px] leading-relaxed text-foreground/80">
-          {material.description}
+      {material.description || tocLabel || material.tags.length > 0 ? (
+        <div className="space-y-2 px-4 py-3 text-[12.5px] leading-relaxed text-foreground/80">
+          {material.description ? <p>{material.description}</p> : null}
+          {tocLabel ? (
+            <p className="text-meta">
+              📖 <span className="font-medium text-foreground/75">{tocLabel}</span>
+            </p>
+          ) : null}
+          {material.tags.length > 0 ? (
+            <div className="flex flex-wrap gap-1">
+              {material.tags.map((t) => (
+                <span
+                  key={t}
+                  className="rounded-md bg-muted/60 px-1.5 py-0.5 text-[10.5px] font-medium text-foreground/70"
+                >
+                  #{t}
+                </span>
+              ))}
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -197,6 +227,27 @@ function colorForType(t: MaterialFileType): string {
     default:
       return "#525252";
   }
+}
+
+/** Walk the parent chain to build a slash-separated TOC path label.
+ *  Inlined here (instead of importing) since the question-bank version
+ *  is local to its dialog. */
+function buildTocPathLocal(
+  nodes: Array<{ id: string; name: string; parentId: string | null }>,
+  nodeId: string,
+): string | null {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const target = byId.get(nodeId);
+  if (!target) return null;
+  const labels: string[] = [];
+  let current: { id: string; name: string; parentId: string | null } | undefined =
+    target;
+  let safety = 16;
+  while (current && safety-- > 0) {
+    labels.unshift(current.name);
+    current = current.parentId ? byId.get(current.parentId) : undefined;
+  }
+  return labels.join(" / ");
 }
 
 export const MaterialCard = memo(MaterialCardImpl);

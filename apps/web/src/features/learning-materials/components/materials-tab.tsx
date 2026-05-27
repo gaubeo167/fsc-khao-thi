@@ -117,7 +117,7 @@ export function MaterialsTab({
     const q = search.trim().toLowerCase();
     if (q) {
       rows = rows.filter((m) =>
-        `${m.title} ${m.description ?? ""} ${m.ownerName}`
+        `${m.title} ${m.description ?? ""} ${m.ownerName} ${m.tags.join(" ")}`
           .toLowerCase()
           .includes(q),
       );

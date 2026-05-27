@@ -14,6 +14,7 @@ import {
 import {
   FILE_TYPE_LABEL,
   formatFileSize,
+  toEmbedUrl,
   type LearningMaterial,
 } from "../data/types";
 
@@ -86,6 +87,32 @@ export function MaterialViewerDialog({ material, onClose }: Props) {
 }
 
 function ViewerBody({ material }: { material: LearningMaterial }) {
+  // Link source — dispatch on hostname pattern to embed YouTube /
+  // Drive / generic URLs. Falls back to "Open in new tab" CTA when
+  // we can't tell.
+  if (material.sourceType === "link") {
+    const { embedUrl, canIframe } = toEmbedUrl(material.downloadUrl);
+    if (canIframe) {
+      return (
+        <iframe
+          src={embedUrl}
+          title={material.title}
+          allow="autoplay; encrypted-media; fullscreen"
+          allowFullScreen
+          className="h-[70vh] w-full rounded-md border"
+        />
+      );
+    }
+    return (
+      <div className="rounded-lg border border-dashed bg-muted/30 px-6 py-10 text-center">
+        <p className="text-section-title">Không thể xem trực tiếp liên kết này</p>
+        <p className="text-meta mt-1">
+          Bấm "Mở tab mới" phía dưới để truy cập liên kết gốc.
+        </p>
+      </div>
+    );
+  }
+
   switch (material.fileType) {
     case "video":
       return (

@@ -185,9 +185,11 @@ export const useMaterialsStore = create<State & Actions>()((set, get) => ({
       campusId: before.campusId,
       reason,
     });
-    // Best-effort delete of underlying bytes. Kept fire-and-forget so
-    // archive UX stays instant.
-    void deleteStoredFile(before.storagePath);
+    // Best-effort delete of underlying bytes — only for upload sources
+    // (link materials have no bytes to delete; storagePath is empty).
+    if (before.sourceType === "upload" && before.storagePath) {
+      void deleteStoredFile(before.storagePath);
+    }
   },
 
   restore(id, actorUid) {
