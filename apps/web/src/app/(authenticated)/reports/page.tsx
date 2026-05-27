@@ -16,6 +16,7 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import { Input } from "@/components/ui/input";
@@ -63,7 +64,21 @@ export default function ReportsPage() {
   const [gradeFilter, setGradeFilter] = useState<string>("all");
   const [subjectFilter, setSubjectFilter] = useState<string>("all");
   const [classFilter, setClassFilter] = useState<string>("all");
-  const [reportTab, setReportTab] = useState<"shifts" | "homework">("shifts");
+  // Tab state persisted in the URL (?tab=shifts | homework) so the
+  // back button after navigating to a stats page lands on the same
+  // tab the user was on. Defaults to "shifts".
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const reportTab: "shifts" | "homework" =
+    tabParam === "homework" ? "homework" : "shifts";
+  function setReportTab(next: "shifts" | "homework") {
+    const params = new URLSearchParams(searchParams.toString());
+    if (next === "shifts") params.delete("tab");
+    else params.set("tab", next);
+    const query = params.toString();
+    router.replace(query ? `/reports?${query}` : "/reports");
+  }
 
   const allHomework = useHomeworkStore((s) => s.homework);
   const homeworkAttempts = useHomeworkAttemptsStore((s) => s.attempts);

@@ -21,7 +21,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -44,6 +44,7 @@ import {
   FILE_TYPE_LABEL,
 } from "@/features/learning-materials/data/types";
 import { findQuestionType } from "@/features/question-bank/data/question-types";
+import { RenderedContent } from "@/features/question-bank/components/rendered-content";
 import { useQuestionsStore } from "@/features/question-bank/state/questions-store";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import { cn } from "@/lib/utils";
@@ -125,6 +126,9 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
   const [submitting, setSubmitting] = useState(false);
 
   const [questionPickerOpen, setQuestionPickerOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const importFileRef = useRef<HTMLInputElement | null>(null);
+  const createQuestion = useQuestionsStore((s) => s.create);
   const [materialPickerOpen, setMaterialPickerOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [viewingQuestionId, setViewingQuestionId] = useState<string | null>(
@@ -290,6 +294,164 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
   }
   function removeQuestion(id: string) {
     setQuestionIds((prev) => prev.filter((x) => x !== id));
+  }
+
+  /**
+   * Upload a Word file directly into the BTVN flow. Posts to the same
+   * /api/import/parse endpoint as the Ngân hàng câu hỏi import dialog,
+   * converts each parsed question into a Question row in the bank
+   * (kho: "personal", status: "approved" since the teacher is the
+   * author + uploader), then auto-ticks the new ids into selectedQuestions.
+   *
+   * Trade-off: this skips the per-question review UI the bank import
+   * dialog has. Teacher can fine-tune by clicking the 👁 / ✏ icons on
+   * each card after upload.
+   */
+  async function importWordFile(file: File) {
+    if (!session) return;
+    if (!subjectId) {
+      toast.error("Chọn môn học trước khi import từ Word");
+      return;
+    }
+    setImporting(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/import/parse", {
+        method: "POST",
+        body: form,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data?.message ?? "Đọc file thất bại");
+        return;
+      }
+      const parsed: Array<{
+        type: string;
+        content: string;
+        explanation?: string;
+        difficulty: "easy" | "medium" | "hard";
+        options?: Array<{ content: string; isCorrect: boolean }>;
+        correctAnswer?: boolean;
+        blanks?: Array<{ acceptedAnswers: string[] }>;
+        pairs?: Array<{ left: string; right: string }>;
+        items?: string[];
+        rubric?: Array<{ label: string; points: number }>;
+        wordMin?: number;
+        wordMax?: number;
+      }> = data.questions ?? [];
+      if (parsed.length === 0) {
+        toast.error("Không trích xuất được câu hỏi nào từ file.");
+        return;
+      }
+
+      // Default storage location: personal kho (teacher's draft pile),
+      // approved status so the teacher can use immediately. Going to
+      // campus kho would require approval — slower; teacher can
+      // promote individual questions later.
+      const sharedBase = {
+        subjectId,
+        gradeId: gradeId || null,
+        tocNodeId: null,
+        tags: [] as string[],
+        kho: "personal" as const,
+        campusId: null,
+        ownerId: session.userId,
+        ownerName: session.name ?? "—",
+        status: "approved" as const,
+        approvedBy: session.userId,
+        rejectionNote: null,
+      };
+      const newIds: string[] = [];
+      for (const q of parsed) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let payload: any = null;
+        const baseQ = {
+          ...sharedBase,
+          content: q.content,
+          explanation: q.explanation ?? null,
+          difficulty: q.difficulty,
+        };
+        switch (q.type) {
+          case "mcq-single":
+          case "mcq-multi":
+            payload = {
+              ...baseQ,
+              type: q.type,
+              options: (q.options ?? []).map((o, i) => ({
+                id: `opt-${Date.now()}-${i}`,
+                ...o,
+              })),
+            };
+            break;
+          case "true-false":
+            payload = {
+              ...baseQ,
+              type: "true-false",
+              correctAnswer: q.correctAnswer ?? false,
+            };
+            break;
+          case "fill-blank":
+            payload = {
+              ...baseQ,
+              type: "fill-blank",
+              blanks: q.blanks ?? [],
+            };
+            break;
+          case "matching":
+            payload = {
+              ...baseQ,
+              type: "matching",
+              pairs: (q.pairs ?? []).map((p, i) => ({
+                id: `p-${Date.now()}-${i}`,
+                ...p,
+              })),
+            };
+            break;
+          case "ordering":
+            payload = {
+              ...baseQ,
+              type: "ordering",
+              items: (q.items ?? []).map((c, i) => ({
+                id: `i-${Date.now()}-${i}`,
+                content: c,
+              })),
+            };
+            break;
+          case "essay":
+            // Essay isn't auto-gradable so it doesn't fit BTVN. Skip
+            // silently — surfaced in toast.
+            continue;
+          case "underline":
+            payload = { ...baseQ, type: "underline" };
+            break;
+          default:
+            continue;
+        }
+        if (payload) {
+          const created = createQuestion(payload);
+          newIds.push(created.id);
+        }
+      }
+      if (newIds.length === 0) {
+        toast.error(
+          "File chỉ chứa loại câu hỏi không tự chấm được (vd: tự luận).",
+        );
+        return;
+      }
+      setQuestionIds((prev) => [...prev, ...newIds]);
+      toast.success(
+        `Đã import ${newIds.length} câu hỏi vào kho cá nhân và thêm vào BTVN.`,
+      );
+    } catch (e) {
+      toast.error(
+        e instanceof Error ? `Import thất bại: ${e.message}` : "Import thất bại",
+      );
+    } finally {
+      setImporting(false);
+      // Reset input so the same file can be re-uploaded if needed.
+      if (importFileRef.current) importFileRef.current.value = "";
+    }
   }
   function removeMaterial(id: string) {
     setMaterialIds((prev) => prev.filter((x) => x !== id));
@@ -610,16 +772,41 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
                     </span>
                   ) : (
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <a
-                        href="/admin/question-bank"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex h-7 items-center gap-1 rounded-md border bg-card px-2 text-[11.5px] font-medium hover:bg-accent/30"
-                        title="Import từ Word ở Ngân hàng câu hỏi → quay lại tick chọn"
+                      <input
+                        ref={importFileRef}
+                        type="file"
+                        accept=".docx,.doc"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) void importWordFile(f);
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!subjectId)
+                            return toast.error(
+                              "Chọn môn trước khi import từ Word",
+                            );
+                          importFileRef.current?.click();
+                        }}
+                        disabled={submitting || importing}
+                        className="inline-flex h-7 items-center gap-1 rounded-md border bg-card px-2 text-[11.5px] font-medium hover:bg-accent/30 disabled:opacity-50"
+                        title="Upload file Word — câu hỏi tự thêm vào kho cá nhân + BTVN"
                       >
-                        <FileText className="h-3.5 w-3.5" />
-                        Import từ Word
-                      </a>
+                        {importing ? (
+                          <>
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            Đang đọc…
+                          </>
+                        ) : (
+                          <>
+                            <FileText className="h-3.5 w-3.5" />
+                            Import từ Word
+                          </>
+                        )}
+                      </button>
                       <Button
                         type="button"
                         size="sm"
@@ -657,9 +844,11 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
                             {i + 1}
                           </span>
                           <div className="min-w-0 flex-1">
-                            <p className="line-clamp-1 text-[12.5px]">
-                              {plainText(q.content)}
-                            </p>
+                            <RenderedContent
+                              content={q.content}
+                              hideUnderlineMarks
+                              className="line-clamp-1 text-[12.5px]"
+                            />
                             <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10.5px] text-muted-foreground">
                               <span className="font-mono">{q.id}</span>
                               {meta && (

@@ -32,6 +32,7 @@ import {
   type TocNode,
 } from "@/features/subjects/data/seed-toc";
 import { findQuestionType } from "@/features/question-bank/data/question-types";
+import { RenderedContent } from "@/features/question-bank/components/rendered-content";
 
 const ViewQuestionDialog = dynamic(
   () =>
@@ -367,9 +368,11 @@ export function QuestionPickerDialog({
                           ) : null}
                         </span>
                         <div className="min-w-0 flex-1 space-y-1">
-                          <p className="line-clamp-2 text-[13px] leading-snug">
-                            {plainText(q.content)}
-                          </p>
+                          <RenderedContent
+                            content={q.content}
+                            hideUnderlineMarks
+                            className="line-clamp-2 text-[13px] leading-snug"
+                          />
                           <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
                             <span className="font-mono">{q.id}</span>
                             {meta && (
