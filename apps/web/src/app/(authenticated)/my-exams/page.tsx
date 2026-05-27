@@ -1,10 +1,19 @@
 "use client";
 
-import { ListChecks, Search } from "lucide-react";
+import {
+  Activity,
+  CalendarClock,
+  CheckCircle2,
+  ListChecks,
+  Search,
+  X,
+} from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { Input } from "@/components/ui/input";
+import { KpiCard } from "@/components/ui/kpi-card";
+import { Select } from "@/components/ui/select";
 import { useAuthStore } from "@/features/auth/state/auth-store";
 import type { ShiftStatus } from "@/features/exam-shifts/data/types";
 import { PageHeader } from "@/features/shell/components/page-header";
@@ -81,6 +90,9 @@ export default function MyExamsPage() {
     draft: 0,
   };
 
+  const dirty =
+    filter !== "all" || subjectFilter !== "all" || search.trim() !== "";
+
   return (
     <>
       <PageHeader
@@ -88,63 +100,89 @@ export default function MyExamsPage() {
         description="Các ca thi bạn được gán — sắp tới, đang diễn ra và đã hoàn thành."
       />
 
-      {/* Filter pills */}
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        {FILTER_OPTIONS.map((opt) => {
-          const c =
-            opt.value === "all"
-              ? counts.all
-              : counts[opt.value as keyof typeof counts] ?? 0;
-          return (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => setFilter(opt.value)}
-              className={cn(
-                "rounded-full border px-3 py-1 text-[12px] font-medium transition",
-                filter === opt.value
-                  ? "border-primary bg-primary text-primary-foreground"
-                  : "border-border bg-card text-foreground/80 hover:bg-accent/30",
-              )}
-            >
-              {opt.label}{" "}
-              <span
-                className={cn(
-                  "ml-1 rounded px-1 text-[10px] font-semibold",
-                  filter === opt.value
-                    ? "bg-primary-foreground/20"
-                    : "bg-muted text-muted-foreground",
-                )}
-              >
-                {c}
-              </span>
-            </button>
-          );
-        })}
+      {/* KPI strip — same shape as /admin/shifts */}
+      <section className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <KpiCard
+          label="Tổng ca thi"
+          value={counts.all.toLocaleString("vi-VN")}
+          icon={ListChecks}
+          tone="blue"
+        />
+        <KpiCard
+          label="Đang diễn ra"
+          value={counts["in-progress"].toLocaleString("vi-VN")}
+          icon={Activity}
+          tone="green"
+        />
+        <KpiCard
+          label="Sắp diễn ra"
+          value={counts.scheduled.toLocaleString("vi-VN")}
+          icon={CalendarClock}
+          tone="orange"
+        />
+        <KpiCard
+          label="Đã kết thúc"
+          value={counts.completed.toLocaleString("vi-VN")}
+          icon={CheckCircle2}
+          tone="violet"
+        />
+      </section>
 
-        <div className="relative ml-auto">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+      {/* Filter card — matches admin/shifts style */}
+      <div className="mb-3 flex flex-wrap items-center gap-2.5 rounded-xl border bg-card p-3">
+        <div className="relative min-w-[220px] flex-1">
+          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Tìm theo tên ca / ID…"
-            className="h-9 w-64 pl-8"
+            placeholder="Tìm theo tên ca / mã ca thi…"
+            className="h-9 pl-8"
           />
         </div>
-
+        <Select
+          value={filter}
+          onChange={(e) => setFilter(e.target.value as FilterValue)}
+          className="h-9 min-w-[160px]"
+        >
+          {FILTER_OPTIONS.map((opt) => {
+            const c =
+              opt.value === "all"
+                ? counts.all
+                : counts[opt.value as keyof typeof counts] ?? 0;
+            return (
+              <option key={opt.value} value={opt.value}>
+                {opt.label} ({c})
+              </option>
+            );
+          })}
+        </Select>
         {mySubjects.length > 1 && (
-          <select
+          <Select
             value={subjectFilter}
             onChange={(e) => setSubjectFilter(e.target.value)}
-            className="h-9 rounded-md border bg-card px-2 text-[12px]"
+            className="h-9 min-w-[140px]"
           >
-            <option value="all">Tất cả môn ({mySubjects.length})</option>
+            <option value="all">Môn: Tất cả</option>
             {mySubjects.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}
               </option>
             ))}
-          </select>
+          </Select>
+        )}
+        {dirty && (
+          <button
+            type="button"
+            onClick={() => {
+              setFilter("all");
+              setSubjectFilter("all");
+              setSearch("");
+            }}
+            className="rounded-md border bg-card px-2.5 py-1 text-[11.5px] font-medium text-muted-foreground hover:bg-accent/30"
+          >
+            <X className="mr-1 inline h-3 w-3" />
+            Xoá bộ lọc
+          </button>
         )}
       </div>
 

@@ -1,9 +1,20 @@
 "use client";
 
-import { CalendarClock, ClipboardEdit, FileText } from "lucide-react";
+import {
+  AlertOctagon,
+  CalendarClock,
+  CheckCircle2,
+  ClipboardEdit,
+  FileText,
+  Search,
+  X,
+} from "lucide-react";
 import Link from "next/link";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
+import { Input } from "@/components/ui/input";
+import { KpiCard } from "@/components/ui/kpi-card";
+import { Select } from "@/components/ui/select";
 import { useAuthStore } from "@/features/auth/state/auth-store";
 import { useGradesStore } from "@/features/grades/state/grades-store";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
@@ -38,24 +49,27 @@ export default function MyHomeworkPage() {
     return ids;
   }, [allClasses, session]);
 
-  const visible = useMemo(() => {
+  /** Visible-to-me — no UI filters applied yet. Used to compute KPIs
+   *  before the user narrows down. */
+  const scope = useMemo(() => {
     if (!session) return [];
     return allHomework
       .filter((h) => {
         if (h.archivedAt) return false;
         if (h.status === "draft") return false;
         if (session.campusId && h.campusId !== session.campusId) return false;
-        // Per-student override: if studentIds is non-empty, only those
-        // specific HS see the homework. Class membership is then
-        // necessary but not sufficient.
         if (h.studentIds && h.studentIds.length > 0) {
           return h.studentIds.includes(session.userId);
         }
-        // Default: any HS in the assigned classes.
         return h.classIds.some((cid) => myClassIds.has(cid));
       })
       .sort((a, b) => (a.dueAt < b.dueAt ? -1 : 1));
   }, [allHomework, session, myClassIds]);
+
+  // UI filter state.
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [subjectFilter, setSubjectFilter] = useState<string>("all");
+  const [search, setSearch] = useState("");
 
   function rowStatus(h: Homework) {
     const eff = effectiveHomeworkState(h);
@@ -68,23 +82,144 @@ export default function MyHomeworkPage() {
     return "open" as const;
   }
 
+  // KPIs computed over `scope` (pre-filter) so the numbers don't
+  // shrink when the user narrows the view.
+  const kpis = useMemo(
+    () => ({
+      total: scope.length,
+      open: scope.filter((h) => rowStatus(h) === "open").length,
+      submitted: scope.filter((h) => rowStatus(h) === "submitted").length,
+      missed: scope.filter((h) => rowStatus(h) === "missed").length,
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [scope, attempts, session?.userId],
+  );
+
+  // Subjects the student actually has homework in — keeps the dropdown
+  // tight.
+  const mySubjects = useMemo(() => {
+    const ids = new Set(scope.map((h) => h.subjectId));
+    return subjects.filter((s) => ids.has(s.id));
+  }, [scope, subjects]);
+
+  const filtered = useMemo(() => {
+    return scope.filter((h) => {
+      if (statusFilter !== "all" && rowStatus(h) !== statusFilter) return false;
+      if (subjectFilter !== "all" && h.subjectId !== subjectFilter) return false;
+      const q = search.trim().toLowerCase();
+      if (q && !`${h.title} ${h.description ?? ""} ${h.ownerName}`.toLowerCase().includes(q)) {
+        return false;
+      }
+      return true;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scope, statusFilter, subjectFilter, search, attempts, session?.userId]);
+
+  const dirty =
+    statusFilter !== "all" || subjectFilter !== "all" || search.trim() !== "";
+
   return (
     <>
       <PageHeader
         title="Bài tập về nhà"
         description="Bài tập giáo viên giao cho lớp / khối của bạn. Bấm vào để bắt đầu làm — có thể lưu giữa chừng và tiếp tục."
       />
-      {visible.length === 0 ? (
+
+      {/* KPI strip */}
+      <section className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <KpiCard
+          label="Tổng BTVN"
+          value={kpis.total.toLocaleString("vi-VN")}
+          icon={ClipboardEdit}
+          tone="blue"
+        />
+        <KpiCard
+          label="Đang mở"
+          value={kpis.open.toLocaleString("vi-VN")}
+          icon={CalendarClock}
+          tone="green"
+        />
+        <KpiCard
+          label="Đã nộp"
+          value={kpis.submitted.toLocaleString("vi-VN")}
+          icon={CheckCircle2}
+          tone="violet"
+        />
+        <KpiCard
+          label="Quá hạn"
+          value={kpis.missed.toLocaleString("vi-VN")}
+          icon={AlertOctagon}
+          tone="orange"
+        />
+      </section>
+
+      {/* Filter card */}
+      <div className="mb-3 flex flex-wrap items-center gap-2.5 rounded-xl border bg-card p-3">
+        <div className="relative min-w-[220px] flex-1">
+          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Tìm theo tiêu đề / mô tả / GV…"
+            className="h-9 pl-8"
+          />
+        </div>
+        <Select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="h-9 min-w-[150px]"
+        >
+          <option value="all">Trạng thái: Tất cả</option>
+          <option value="open">Đang mở</option>
+          <option value="scheduled">Chưa mở</option>
+          <option value="submitted">Đã nộp</option>
+          <option value="missed">Quá hạn</option>
+        </Select>
+        {mySubjects.length > 1 && (
+          <Select
+            value={subjectFilter}
+            onChange={(e) => setSubjectFilter(e.target.value)}
+            className="h-9 min-w-[140px]"
+          >
+            <option value="all">Môn: Tất cả</option>
+            {mySubjects.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </Select>
+        )}
+        {dirty && (
+          <button
+            type="button"
+            onClick={() => {
+              setStatusFilter("all");
+              setSubjectFilter("all");
+              setSearch("");
+            }}
+            className="rounded-md border bg-card px-2.5 py-1 text-[11.5px] font-medium text-muted-foreground hover:bg-accent/30"
+          >
+            <X className="mr-1 inline h-3 w-3" />
+            Xoá bộ lọc
+          </button>
+        )}
+      </div>
+
+      {filtered.length === 0 ? (
         <div className="rounded-xl border bg-card p-10 text-center">
           <ClipboardEdit className="mx-auto mb-3 h-10 w-10 text-muted-foreground/50" />
-          <p className="text-section-title">Chưa có BTVN nào</p>
+          <p className="text-section-title">
+            {scope.length === 0 ? "Chưa có BTVN nào" : "Không có BTVN phù hợp"}
+          </p>
           <p className="text-meta mt-1">
-            Giáo viên sẽ giao bài tập về nhà ở đây.
+            {scope.length === 0
+              ? "Giáo viên sẽ giao bài tập về nhà ở đây."
+              : "Thử bỏ bớt bộ lọc hoặc đổi từ khoá tìm kiếm."}
           </p>
         </div>
       ) : (
         <ul className="grid gap-3 lg:grid-cols-2">
-          {visible.map((h) => {
+          {filtered.map((h) => {
             const subject = subjects.find((s) => s.id === h.subjectId);
             const grade = h.gradeId
               ? grades.find((g) => g.id === h.gradeId)
