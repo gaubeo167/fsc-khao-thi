@@ -413,7 +413,7 @@ export function UploadMaterialDialog({ open, onOpenChange }: Props) {
                 Liên kết chia sẻ <span className="text-rose-500">*</span>
               </Label>
               <div className="relative">
-                <Link2 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Link2 className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={externalUrl}
                   onChange={(e) => setExternalUrl(e.target.value)}
@@ -502,7 +502,7 @@ export function UploadMaterialDialog({ open, onOpenChange }: Props) {
                 Môn học <span className="text-rose-500">*</span>
               </Label>
               <div className="relative">
-                <span className="pointer-events-none absolute left-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md bg-violet-100 text-violet-700">
+                <span className="pointer-events-none absolute left-2 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md bg-violet-100 text-violet-700">
                   <BookOpen className="h-3.5 w-3.5" />
                 </span>
                 <Select
@@ -526,7 +526,7 @@ export function UploadMaterialDialog({ open, onOpenChange }: Props) {
             <div className="space-y-1.5">
               <Label>Khối</Label>
               <div className="relative">
-                <span className="pointer-events-none absolute left-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md bg-emerald-100 text-emerald-700">
+                <span className="pointer-events-none absolute left-2 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md bg-emerald-100 text-emerald-700">
                   <GraduationCap className="h-3.5 w-3.5" />
                 </span>
                 <Select
@@ -640,7 +640,7 @@ export function UploadMaterialDialog({ open, onOpenChange }: Props) {
           <div className="space-y-1.5">
             <Label>Kho lưu trữ</Label>
             <div className="relative">
-              <span className="pointer-events-none absolute left-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md bg-amber-100 text-amber-700">
+              <span className="pointer-events-none absolute left-2 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md bg-amber-100 text-amber-700">
                 <FolderOpen className="h-3.5 w-3.5" />
               </span>
               <Select
