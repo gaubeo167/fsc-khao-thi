@@ -5,6 +5,8 @@ import {
   BarChart3,
   CalendarClock,
   CheckCircle2,
+  ClipboardEdit,
+  Download,
   Hourglass,
   Search,
   ShieldAlert,
@@ -30,6 +32,8 @@ import { useShiftsStore } from "@/features/exam-shifts/state/shifts-store";
 import { useBlueprintsStore } from "@/features/exams/state/blueprints-store";
 import { usePackagesStore } from "@/features/exams/state/packages-store";
 import { useGradingStore } from "@/features/grading/state/grading-store";
+import { useHomeworkStore } from "@/features/homework/state/homework-store";
+import { useHomeworkAttemptsStore } from "@/features/homework/state/homework-attempts-store";
 import { useQuestionsStore } from "@/features/question-bank/state/questions-store";
 import { buildShiftReport } from "@/features/reports/lib/compute-stats";
 import { generateInsights } from "@/features/reports/lib/ai-insights";
@@ -58,6 +62,10 @@ export default function ReportsPage() {
   const [gradeFilter, setGradeFilter] = useState<string>("all");
   const [subjectFilter, setSubjectFilter] = useState<string>("all");
   const [classFilter, setClassFilter] = useState<string>("all");
+  const [reportTab, setReportTab] = useState<"shifts" | "homework">("shifts");
+
+  const allHomework = useHomeworkStore((s) => s.homework);
+  const homeworkAttempts = useHomeworkAttemptsStore((s) => s.attempts);
 
   const campusId =
     session?.role === "superadmin"
@@ -385,13 +393,192 @@ export default function ReportsPage() {
     );
   }
 
+  // BTVN aggregate stats — visible HW in the operating campus scope.
+  const homeworkSummaries = useMemo(() => {
+    const visible = allHomework
+      .filter((h) => !h.archivedAt)
+      .filter((h) => (campusId ? h.campusId === campusId : true))
+      .filter((h) => {
+        if (!scope.isUnscoped && scope.allowedSubjectIds != null) {
+          if (!scope.allowedSubjectIds.has(h.subjectId)) return false;
+        }
+        return true;
+      });
+    return visible.map((h) => {
+      const myAttempts = homeworkAttempts.filter((a) => a.homeworkId === h.id);
+      const submitted = myAttempts.filter((a) => a.submittedAt != null);
+      const totalRoster =
+        h.studentIds && h.studentIds.length > 0
+          ? h.studentIds.length
+          : 0; // Class-based roster harder to count cheaply
+      const avgPct =
+        submitted.length > 0
+          ? Math.round(
+              (submitted.reduce(
+                (acc, a) =>
+                  acc +
+                  (a.totalQuestions
+                    ? (a.correctCount ?? 0) / a.totalQuestions
+                    : 0),
+                0,
+              ) /
+                submitted.length) *
+                100,
+            )
+          : 0;
+      return {
+        homework: h,
+        submittedCount: submitted.length,
+        rosterCount: totalRoster,
+        avgPercent: avgPct,
+      };
+    });
+  }, [
+    allHomework,
+    homeworkAttempts,
+    campusId,
+    scope.isUnscoped,
+    scope.allowedSubjectIds,
+  ]);
+
+  const homeworkKpis = useMemo(() => {
+    const total = homeworkSummaries.length;
+    const submitted = homeworkSummaries.reduce(
+      (n, h) => n + h.submittedCount,
+      0,
+    );
+    const roster = homeworkSummaries.reduce((n, h) => n + h.rosterCount, 0);
+    const avgPct =
+      homeworkSummaries.filter((h) => h.submittedCount > 0).length === 0
+        ? 0
+        : Math.round(
+            homeworkSummaries
+              .filter((h) => h.submittedCount > 0)
+              .reduce((acc, h) => acc + h.avgPercent, 0) /
+              homeworkSummaries.filter((h) => h.submittedCount > 0).length,
+          );
+    return { total, submitted, roster, avgPercent: avgPct };
+  }, [homeworkSummaries]);
+
+  /** CSV download of the current report tab. */
+  function exportCsv() {
+    const lines: string[] = [];
+    if (reportTab === "shifts") {
+      lines.push(
+        "Mã ca,Tên ca,Môn,Khối,Bắt đầu,Kết thúc,HS nộp,HS được gán,TB %,Tỉ lệ đạt %",
+      );
+      for (const { shift, report } of filtered) {
+        const subject =
+          subjects.find((s) => s.id === shift.subjectId)?.name ?? "";
+        const grade = grades.find((g) => g.id === shift.gradeId)?.name ?? "";
+        lines.push(
+          [
+            shift.id,
+            csvEsc(shift.name),
+            csvEsc(subject),
+            csvEsc(grade),
+            shift.startAt,
+            shift.endAt,
+            report.totals.submitted,
+            report.totals.eligible,
+            report.totals.avgPercent,
+            report.totals.passRate,
+          ].join(","),
+        );
+      }
+    } else {
+      lines.push(
+        "Mã BTVN,Tiêu đề,Môn,Khối,Ngày giao,Hết hạn,HS nộp,HS được giao,TB %",
+      );
+      for (const h of homeworkSummaries) {
+        const subject =
+          subjects.find((s) => s.id === h.homework.subjectId)?.name ?? "";
+        const grade = h.homework.gradeId
+          ? grades.find((g) => g.id === h.homework.gradeId)?.name ?? ""
+          : "";
+        lines.push(
+          [
+            h.homework.id,
+            csvEsc(h.homework.title),
+            csvEsc(subject),
+            csvEsc(grade),
+            h.homework.assignedAt,
+            h.homework.dueAt,
+            h.submittedCount,
+            h.rosterCount,
+            h.avgPercent,
+          ].join(","),
+        );
+      }
+    }
+    const csv = "﻿" + lines.join("\n"); // BOM for Excel UTF-8
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `report-${reportTab}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <>
       <PageHeader
         title="Kết quả & Báo cáo"
-        description="Phân tích kết quả các ca thi đã diễn ra — phân bố điểm, độ khó, vi phạm và gợi ý AI."
+        description="Phân tích kết quả các ca thi và bài tập về nhà — phân bố điểm, độ khó, vi phạm và gợi ý AI."
+        actions={
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={exportCsv}
+              className="inline-flex h-9 items-center gap-1.5 rounded-md border bg-card px-3 text-[12.5px] font-medium hover:bg-accent/30"
+            >
+              <Download className="h-4 w-4" />
+              Xuất báo cáo
+            </button>
+          </div>
+        }
       />
 
+      {/* Tab switcher — Ca thi vs Bài tập về nhà */}
+      <div className="mb-4 inline-flex rounded-xl border bg-card p-1">
+        <button
+          type="button"
+          onClick={() => setReportTab("shifts")}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12.5px] font-medium transition-colors",
+            reportTab === "shifts"
+              ? "bg-foreground text-background"
+              : "text-foreground/65 hover:bg-accent hover:text-foreground",
+          )}
+        >
+          <BarChart3 className="h-3.5 w-3.5" />
+          Ca thi
+        </button>
+        <button
+          type="button"
+          onClick={() => setReportTab("homework")}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12.5px] font-medium transition-colors",
+            reportTab === "homework"
+              ? "bg-foreground text-background"
+              : "text-foreground/65 hover:bg-accent hover:text-foreground",
+          )}
+        >
+          <ClipboardEdit className="h-3.5 w-3.5" />
+          Bài tập về nhà
+        </button>
+      </div>
+
+      {reportTab === "homework" ? (
+        <HomeworkReports
+          summaries={homeworkSummaries}
+          kpis={homeworkKpis}
+          subjects={subjects}
+          grades={grades}
+        />
+      ) : (
+      <>
       <section className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <KpiTile
           icon={<CalendarClock className="h-4 w-4" />}
@@ -412,6 +599,7 @@ export default function ReportsPage() {
           value={`${kpis.avgPassRate}%`}
           hint="qua các ca"
           tone="emerald"
+          ring={kpis.avgPassRate}
         />
         <KpiTile
           icon={<Sparkles className="h-4 w-4" />}
@@ -729,6 +917,217 @@ export default function ReportsPage() {
           })}
         </ul>
       )}
+      </>
+      )}
+    </>
+  );
+}
+
+/** CSV-escape a value: wrap in double quotes if it contains comma /
+ *  quote / newline; escape inner quotes by doubling them. */
+function csvEsc(s: string): string {
+  if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+
+interface HomeworkSummaryRow {
+  homework: import("@/features/homework/data/types").Homework;
+  submittedCount: number;
+  rosterCount: number;
+  avgPercent: number;
+}
+
+function HomeworkReports({
+  summaries,
+  kpis,
+  subjects,
+  grades,
+}: {
+  summaries: HomeworkSummaryRow[];
+  kpis: {
+    total: number;
+    submitted: number;
+    roster: number;
+    avgPercent: number;
+  };
+  subjects: Array<{ id: string; name: string; color: string }>;
+  grades: Array<{ id: string; name: string; code: string }>;
+}) {
+  return (
+    <>
+      <section className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <KpiTile
+          icon={<ClipboardEdit className="h-4 w-4" />}
+          label="TỔNG BTVN"
+          value={kpis.total}
+          tone="blue"
+        />
+        <KpiTile
+          icon={<Users className="h-4 w-4" />}
+          label="HS ĐÃ NỘP"
+          value={kpis.submitted}
+          hint={`${kpis.roster} HS được giao`}
+          tone="violet"
+        />
+        <KpiTile
+          icon={<CheckCircle2 className="h-4 w-4" />}
+          label="TRUNG BÌNH ĐÚNG"
+          value={`${kpis.avgPercent}%`}
+          tone="emerald"
+          ring={kpis.avgPercent}
+        />
+        <KpiTile
+          icon={<TrendingUp className="h-4 w-4" />}
+          label="ĐANG GIAO"
+          value={summaries.filter((h) => h.submittedCount > 0).length}
+          hint="BTVN đang có HS làm"
+          tone="amber"
+        />
+      </section>
+
+      {summaries.length === 0 ? (
+        <div className="rounded-xl border bg-card p-10 text-center">
+          <ClipboardEdit className="mx-auto mb-3 h-10 w-10 text-muted-foreground/50" />
+          <p className="text-section-title">Chưa có BTVN nào</p>
+          <p className="text-meta mt-1">
+            Tạo BTVN ở <b>Vận hành → Bài tập về nhà</b> rồi quay lại đây để
+            xem báo cáo tổng hợp.
+          </p>
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-xl border bg-card">
+          <div className="overflow-x-auto">
+            <table className="w-full text-[12.5px]">
+              <thead className="bg-muted/30 text-[11px] uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-2.5 text-left font-semibold">Mã</th>
+                  <th className="px-4 py-2.5 text-left font-semibold">
+                    Tiêu đề
+                  </th>
+                  <th className="px-4 py-2.5 text-left font-semibold">
+                    Môn · Khối
+                  </th>
+                  <th className="px-4 py-2.5 text-left font-semibold">
+                    Hạn nộp
+                  </th>
+                  <th className="px-4 py-2.5 text-left font-semibold">
+                    Tiến độ
+                  </th>
+                  <th className="px-4 py-2.5 text-center font-semibold">
+                    TB %
+                  </th>
+                  <th className="px-4 py-2.5 text-right font-semibold">
+                    Thao tác
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {summaries
+                  .slice()
+                  .sort((a, b) =>
+                    a.homework.dueAt < b.homework.dueAt ? 1 : -1,
+                  )
+                  .map((h) => {
+                    const subject = subjects.find(
+                      (s) => s.id === h.homework.subjectId,
+                    );
+                    const grade = h.homework.gradeId
+                      ? grades.find((g) => g.id === h.homework.gradeId)
+                      : null;
+                    const pctTone =
+                      h.avgPercent >= 75
+                        ? "text-emerald-700"
+                        : h.avgPercent >= 50
+                          ? "text-blue-700"
+                          : h.avgPercent >= 25
+                            ? "text-amber-700"
+                            : "text-rose-700";
+                    const submitPct =
+                      h.rosterCount > 0
+                        ? Math.round(
+                            (h.submittedCount / h.rosterCount) * 100,
+                          )
+                        : 0;
+                    return (
+                      <tr key={h.homework.id} className="hover:bg-accent/15">
+                        <td className="px-4 py-2.5 font-mono text-[11px] text-muted-foreground">
+                          {h.homework.id}
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <p className="line-clamp-1 font-semibold">
+                            {h.homework.title}
+                          </p>
+                          <p className="line-clamp-1 text-[11px] text-muted-foreground">
+                            GV {h.homework.ownerName}
+                          </p>
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <div className="flex flex-wrap items-center gap-1">
+                            {subject && (
+                              <span
+                                className="rounded px-1.5 py-0.5 text-[10.5px] font-semibold"
+                                style={{
+                                  backgroundColor: `${subject.color}1A`,
+                                  color: subject.color,
+                                }}
+                              >
+                                {subject.name}
+                              </span>
+                            )}
+                            {grade && (
+                              <span className="rounded bg-foreground/8 px-1.5 py-0.5 text-[10.5px]">
+                                {grade.code}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-2.5 whitespace-nowrap text-foreground/80">
+                          {h.homework.dueAt}
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <div className="flex items-center gap-2">
+                            <div className="h-1.5 w-20 overflow-hidden rounded-full bg-muted">
+                              <div
+                                className="h-full bg-emerald-500"
+                                style={{ width: `${submitPct}%` }}
+                              />
+                            </div>
+                            <span className="text-[11px] text-muted-foreground">
+                              {h.submittedCount}/{h.rosterCount}
+                            </span>
+                          </div>
+                        </td>
+                        <td
+                          className={`px-4 py-2.5 text-center font-bold ${pctTone}`}
+                        >
+                          {h.submittedCount > 0 ? `${h.avgPercent}%` : "—"}
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <div className="flex items-center justify-end gap-1">
+                            <Link
+                              href={`/admin/homework/${h.homework.id}/stats`}
+                              className="inline-flex h-7 items-center gap-1 rounded-md border bg-card px-2 text-[11px] font-medium hover:bg-accent/30"
+                            >
+                              <BarChart3 className="h-3.5 w-3.5" />
+                              Thống kê
+                            </Link>
+                            <Link
+                              href={`/admin/homework/${h.homework.id}`}
+                              className="inline-flex h-7 items-center gap-1 rounded-md border bg-card px-2 text-[11px] font-medium hover:bg-accent/30"
+                            >
+                              <ArrowRight className="h-3.5 w-3.5" />
+                              Mở
+                            </Link>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -889,40 +1288,130 @@ function KpiTile({
   value,
   hint,
   tone,
+  ring,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string | number;
   hint?: string;
   tone: "blue" | "violet" | "emerald" | "amber" | "rose" | "muted";
+  /** When set, renders a mini circular progress chart instead of plain
+   *  number — used for percentage metrics like "Tỉ lệ đạt TB". */
+  ring?: number;
 }) {
   const tones = {
-    blue: "text-blue-700",
-    violet: "text-violet-700",
-    emerald: "text-emerald-700",
-    amber: "text-amber-700",
-    rose: "text-rose-700",
-    muted: "text-foreground",
+    blue: {
+      bg: "bg-blue-100",
+      text: "text-blue-700",
+      stroke: "stroke-blue-500",
+    },
+    violet: {
+      bg: "bg-violet-100",
+      text: "text-violet-700",
+      stroke: "stroke-violet-500",
+    },
+    emerald: {
+      bg: "bg-emerald-100",
+      text: "text-emerald-700",
+      stroke: "stroke-emerald-500",
+    },
+    amber: {
+      bg: "bg-amber-100",
+      text: "text-amber-700",
+      stroke: "stroke-amber-500",
+    },
+    rose: {
+      bg: "bg-rose-100",
+      text: "text-rose-700",
+      stroke: "stroke-rose-500",
+    },
+    muted: {
+      bg: "bg-muted",
+      text: "text-foreground",
+      stroke: "stroke-foreground",
+    },
   } as const;
+  const t = tones[tone];
   return (
-    <div className="rounded-xl border bg-card px-4 py-3">
-      <div
-        className={cn(
-          "flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.06em]",
-          tones[tone],
-        )}
-      >
-        <span>{label}</span>
-        <span>{icon}</span>
+    <div className="rounded-xl border bg-card px-4 py-3 shadow-sm">
+      <div className="flex items-start gap-3">
+        <span
+          className={cn(
+            "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
+            t.bg,
+            t.text,
+          )}
+        >
+          {icon}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p
+            className={cn(
+              "text-[10px] font-semibold uppercase tracking-[0.06em]",
+              t.text,
+            )}
+          >
+            {label}
+          </p>
+          <p className={cn("mt-1 text-[24px] font-bold leading-none", t.text)}>
+            {value}
+          </p>
+          {hint && (
+            <p className="mt-1 text-[11px] text-muted-foreground">{hint}</p>
+          )}
+        </div>
+        {ring != null ? (
+          <MiniRing
+            value={ring}
+            strokeClass={t.stroke}
+            className="shrink-0"
+          />
+        ) : null}
       </div>
-      <div
-        className={cn("mt-1 text-[24px] font-bold leading-none", tones[tone])}
-      >
-        {value}
-      </div>
-      {hint && (
-        <p className="mt-1 text-[11px] text-muted-foreground">{hint}</p>
-      )}
     </div>
+  );
+}
+
+/** Small circular progress chart drawn with raw SVG. Lightweight — no
+ *  external chart lib needed for this scale. */
+function MiniRing({
+  value,
+  strokeClass,
+  className,
+}: {
+  value: number;
+  strokeClass: string;
+  className?: string;
+}) {
+  const v = Math.max(0, Math.min(100, value));
+  const r = 18;
+  const c = 2 * Math.PI * r;
+  const dash = (v / 100) * c;
+  return (
+    <svg
+      width={44}
+      height={44}
+      viewBox="0 0 44 44"
+      className={className}
+      aria-hidden
+    >
+      <circle
+        cx={22}
+        cy={22}
+        r={r}
+        className="stroke-muted/40 fill-none"
+        strokeWidth={4}
+      />
+      <circle
+        cx={22}
+        cy={22}
+        r={r}
+        className={cn("fill-none", strokeClass)}
+        strokeWidth={4}
+        strokeDasharray={`${dash} ${c}`}
+        strokeLinecap="round"
+        transform="rotate(-90 22 22)"
+      />
+    </svg>
   );
 }
