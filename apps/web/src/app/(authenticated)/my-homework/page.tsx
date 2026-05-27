@@ -45,7 +45,13 @@ export default function MyHomeworkPage() {
         if (h.archivedAt) return false;
         if (h.status === "draft") return false;
         if (session.campusId && h.campusId !== session.campusId) return false;
-        // Student must belong to at least one of the assigned classes.
+        // Per-student override: if studentIds is non-empty, only those
+        // specific HS see the homework. Class membership is then
+        // necessary but not sufficient.
+        if (h.studentIds && h.studentIds.length > 0) {
+          return h.studentIds.includes(session.userId);
+        }
+        // Default: any HS in the assigned classes.
         return h.classIds.some((cid) => myClassIds.has(cid));
       })
       .sort((a, b) => (a.dueAt < b.dueAt ? -1 : 1));

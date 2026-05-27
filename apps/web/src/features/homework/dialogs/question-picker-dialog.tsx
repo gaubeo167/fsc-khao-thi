@@ -4,10 +4,12 @@ import {
   Building2,
   Check,
   CheckSquare,
+  Eye,
   Search,
   User,
   X,
 } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -30,6 +32,14 @@ import {
   type TocNode,
 } from "@/features/subjects/data/seed-toc";
 import { findQuestionType } from "@/features/question-bank/data/question-types";
+
+const ViewQuestionDialog = dynamic(
+  () =>
+    import("@/features/question-bank/dialogs/view-question-dialog").then(
+      (m) => m.ViewQuestionDialog,
+    ),
+  { ssr: false, loading: () => null },
+);
 import { cn } from "@/lib/utils";
 
 import { HOMEWORK_QUESTION_TYPES } from "../data/types";
@@ -82,6 +92,7 @@ export function QuestionPickerDialog({
   const [difficulty, setDifficulty] = useState<string>("all");
   const [type, setType] = useState<string>("all");
   const [tocNodeId, setTocNodeId] = useState<string>("all");
+  const [viewing, setViewing] = useState<Question | null>(null);
 
   // Reset draft whenever the dialog opens so an inadvertent cancel
   // doesn't drop earlier selections (we re-seed from props).
@@ -326,55 +337,72 @@ export function QuestionPickerDialog({
                 const meta = findQuestionType(q.type);
                 return (
                   <li key={q.id}>
-                    <button
-                      type="button"
-                      onClick={() => toggle(q.id)}
+                    <div
                       className={cn(
-                        "flex w-full items-start gap-3 rounded-lg border bg-card px-3 py-2.5 text-left transition-colors hover:bg-accent/30",
+                        "flex items-start gap-3 rounded-lg border bg-card px-3 py-2.5 transition-colors hover:bg-accent/30",
                         checked && "border-primary bg-primary/5",
                       )}
                     >
-                      <span
-                        className={cn(
-                          "mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border",
-                          checked
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : "border-border bg-background",
-                        )}
+                      <button
+                        type="button"
+                        onClick={() => toggle(q.id)}
+                        className="flex min-w-0 flex-1 items-start gap-3 text-left"
                       >
-                        {checked ? <Check className="h-3 w-3" strokeWidth={3} /> : null}
-                      </span>
-                      <div className="min-w-0 flex-1 space-y-1">
-                        <p className="line-clamp-2 text-[13px] leading-snug">
-                          {plainText(q.content)}
-                        </p>
-                        <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-                          <span className="font-mono">{q.id}</span>
-                          {meta && (
-                            <span
-                              className="rounded px-1.5 py-0.5 font-semibold"
-                              style={{
-                                backgroundColor: `${meta.color}1A`,
-                                color: meta.color,
-                              }}
-                            >
-                              {meta.name}
-                            </span>
+                        <span
+                          className={cn(
+                            "mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border",
+                            checked
+                              ? "border-primary bg-primary text-primary-foreground"
+                              : "border-border bg-background",
                           )}
-                          <span className="rounded bg-foreground/8 px-1.5 py-0.5">
-                            {DIFFICULTY_LABEL[q.difficulty]}
-                          </span>
-                          {q.tags.slice(0, 4).map((t) => (
-                            <span
-                              key={t}
-                              className="rounded bg-muted/40 px-1.5 py-0.5"
-                            >
-                              #{t}
+                        >
+                          {checked ? (
+                            <Check className="h-3 w-3" strokeWidth={3} />
+                          ) : null}
+                        </span>
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <p className="line-clamp-2 text-[13px] leading-snug">
+                            {plainText(q.content)}
+                          </p>
+                          <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                            <span className="font-mono">{q.id}</span>
+                            {meta && (
+                              <span
+                                className="rounded px-1.5 py-0.5 font-semibold"
+                                style={{
+                                  backgroundColor: `${meta.color}1A`,
+                                  color: meta.color,
+                                }}
+                              >
+                                {meta.name}
+                              </span>
+                            )}
+                            <span className="rounded bg-foreground/8 px-1.5 py-0.5">
+                              {DIFFICULTY_LABEL[q.difficulty]}
                             </span>
-                          ))}
+                            {q.tags.slice(0, 4).map((t) => (
+                              <span
+                                key={t}
+                                className="rounded bg-muted/40 px-1.5 py-0.5"
+                              >
+                                #{t}
+                              </span>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    </button>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setViewing(q);
+                        }}
+                        title="Xem chi tiết câu hỏi"
+                        className="rounded-md border bg-background p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                      >
+                        <Eye className="h-3.5 w-3.5" strokeWidth={1.75} />
+                      </button>
+                    </div>
                   </li>
                 );
               })}
@@ -406,6 +434,11 @@ export function QuestionPickerDialog({
             </Button>
           </div>
         </footer>
+
+        <ViewQuestionDialog
+          question={viewing}
+          onClose={() => setViewing(null)}
+        />
       </DialogContent>
     </Dialog>
   );

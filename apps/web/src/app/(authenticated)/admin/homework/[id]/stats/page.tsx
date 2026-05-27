@@ -36,8 +36,12 @@ export default function HomeworkStatsPage() {
   // Build per-student stats
   const myAttempts = attempts.filter((a) => a.homeworkId === id);
 
-  // Roster: every student in the assigned classes (so "chưa nộp" counts).
+  // Roster: respect per-student override if set, else fall back to
+  // "every student in assigned classes".
   const rosterIds = useMemo(() => {
+    if (homework.studentIds && homework.studentIds.length > 0) {
+      return homework.studentIds.slice();
+    }
     const ids = new Set<string>();
     for (const cid of homework.classIds) {
       const cls = allClasses.find((c) => c.id === cid);
@@ -46,7 +50,7 @@ export default function HomeworkStatsPage() {
       for (const sid of studentIds) ids.add(sid);
     }
     return [...ids];
-  }, [homework.classIds, allClasses]);
+  }, [homework.classIds, homework.studentIds, allClasses]);
 
   const studentRows = rosterIds
     .map((sid) => {

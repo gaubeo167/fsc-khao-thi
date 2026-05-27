@@ -26,6 +26,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { useUsersStore } from "@/features/admin/users/users-store";
 import { useAuthStore } from "@/features/auth/state/auth-store";
 import { useCampusStore } from "@/features/campus/state/campus-store";
 import { useGradesStore } from "@/features/grades/state/grades-store";
@@ -65,6 +66,7 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
   const subjects = useSubjectsStore((s) => s.subjects);
   const grades = useGradesStore((s) => s.grades);
   const allClasses = useGradesStore((s) => s.classes);
+  const allUsers = useUsersStore((s) => s.users);
   const allQuestions = useQuestionsStore((s) => s.questions);
   const allMaterials = useMaterialsStore((s) => s.materials);
   const createHomework = useHomeworkStore((s) => s.create);
@@ -75,6 +77,7 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
   const [subjectId, setSubjectId] = useState("");
   const [gradeId, setGradeId] = useState("");
   const [selectedClassIds, setSelectedClassIds] = useState<string[]>([]);
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [questionIds, setQuestionIds] = useState<string[]>([]);
   const [materialIds, setMaterialIds] = useState<string[]>([]);
   const [assignedAt, setAssignedAt] = useState(() => todayISO());
@@ -96,6 +99,7 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
       setSubjectId(editing.subjectId);
       setGradeId(editing.gradeId ?? "");
       setSelectedClassIds(editing.classIds);
+      setSelectedStudentIds(editing.studentIds ?? []);
       setQuestionIds(editing.questionIds);
       setMaterialIds(editing.materialIds);
       setAssignedAt(editing.assignedAt);
@@ -107,6 +111,7 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
       setSubjectId("");
       setGradeId("");
       setSelectedClassIds([]);
+      setSelectedStudentIds([]);
       setQuestionIds([]);
       setMaterialIds([]);
       setAssignedAt(todayISO());
@@ -129,6 +134,77 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
       ),
     [allClasses, campusId, gradeId],
   );
+
+  /** Roster grouped per selected class — used by the per-student
+   *  picker below the class chips. Students come from each class's
+   *  studentIds field (preferred) and fall back to scanning
+   *  /users for legacy classes without a roster array. */
+  const rosterByClass = useMemo(() => {
+    const out: Array<{
+      classId: string;
+      className: string;
+      students: Array<{ id: string; name: string; code?: string }>;
+    }> = [];
+    for (const cid of selectedClassIds) {
+      const cls = allClasses.find((c) => c.id === cid);
+      if (!cls) continue;
+      const studentIdsField =
+        (cls as { studentIds?: string[] }).studentIds ?? [];
+      const studentIds = studentIdsField.length
+        ? studentIdsField
+        : allUsers
+            .filter(
+              (u) =>
+                u.role === "student" &&
+                (u.classIds?.includes(cid) ?? false),
+            )
+            .map((u) => u.id);
+      const students = studentIds
+        .map((sid) => allUsers.find((u) => u.id === sid))
+        .filter((u): u is NonNullable<typeof u> => !!u)
+        .map((u) => ({
+          id: u.id,
+          name: u.name,
+          code: u.studentCode ?? u.username ?? undefined,
+        }))
+        .sort((a, b) =>
+          a.name.localeCompare(b.name, "vi", { sensitivity: "base" }),
+        );
+      out.push({ classId: cid, className: cls.name, students });
+    }
+    return out;
+  }, [selectedClassIds, allClasses, allUsers]);
+
+  // Auto-seed selectedStudentIds with the full roster whenever the
+  // class selection changes (admin can untick individuals afterward).
+  useEffect(() => {
+    if (selectedClassIds.length === 0) {
+      setSelectedStudentIds([]);
+      return;
+    }
+    const allRosterIds = new Set<string>();
+    for (const group of rosterByClass) {
+      for (const s of group.students) allRosterIds.add(s.id);
+    }
+    setSelectedStudentIds((prev) => {
+      // Drop ids that are no longer in any chosen class.
+      const filtered = prev.filter((sid) => allRosterIds.has(sid));
+      // When previously empty (initial seed), add everyone in scope.
+      if (filtered.length === 0 && prev.length === 0) {
+        return [...allRosterIds];
+      }
+      // When previously had selections but new students appeared
+      // (e.g. ticking a new class), include the new class's students
+      // by default — surprising-but-helpful default that matches
+      // ShiftWizard.
+      const existingIds = new Set(filtered);
+      for (const id of allRosterIds) {
+        if (!existingIds.has(id)) filtered.push(id);
+      }
+      return filtered;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedClassIds.join("|"), rosterByClass.length]);
 
   // Materialized question + material rows for the summary cards.
   const selectedQuestions = useMemo(
@@ -169,6 +245,12 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
     if (assignedAt > dueAt)
       return toast.error("Ngày hết hạn phải sau ngày giao");
 
+    if (selectedStudentIds.length === 0) {
+      return toast.error(
+        "Chọn ít nhất 1 học sinh trong danh sách được giao",
+      );
+    }
+
     setSubmitting(true);
     try {
       const payload: Omit<Homework, "id" | "createdAt" | "updatedAt"> = {
@@ -177,6 +259,7 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
         subjectId,
         gradeId: gradeId || null,
         classIds: selectedClassIds,
+        studentIds: selectedStudentIds,
         questionIds,
         materialIds,
         assignedAt,
@@ -344,6 +427,39 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
                 </div>
               )}
             </div>
+
+            {/* Student roster — appears once at least 1 class is selected */}
+            {rosterByClass.length > 0 ? (
+              <RosterPanel
+                rosterByClass={rosterByClass}
+                selectedStudentIds={selectedStudentIds}
+                onToggle={(sid) =>
+                  setSelectedStudentIds((prev) =>
+                    prev.includes(sid)
+                      ? prev.filter((x) => x !== sid)
+                      : [...prev, sid],
+                  )
+                }
+                onToggleClass={(classId, allOn) => {
+                  const group = rosterByClass.find(
+                    (g) => g.classId === classId,
+                  );
+                  if (!group) return;
+                  const classStudentIds = group.students.map((s) => s.id);
+                  setSelectedStudentIds((prev) => {
+                    if (allOn) {
+                      // Add any missing
+                      const set = new Set(prev);
+                      for (const id of classStudentIds) set.add(id);
+                      return [...set];
+                    }
+                    // Remove all of this class's students
+                    return prev.filter((id) => !classStudentIds.includes(id));
+                  });
+                }}
+                disabled={submitting}
+              />
+            ) : null}
 
             {/* Question picker — button + summary */}
             <SummarySection
@@ -599,6 +715,138 @@ function SummarySection({
         {actions}
       </div>
       {children}
+    </section>
+  );
+}
+
+interface RosterGroup {
+  classId: string;
+  className: string;
+  students: Array<{ id: string; name: string; code?: string }>;
+}
+
+function RosterPanel({
+  rosterByClass,
+  selectedStudentIds,
+  onToggle,
+  onToggleClass,
+  disabled,
+}: {
+  rosterByClass: RosterGroup[];
+  selectedStudentIds: string[];
+  onToggle: (sid: string) => void;
+  onToggleClass: (classId: string, allOn: boolean) => void;
+  disabled?: boolean;
+}) {
+  const totalStudents = rosterByClass.reduce(
+    (n, g) => n + g.students.length,
+    0,
+  );
+  const tickedCount = selectedStudentIds.length;
+  return (
+    <section className="space-y-2 rounded-lg border bg-card p-3">
+      <div className="flex items-center justify-between gap-2">
+        <Label className="inline-flex items-center gap-1.5">
+          <Check className="h-4 w-4 text-foreground/60" />
+          Học sinh được giao
+          <span className="inline-flex h-5 min-w-[2rem] items-center justify-center rounded-md border border-violet-200 bg-violet-50/50 px-1.5 text-[10.5px] font-bold text-violet-700">
+            {tickedCount}/{totalStudents}
+          </span>
+        </Label>
+      </div>
+      <div className="space-y-2.5">
+        {rosterByClass.map((group) => {
+          const classStudentIds = group.students.map((s) => s.id);
+          const allTicked =
+            classStudentIds.length > 0 &&
+            classStudentIds.every((id) => selectedStudentIds.includes(id));
+          const someTicked =
+            !allTicked &&
+            classStudentIds.some((id) => selectedStudentIds.includes(id));
+          return (
+            <div
+              key={group.classId}
+              className="rounded-md border bg-muted/15 p-2.5"
+            >
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <p className="text-[12.5px] font-semibold">
+                  {group.className}
+                  <span className="ml-2 text-[10.5px] font-normal text-muted-foreground">
+                    {classStudentIds.filter((id) =>
+                      selectedStudentIds.includes(id),
+                    ).length}
+                    /{classStudentIds.length} HS
+                  </span>
+                </p>
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    onClick={() => onToggleClass(group.classId, true)}
+                    disabled={disabled || allTicked}
+                    className="rounded-md border bg-card px-2 py-0.5 text-[10.5px] font-medium hover:bg-accent disabled:opacity-50"
+                  >
+                    Tick all
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onToggleClass(group.classId, false)}
+                    disabled={disabled || (!allTicked && !someTicked)}
+                    className="rounded-md border bg-card px-2 py-0.5 text-[10.5px] font-medium hover:bg-accent disabled:opacity-50"
+                  >
+                    Bỏ tick
+                  </button>
+                </div>
+              </div>
+              {group.students.length === 0 ? (
+                <p className="text-[11px] text-muted-foreground">
+                  Lớp chưa có HS được phân.
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
+                  {group.students.map((s) => {
+                    const checked = selectedStudentIds.includes(s.id);
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => onToggle(s.id)}
+                        disabled={disabled}
+                        className={cn(
+                          "flex items-center gap-2 rounded-md border bg-background px-2 py-1 text-left text-[12px]",
+                          checked
+                            ? "border-primary bg-primary/5"
+                            : "border-border hover:bg-accent/30",
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border",
+                            checked
+                              ? "border-primary bg-primary text-primary-foreground"
+                              : "border-border bg-background",
+                          )}
+                        >
+                          {checked ? (
+                            <Check className="h-2.5 w-2.5" strokeWidth={3} />
+                          ) : null}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate">
+                          {s.name}
+                        </span>
+                        {s.code ? (
+                          <span className="font-mono text-[10px] text-muted-foreground">
+                            {s.code}
+                          </span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </section>
   );
 }

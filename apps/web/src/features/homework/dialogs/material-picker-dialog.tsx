@@ -3,6 +3,7 @@
 import {
   Building2,
   Check,
+  Eye,
   FileText,
   Link2,
   Paperclip,
@@ -10,6 +11,7 @@ import {
   User,
   X,
 } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -26,8 +28,17 @@ import { Select } from "@/components/ui/select";
 import { useAuthStore } from "@/features/auth/state/auth-store";
 import {
   FILE_TYPE_LABEL,
+  type LearningMaterial,
   type MaterialFileType,
 } from "@/features/learning-materials/data/types";
+
+const MaterialViewerDialog = dynamic(
+  () =>
+    import(
+      "@/features/learning-materials/dialogs/material-viewer-dialog"
+    ).then((m) => m.MaterialViewerDialog),
+  { ssr: false, loading: () => null },
+);
 import { useMaterialsStore } from "@/features/learning-materials/state/materials-store";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import { cn } from "@/lib/utils";
@@ -65,6 +76,7 @@ export function MaterialPickerDialog({
   const [sourceType, setSourceType] = useState<"all" | "upload" | "link">(
     "all",
   );
+  const [viewing, setViewing] = useState<LearningMaterial | null>(null);
 
   if (open && draft.length === 0 && selectedIds.length > 0) {
     setDraft(selectedIds);
@@ -217,53 +229,70 @@ export function MaterialPickerDialog({
                 const checked = draft.includes(m.id);
                 return (
                   <li key={m.id}>
-                    <button
-                      type="button"
-                      onClick={() => toggle(m.id)}
+                    <div
                       className={cn(
-                        "flex w-full items-start gap-3 rounded-lg border bg-card px-3 py-2.5 text-left transition-colors hover:bg-accent/30",
+                        "flex items-start gap-3 rounded-lg border bg-card px-3 py-2.5 transition-colors hover:bg-accent/30",
                         checked && "border-primary bg-primary/5",
                       )}
                     >
-                      <span
-                        className={cn(
-                          "mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border",
-                          checked
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : "border-border bg-background",
-                        )}
+                      <button
+                        type="button"
+                        onClick={() => toggle(m.id)}
+                        className="flex min-w-0 flex-1 items-start gap-3 text-left"
                       >
-                        {checked ? <Check className="h-3 w-3" strokeWidth={3} /> : null}
-                      </span>
-                      <div className="min-w-0 flex-1 space-y-0.5">
-                        <p className="line-clamp-1 text-[13px] font-medium">
-                          {m.title}
-                        </p>
-                        <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-                          {m.sourceType === "link" ? (
-                            <span className="inline-flex items-center gap-0.5">
-                              <Link2 className="h-3 w-3" /> Liên kết
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-0.5">
-                              <FileText className="h-3 w-3" />
-                              {m.originalFilename}
-                            </span>
+                        <span
+                          className={cn(
+                            "mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border",
+                            checked
+                              ? "border-primary bg-primary text-primary-foreground"
+                              : "border-border bg-background",
                           )}
-                          <span className="rounded bg-foreground/8 px-1.5 py-0.5">
-                            {FILE_TYPE_LABEL[m.fileType]}
-                          </span>
-                          {m.tags.slice(0, 4).map((t) => (
-                            <span
-                              key={t}
-                              className="rounded bg-muted/40 px-1.5 py-0.5"
-                            >
-                              #{t}
+                        >
+                          {checked ? (
+                            <Check className="h-3 w-3" strokeWidth={3} />
+                          ) : null}
+                        </span>
+                        <div className="min-w-0 flex-1 space-y-0.5">
+                          <p className="line-clamp-1 text-[13px] font-medium">
+                            {m.title}
+                          </p>
+                          <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                            {m.sourceType === "link" ? (
+                              <span className="inline-flex items-center gap-0.5">
+                                <Link2 className="h-3 w-3" /> Liên kết
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-0.5">
+                                <FileText className="h-3 w-3" />
+                                {m.originalFilename}
+                              </span>
+                            )}
+                            <span className="rounded bg-foreground/8 px-1.5 py-0.5">
+                              {FILE_TYPE_LABEL[m.fileType]}
                             </span>
-                          ))}
+                            {m.tags.slice(0, 4).map((t) => (
+                              <span
+                                key={t}
+                                className="rounded bg-muted/40 px-1.5 py-0.5"
+                              >
+                                #{t}
+                              </span>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    </button>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setViewing(m);
+                        }}
+                        title="Xem chi tiết học liệu"
+                        className="rounded-md border bg-background p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                      >
+                        <Eye className="h-3.5 w-3.5" strokeWidth={1.75} />
+                      </button>
+                    </div>
                   </li>
                 );
               })}
@@ -294,6 +323,11 @@ export function MaterialPickerDialog({
             </Button>
           </div>
         </footer>
+
+        <MaterialViewerDialog
+          material={viewing}
+          onClose={() => setViewing(null)}
+        />
       </DialogContent>
     </Dialog>
   );

@@ -29,6 +29,11 @@ export interface Homework {
   /** Which classes can see this homework. Student membership in any
    *  class here grants access. */
   classIds: string[];
+  /** Optional per-student override. When non-empty, ONLY these
+   *  students can see / submit the homework — class membership alone
+   *  is not enough. When empty / undefined, every student in any of
+   *  the listed classes is included (legacy + default). */
+  studentIds?: string[];
 
   /** Frozen list of question ids — references /questions. The
    *  question content is intentionally NOT snapshotted (Phase A only
