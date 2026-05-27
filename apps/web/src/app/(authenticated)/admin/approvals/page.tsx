@@ -5,11 +5,13 @@ import {
   Clock,
   Eye,
   FileText,
+  FolderOpen,
   Package2,
   ThumbsDown,
   ThumbsUp,
   XCircle,
 } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -27,6 +29,9 @@ import {
 import { useBlueprintsStore } from "@/features/exams/state/blueprints-store";
 import { usePackagesStore } from "@/features/exams/state/packages-store";
 import { useGradesStore } from "@/features/grades/state/grades-store";
+import { MaterialCard } from "@/features/learning-materials/components/material-card";
+import type { LearningMaterial } from "@/features/learning-materials/data/types";
+import { useMaterialsStore } from "@/features/learning-materials/state/materials-store";
 import { QuestionCard } from "@/features/question-bank/components/question-card";
 import {
   QUESTION_TYPES,
@@ -42,7 +47,15 @@ import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 
 type Mode = "pending" | "approved" | "rejected";
-type Kind = "questions" | "packages";
+type Kind = "questions" | "packages" | "materials";
+
+const MaterialViewerDialog = dynamic(
+  () =>
+    import(
+      "@/features/learning-materials/dialogs/material-viewer-dialog"
+    ).then((m) => m.MaterialViewerDialog),
+  { ssr: false, loading: () => null },
+);
 
 export default function ApprovalsPage() {
   const session = useAuthStore((s) => s.session);
@@ -123,16 +136,22 @@ export default function ApprovalsPage() {
     <>
       <PageHeader
         title={
-          kind === "packages" ? "Phê duyệt gói đề" : "Phê duyệt câu hỏi"
+          kind === "packages"
+            ? "Phê duyệt gói đề"
+            : kind === "materials"
+              ? "Phê duyệt học liệu"
+              : "Phê duyệt câu hỏi"
         }
         description={
           kind === "packages"
             ? "Duyệt từng gói đề (ma trận câu hỏi) trước khi bốc vào ca thi. Mọi gói đề mới hoặc đã chỉnh sửa đều phải qua bước này."
-            : "Duyệt câu hỏi do giáo viên gửi vào kho trường. Chỉ TBM / Admin campus / Giám đốc Học thuật / Superadmin có quyền."
+            : kind === "materials"
+              ? "Duyệt học liệu (video / PDF / Word / link…) do giáo viên gửi vào kho trường. Chỉ TBM / Admin campus / Giám đốc Học thuật / Superadmin có quyền."
+              : "Duyệt câu hỏi do giáo viên gửi vào kho trường. Chỉ TBM / Admin campus / Giám đốc Học thuật / Superadmin có quyền."
         }
       />
 
-      {/* Kind switcher: Câu hỏi vs Gói đề */}
+      {/* Kind switcher: Câu hỏi · Học liệu · Gói đề */}
       <div className="mb-4 inline-flex rounded-xl border bg-card p-1">
         <KindTab
           active={kind === "questions"}
@@ -142,6 +161,15 @@ export default function ApprovalsPage() {
           }}
           icon={FileText}
           label="Câu hỏi"
+        />
+        <KindTab
+          active={kind === "materials"}
+          onClick={() => {
+            setKind("materials");
+            setMode("pending");
+          }}
+          icon={FolderOpen}
+          label="Học liệu"
         />
         <KindTab
           active={kind === "packages"}
@@ -156,6 +184,9 @@ export default function ApprovalsPage() {
 
       {kind === "packages" && (
         <PackageApprovalsSection canApprove={canApprove} />
+      )}
+      {kind === "materials" && (
+        <MaterialApprovalsSection canApprove={canApprove} />
       )}
 
       {kind === "questions" && (
@@ -642,6 +673,321 @@ function PackageApprovalsSection({ canApprove }: { canApprove: boolean }) {
         onConfirm={confirmReject}
       />
     </>
+  );
+}
+
+/* ───────── Material approvals ───────── */
+
+function MaterialApprovalsSection({
+  canApprove,
+}: {
+  canApprove: boolean;
+}) {
+  const session = useAuthStore((s) => s.session);
+  const activeCampusId = useCampusStore((s) => s.activeCampusId);
+  const allMaterials = useMaterialsStore((s) => s.materials);
+  const setMaterialStatus = useMaterialsStore((s) => s.setStatus);
+  const subjects = useSubjectsStore((s) => s.subjects);
+  const grades = useGradesStore((s) => s.grades);
+
+  const [mode, setMode] = useState<Mode>("pending");
+  const [viewing, setViewing] = useState<LearningMaterial | null>(null);
+  const [rejectTarget, setRejectTarget] =
+    useState<LearningMaterial | null>(null);
+  const [search, setSearch] = useState("");
+  const [subjectFilter, setSubjectFilter] = useState("all");
+  const [gradeFilter, setGradeFilter] = useState("all");
+
+  // Scope: only campus-kho materials count for approval. Superadmin
+  // sees the active campus's queue; everyone else their own campus.
+  // Archived rows are excluded so a soft-deleted pending doesn't keep
+  // blocking the queue.
+  const scoped = useMemo(() => {
+    if (!session) return [];
+    return allMaterials.filter((m) => {
+      if (m.archivedAt) return false;
+      if (m.kho !== "campus") return false;
+      if (session.role === "superadmin") {
+        return activeCampusId ? m.campusId === activeCampusId : true;
+      }
+      return m.campusId === session.campusId;
+    });
+  }, [allMaterials, session, activeCampusId]);
+
+  const kpis = useMemo(
+    () => ({
+      pending: scoped.filter((m) => m.status === "pending").length,
+      approved: scoped.filter((m) => m.status === "approved").length,
+      rejected: scoped.filter((m) => m.status === "rejected").length,
+    }),
+    [scoped],
+  );
+
+  const filtered = useMemo(() => {
+    return scoped
+      .filter((m) => {
+        if (m.status !== mode) return false;
+        if (subjectFilter !== "all" && m.subjectId !== subjectFilter)
+          return false;
+        if (gradeFilter !== "all" && m.gradeId !== gradeFilter) return false;
+        if (search.trim()) {
+          const t = search.trim().toLowerCase();
+          const hay = `${m.title} ${m.description ?? ""} ${m.ownerName} ${m.tags.join(" ")}`.toLowerCase();
+          if (!hay.includes(t)) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  }, [scoped, mode, subjectFilter, gradeFilter, search]);
+
+  function approve(m: LearningMaterial) {
+    setMaterialStatus(m.id, "approved", session?.userId);
+  }
+  function revertToPending(m: LearningMaterial) {
+    setMaterialStatus(m.id, "pending", session?.userId);
+  }
+  function confirmReject(note: string) {
+    if (!rejectTarget) return;
+    setMaterialStatus(rejectTarget.id, "rejected", session?.userId, note);
+    setRejectTarget(null);
+  }
+
+  return (
+    <>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <KpiCard
+          label="Học liệu chờ duyệt"
+          value={kpis.pending.toLocaleString("vi-VN")}
+          icon={Clock}
+          tone="orange"
+        />
+        <KpiCard
+          label="Đã duyệt"
+          value={kpis.approved.toLocaleString("vi-VN")}
+          icon={CheckCircle2}
+          tone="green"
+        />
+        <KpiCard
+          label="Từ chối"
+          value={kpis.rejected.toLocaleString("vi-VN")}
+          icon={XCircle}
+          tone="red"
+        />
+      </div>
+
+      <div className="mt-5 inline-flex rounded-lg border bg-surface-2 p-1">
+        {(["pending", "approved", "rejected"] as const).map((m) => {
+          const label =
+            m === "pending"
+              ? "Chờ duyệt"
+              : m === "approved"
+                ? "Đã duyệt"
+                : "Từ chối";
+          const count = kpis[m];
+          return (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setMode(m)}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-[13px] font-medium transition-colors",
+                mode === m
+                  ? "bg-surface text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {label}
+              <span
+                className={cn(
+                  "rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums",
+                  mode === m
+                    ? "bg-primary/10 text-primary"
+                    : "bg-muted text-muted-foreground",
+                )}
+              >
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Tìm theo tiêu đề, mô tả, tác giả…"
+          className="h-9 max-w-xs"
+        />
+        <Select
+          value={subjectFilter}
+          onChange={(e) => setSubjectFilter(e.target.value)}
+          className="h-9"
+        >
+          <option value="all">Tất cả môn</option>
+          {subjects.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </Select>
+        <Select
+          value={gradeFilter}
+          onChange={(e) => setGradeFilter(e.target.value)}
+          className="h-9"
+        >
+          <option value="all">Tất cả khối</option>
+          {grades.map((g) => (
+            <option key={g.id} value={g.id}>
+              {g.name}
+            </option>
+          ))}
+        </Select>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="mt-6 rounded-xl border border-dashed bg-muted/20 px-6 py-16 text-center">
+          <p className="text-section-title">
+            {mode === "pending"
+              ? "Không có học liệu nào chờ duyệt"
+              : mode === "approved"
+                ? "Chưa có học liệu nào được duyệt"
+                : "Chưa có học liệu nào bị từ chối"}
+          </p>
+          <p className="text-meta mt-1.5">
+            {mode === "pending"
+              ? "Giáo viên gửi học liệu vào kho trường, hệ thống sẽ hiện ở đây."
+              : "Học liệu sau khi xử lý sẽ chuyển sang tab tương ứng."}
+          </p>
+        </div>
+      ) : (
+        <ul className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
+          {filtered.map((m) => (
+            <li key={m.id} className="space-y-2">
+              <MaterialCard material={m} onView={setViewing} />
+              <div className="flex items-center justify-end gap-2 rounded-lg border bg-surface px-3 py-2 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+                <Button size="sm" variant="outline" onClick={() => setViewing(m)}>
+                  <Eye className="h-3.5 w-3.5" />
+                  Xem chi tiết
+                </Button>
+                {mode === "pending" && canApprove && (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setRejectTarget(m)}
+                      className="text-destructive border-destructive/30 hover:bg-destructive/5"
+                    >
+                      <ThumbsDown className="h-3.5 w-3.5" />
+                      Từ chối
+                    </Button>
+                    <Button size="sm" onClick={() => approve(m)}>
+                      <ThumbsUp className="h-3.5 w-3.5" />
+                      Duyệt
+                    </Button>
+                  </>
+                )}
+                {mode === "approved" && canApprove && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => revertToPending(m)}
+                  >
+                    Huỷ duyệt
+                  </Button>
+                )}
+                {mode === "rejected" && canApprove && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => revertToPending(m)}
+                  >
+                    Trả lại chờ duyệt
+                  </Button>
+                )}
+              </div>
+              {m.status === "rejected" && m.rejectionNote && (
+                <div className="rounded-md border border-destructive/30 bg-destructive-soft px-3 py-2 text-[12px] text-destructive-text">
+                  <span className="font-semibold">Lý do từ chối: </span>
+                  {m.rejectionNote}
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <MaterialViewerDialog
+        material={viewing}
+        onClose={() => setViewing(null)}
+      />
+
+      <MaterialRejectDialog
+        target={rejectTarget}
+        onCancel={() => setRejectTarget(null)}
+        onConfirm={confirmReject}
+      />
+    </>
+  );
+}
+
+function MaterialRejectDialog({
+  target,
+  onCancel,
+  onConfirm,
+}: {
+  target: LearningMaterial | null;
+  onCancel: () => void;
+  onConfirm: (note: string) => void;
+}) {
+  const [note, setNote] = useState("");
+  return (
+    <Dialog open={Boolean(target)} onOpenChange={(o) => !o && onCancel()}>
+      <DialogContent className="max-w-md p-0" srTitle="Từ chối học liệu">
+        <header className="flex items-start gap-3 border-b px-6 py-4 pr-12">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-600 ring-1 ring-rose-200">
+            <ThumbsDown className="h-5 w-5" strokeWidth={1.85} aria-hidden />
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-section-title">Từ chối học liệu?</h2>
+            <p className="text-meta mt-0.5">
+              {target?.id} · giáo viên sẽ thấy lý do và có thể chỉnh sửa rồi
+              gửi lại.
+            </p>
+          </div>
+        </header>
+
+        <div className="space-y-2 px-6 py-5">
+          <Label className="text-[13px] font-medium text-foreground/80">
+            Lý do từ chối <span className="text-destructive">*</span>
+          </Label>
+          <textarea
+            autoFocus
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            rows={4}
+            placeholder="vd: File chưa đúng format, thiếu mô tả; cần đặt lại tiêu đề rõ ràng."
+            className="block w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+          />
+        </div>
+
+        <footer className="flex items-center justify-between border-t bg-[var(--color-surface-2)] px-6 py-3.5">
+          <Button type="button" variant="outline" onClick={onCancel}>
+            Huỷ
+          </Button>
+          <Button
+            onClick={() => {
+              onConfirm(note.trim() || "Không có lý do cụ thể");
+              setNote("");
+            }}
+            className="bg-destructive text-white hover:bg-destructive/90"
+          >
+            <ThumbsDown className="h-4 w-4" />
+            Xác nhận từ chối
+          </Button>
+        </footer>
+      </DialogContent>
+    </Dialog>
   );
 }
 
