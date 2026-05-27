@@ -14,6 +14,7 @@ import {
 } from "@/lib/firestore-sync";
 
 import type { Homework, HomeworkStatus } from "../data/types";
+import { useHomeworkAttemptsStore } from "./homework-attempts-store";
 
 interface State {
   homework: Homework[];
@@ -114,11 +115,12 @@ export const useHomeworkStore = create<State & Actions>()((set, get) => ({
     // be archived (let alone hard-deleted). The list page surfaces a
     // CTA explaining this; this is defense-in-depth for any other
     // caller that bypasses the UI guard.
+    // ESM import at module top is safe — stores don't read each
+    // other at module init, only inside actions like this one which
+    // run later. Cross-store .getState() is the standard Zustand
+    // pattern for derived guards.
     const attempts =
-      // Lazy import to avoid a circular store dependency.
-      (
-        require("./homework-attempts-store") as typeof import("./homework-attempts-store")
-      ).useHomeworkAttemptsStore.getState().attempts;
+      useHomeworkAttemptsStore.getState().attempts;
     const hasData = attempts.some((a) => a.homeworkId === id);
     if (hasData) {
       // eslint-disable-next-line no-console
