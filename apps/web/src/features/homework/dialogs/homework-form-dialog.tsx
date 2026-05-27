@@ -136,9 +136,17 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
   );
 
   /** Roster grouped per selected class — used by the per-student
-   *  picker below the class chips. Students come from each class's
-   *  studentIds field (preferred) and fall back to scanning
-   *  /users for legacy classes without a roster array. */
+   *  picker below the class chips.
+   *
+   * Membership matching has to be defensive because /users docs have
+   * accumulated three shapes over time:
+   *   a) `classIds: string[]` — current (preferred).
+   *   b) `className: string` — legacy single-class string (matches the
+   *      class's `name` like "1A" or its `code`).
+   *   c) Class doc carries `studentIds: string[]` — some seed data
+   *      had this; current model doesn't, but we honor it if present.
+   * The roster is the UNION of all three matches so older student
+   * records aren't silently invisible. */
   const rosterByClass = useMemo(() => {
     const out: Array<{
       classId: string;
@@ -148,18 +156,26 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
     for (const cid of selectedClassIds) {
       const cls = allClasses.find((c) => c.id === cid);
       if (!cls) continue;
+      const ids = new Set<string>();
+      // (c) class.studentIds
       const studentIdsField =
         (cls as { studentIds?: string[] }).studentIds ?? [];
-      const studentIds = studentIdsField.length
-        ? studentIdsField
-        : allUsers
-            .filter(
-              (u) =>
-                u.role === "student" &&
-                (u.classIds?.includes(cid) ?? false),
-            )
-            .map((u) => u.id);
-      const students = studentIds
+      for (const id of studentIdsField) ids.add(id);
+      // (a) user.classIds includes cid
+      // (b) user.className matches cls.name or cls.code (case-insensitive)
+      const targetNames = [
+        cls.name?.toLowerCase(),
+        (cls as { code?: string }).code?.toLowerCase(),
+      ].filter(Boolean) as string[];
+      for (const u of allUsers) {
+        if (u.role !== "student") continue;
+        const byClassIds = u.classIds?.includes(cid) ?? false;
+        const byClassName =
+          u.className != null &&
+          targetNames.includes(u.className.toLowerCase());
+        if (byClassIds || byClassName) ids.add(u.id);
+      }
+      const students = [...ids]
         .map((sid) => allUsers.find((u) => u.id === sid))
         .filter((u): u is NonNullable<typeof u> => !!u)
         .map((u) => ({
