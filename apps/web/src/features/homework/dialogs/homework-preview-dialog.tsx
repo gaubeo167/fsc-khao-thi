@@ -484,16 +484,17 @@ export function HomeworkPreviewDialog({
   );
 }
 
-/** Cycling palette for the numbered question badges — matches the
- *  mockup where each card gets a different colored block. */
-const BADGE_COLORS = [
-  "bg-violet-100 text-violet-700",
-  "bg-blue-100 text-blue-700",
-  "bg-emerald-100 text-emerald-700",
-  "bg-amber-100 text-amber-700",
-  "bg-rose-100 text-rose-700",
-  "bg-cyan-100 text-cyan-700",
-  "bg-fuchsia-100 text-fuchsia-700",
+/** Cycling palette for the numbered question strip — each card gets a
+ *  full-height left strip in a distinct color, with the number stamped
+ *  at the top. Matches the mockup. */
+const STRIP_PALETTE = [
+  { bg: "bg-emerald-50", border: "border-emerald-200", text: "text-emerald-700" },
+  { bg: "bg-violet-50", border: "border-violet-200", text: "text-violet-700" },
+  { bg: "bg-blue-50", border: "border-blue-200", text: "text-blue-700" },
+  { bg: "bg-amber-50", border: "border-amber-200", text: "text-amber-700" },
+  { bg: "bg-rose-50", border: "border-rose-200", text: "text-rose-700" },
+  { bg: "bg-cyan-50", border: "border-cyan-200", text: "text-cyan-700" },
+  { bg: "bg-fuchsia-50", border: "border-fuchsia-200", text: "text-fuchsia-700" },
 ] as const;
 
 const QUESTION_TYPE_LABEL: Record<string, string> = {
@@ -520,36 +521,47 @@ function ReviewBody({ questions }: { questions: Question[] }) {
   return (
     <ol className="space-y-3">
       {questions.map((q, i) => {
-        const badgeColor = BADGE_COLORS[i % BADGE_COLORS.length]!;
+        const strip = STRIP_PALETTE[i % STRIP_PALETTE.length]!;
         return (
           <li
             key={q.id}
-            className="overflow-hidden rounded-xl border bg-card shadow-sm"
+            className="flex overflow-hidden rounded-xl border bg-card shadow-sm"
           >
-            <div className="flex items-start gap-3 p-4">
-              {/* Numbered colored badge on the left */}
-              <span
-                className={cn(
-                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[14px] font-bold",
-                  badgeColor,
-                )}
-              >
+            {/* Full-height colored left strip with stamped number */}
+            <div
+              className={cn(
+                "flex w-11 shrink-0 flex-col items-center justify-start py-3.5",
+                strip.bg,
+              )}
+            >
+              <span className={cn("text-[18px] font-bold", strip.text)}>
                 {i + 1}
               </span>
-              <div className="min-w-0 flex-1 space-y-2">
-                <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+            </div>
+            <div className="min-w-0 flex-1 space-y-2 px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
                   <span className="font-mono">{q.id}</span>
                   <span>·</span>
                   <span>{QUESTION_TYPE_LABEL[q.type] ?? q.type}</span>
                   <span>·</span>
                   <span>{DIFFICULTY_LABEL[q.difficulty]}</span>
                 </div>
-                <div className="text-[13.5px] font-semibold text-foreground">
-                  <span className="mr-1">Câu {i + 1}:</span>
-                  <RenderedContent content={q.content} />
-                </div>
-                <CorrectAnswerHint q={q} />
+                <span
+                  className={cn(
+                    "rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                    strip.bg,
+                    strip.text,
+                  )}
+                >
+                  Đáp án
+                </span>
               </div>
+              <div className="text-[13.5px] font-semibold text-foreground">
+                <span className="mr-1">Câu {i + 1}:</span>
+                <RenderedContent content={q.content} />
+              </div>
+              <CorrectAnswerHint q={q} />
             </div>
           </li>
         );
@@ -561,7 +573,37 @@ function ReviewBody({ questions }: { questions: Question[] }) {
 function CorrectAnswerHint({ q }: { q: Question }) {
   switch (q.type) {
     case "mcq-single":
-    case "mcq-multi":
+    case "mcq-multi": {
+      // Inline horizontal pill row when 2-4 options and they are all
+      // short (≤ 12 chars); fall back to 2-col grid for longer ones.
+      const allShort =
+        q.options.length <= 4 &&
+        q.options.every((o) => o.content.length <= 12);
+      if (allShort) {
+        return (
+          <div className="flex flex-wrap gap-2 text-[12.5px]">
+            {q.options.map((o) => (
+              <span
+                key={o.id}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5",
+                  o.isCorrect
+                    ? "border-emerald-400 bg-emerald-100 text-emerald-800"
+                    : "border-border bg-background text-foreground/70",
+                )}
+              >
+                {o.content}
+                {o.isCorrect ? (
+                  <CheckCircle2
+                    className="h-3.5 w-3.5 text-emerald-700"
+                    strokeWidth={2.5}
+                  />
+                ) : null}
+              </span>
+            ))}
+          </div>
+        );
+      }
       return (
         <ul className="grid grid-cols-2 gap-2 text-[12.5px]">
           {q.options.map((o) => (
@@ -599,6 +641,7 @@ function CorrectAnswerHint({ q }: { q: Question }) {
           ))}
         </ul>
       );
+    }
     case "true-false":
       return (
         <p className="text-[12.5px] text-emerald-700">

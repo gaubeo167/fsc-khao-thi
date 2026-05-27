@@ -8,7 +8,6 @@ import {
   FolderOpen,
   Image as ImageIcon,
   Library,
-  Link2,
   Music2,
   Play,
   Search,
@@ -408,37 +407,52 @@ export default function MyMaterialsPage() {
       ) : (
         <ul className="grid gap-3 lg:grid-cols-2">
           {filtered.map((v) => (
-            <li key={v.material.id} className="relative">
-              <MaterialCard material={v.material} onView={setViewing} />
-              {/* Provenance badge — anchored over the card header */}
-              <span
+            <li key={v.material.id}>
+              {/* Provenance chip — rendered as a thin bar above the
+                  card so it never collides with MaterialCard's right-
+                  side icons (Eye/Pencil/Trash). */}
+              <div
                 className={
                   v.source === "homework"
-                    ? "pointer-events-none absolute right-3 top-3 inline-flex items-center gap-1 rounded-md border border-violet-200 bg-violet-50/95 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700 shadow-sm"
-                    : "pointer-events-none absolute right-3 top-3 inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50/95 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 shadow-sm"
+                    ? "flex items-center gap-1.5 rounded-t-xl border border-b-0 border-violet-200 bg-violet-50/70 px-3 py-1 text-[11px]"
+                    : "flex items-center gap-1.5 rounded-t-xl border border-b-0 border-emerald-200 bg-emerald-50/70 px-3 py-1 text-[11px]"
                 }
               >
                 {v.source === "homework" ? (
                   <>
-                    <ClipboardList className="h-3 w-3" strokeWidth={1.85} />
-                    BTVN
+                    <ClipboardList
+                      className="h-3 w-3 text-violet-700"
+                      strokeWidth={1.85}
+                    />
+                    <span className="font-semibold text-violet-700">BTVN</span>
+                    {v.homeworkTitle ? (
+                      <span className="truncate text-violet-700/85">
+                        · {v.homeworkTitle}
+                      </span>
+                    ) : null}
                   </>
                 ) : (
                   <>
-                    <Share2 className="h-3 w-3" strokeWidth={1.85} />
-                    Chia sẻ
+                    <Share2
+                      className="h-3 w-3 text-emerald-700"
+                      strokeWidth={1.85}
+                    />
+                    <span className="font-semibold text-emerald-700">
+                      Chia sẻ
+                    </span>
+                    <span className="text-emerald-700/80">
+                      · GV chia sẻ cho lớp / khối
+                    </span>
                   </>
                 )}
-              </span>
-              {v.homeworkTitle ? (
-                <p className="px-4 pb-3 -mt-1 text-[11px] text-muted-foreground">
-                  <Link2 className="-mt-0.5 mr-1 inline h-3 w-3" />
-                  Đính kèm BTVN:{" "}
-                  <span className="font-medium text-foreground/75">
-                    {v.homeworkTitle}
-                  </span>
-                </p>
-              ) : null}
+              </div>
+              {/* MaterialCard keeps its own rounded border; the chip
+                  above visually merges with it via rounded-t on the chip
+                  and matching border color. The card's rounded-t is
+                  hidden by the chip strip on top. */}
+              <div className="-mt-px">
+                <MaterialCard material={v.material} onView={setViewing} />
+              </div>
             </li>
           ))}
         </ul>
