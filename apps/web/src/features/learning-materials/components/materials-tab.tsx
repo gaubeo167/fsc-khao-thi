@@ -50,6 +50,14 @@ const EditMaterialDialog = dynamic(
   { ssr: false, loading: () => null },
 );
 
+const CopyMaterialDialog = dynamic(
+  () =>
+    import("../dialogs/copy-material-dialog").then(
+      (m) => m.CopyMaterialDialog,
+    ),
+  { ssr: false, loading: () => null },
+);
+
 type KhoView = "campus" | "personal";
 
 interface Props {
@@ -73,10 +81,12 @@ export function MaterialsTab({
   const allMaterials = useMaterialsStore((s) => s.materials);
   const archiveMaterial = useMaterialsStore((s) => s.archive);
   const restoreMaterial = useMaterialsStore((s) => s.restore);
+  const createMaterial = useMaterialsStore((s) => s.create);
 
   const [uploadOpen, setUploadOpen] = useState(false);
   const [viewing, setViewing] = useState<LearningMaterial | null>(null);
   const [editing, setEditing] = useState<LearningMaterial | null>(null);
+  const [copying, setCopying] = useState<LearningMaterial | null>(null);
   const [khoView, setKhoView] = useState<KhoView>("campus");
   const [search, setSearch] = useState("");
   const [subjectFilter, setSubjectFilter] = useState<string>("all");
@@ -149,6 +159,45 @@ export function MaterialsTab({
     search,
     session?.userId,
   ]);
+
+  function performCopy(m: LearningMaterial) {
+    if (!session) return;
+    const targetKho: KhoView = m.kho === "campus" ? "personal" : "campus";
+    const targetStatus = targetKho === "personal" ? "approved" : "pending";
+    const targetCampusId =
+      targetKho === "personal"
+        ? null
+        : session.campusId ?? operatingCampusId ?? null;
+
+    // Strip id/createdAt/updatedAt (store assigns fresh). Reuse the
+    // Storage path / downloadUrl — same bytes, two Firestore docs. The
+    // version chain is also reset (a copy is a fresh root, not a new
+    // version of the source).
+    const {
+      id: _id,
+      createdAt: _c,
+      updatedAt: _u,
+      version: _v,
+      versionOfRootId: _vr,
+      ...rest
+    } = m;
+    createMaterial({
+      ...rest,
+      kho: targetKho,
+      campusId: targetCampusId,
+      ownerId: session.userId,
+      ownerName: session.name ?? "—",
+      status: targetStatus,
+      approvedBy: targetStatus === "approved" ? session.userId : null,
+      rejectionNote: null,
+      archivedAt: null,
+      archivedBy: null,
+      archiveReason: null,
+    } as Omit<LearningMaterial, "id" | "createdAt" | "updatedAt">);
+    setCopying(null);
+    // Switch tab so the user can see the new copy.
+    setKhoView(targetKho);
+  }
 
   return (
     <>
@@ -257,6 +306,7 @@ export function MaterialsTab({
                 material={m}
                 onView={setViewing}
                 onEdit={showAdminControls ? setEditing : undefined}
+                onDuplicate={showAdminControls ? setCopying : undefined}
                 onArchive={
                   showAdminControls
                     ? (target) => {
@@ -291,6 +341,11 @@ export function MaterialsTab({
       <EditMaterialDialog
         material={editing}
         onClose={() => setEditing(null)}
+      />
+      <CopyMaterialDialog
+        material={copying}
+        onClose={() => setCopying(null)}
+        onConfirm={performCopy}
       />
     </>
   );

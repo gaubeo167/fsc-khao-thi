@@ -422,15 +422,15 @@ export default function HomeworkAdminPage() {
                                   (a) => a.homeworkId === h.id,
                                 );
                                 if (hasData) {
-                                  // BTVN đã có HS làm — không cho lưu trữ.
+                                  // BTVN đã có HS làm — không cho xoá.
                                   return (
                                     <IconButton
                                       size="sm"
                                       variant="destructive"
-                                      title="🔒 BTVN đã có HS làm bài — không thể lưu trữ"
+                                      title="🔒 BTVN đã có HS làm bài — không thể xoá"
                                       onClick={() => {
                                         toast.error(
-                                          "🔒 BTVN đã có HS làm bài — không thể lưu trữ. Có thể đổi sang trạng thái 'Đã đóng' để ngừng nhận bài mới.",
+                                          "🔒 BTVN đã có HS làm bài — không thể xoá. Có thể đổi sang trạng thái 'Đã đóng' để ngừng nhận bài mới.",
                                           { duration: 6000 },
                                         );
                                       }}

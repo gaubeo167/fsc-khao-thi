@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Copy,
   Eye,
   FileSpreadsheet,
   FileText,
@@ -41,6 +42,10 @@ interface Props {
   onEdit?: (m: LearningMaterial) => void;
   onArchive?: (m: LearningMaterial) => void;
   onRestore?: (m: LearningMaterial) => void;
+  /** When provided, renders a Copy icon button that opens a confirm
+   *  dialog (mirrors câu hỏi copy). The destination kho is the opposite
+   *  of the source — personal → campus needs TBM duyệt. */
+  onDuplicate?: (m: LearningMaterial) => void;
 }
 
 function MaterialCardImpl({
@@ -49,6 +54,7 @@ function MaterialCardImpl({
   onEdit,
   onArchive,
   onRestore,
+  onDuplicate,
 }: Props) {
   const subjects = useSubjectsStore((s) => s.subjects);
   const tocNodes = useSubjectsStore((s) => s.tocNodes);
@@ -109,6 +115,19 @@ function MaterialCardImpl({
               onClick={() => onEdit(material)}
             >
               <PencilLine className="h-3.5 w-3.5" strokeWidth={1.75} />
+            </IconButton>
+          ) : null}
+          {onDuplicate && !material.archivedAt ? (
+            <IconButton
+              size="sm"
+              title={
+                material.kho === "campus"
+                  ? "Sao chép sang kho cá nhân"
+                  : "Sao chép sang kho trường (cần duyệt)"
+              }
+              onClick={() => onDuplicate(material)}
+            >
+              <Copy className="h-3.5 w-3.5" strokeWidth={1.75} />
             </IconButton>
           ) : null}
           {material.archivedAt && onRestore ? (

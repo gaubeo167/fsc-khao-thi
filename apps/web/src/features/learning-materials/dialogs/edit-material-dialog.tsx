@@ -15,6 +15,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { useAuthStore } from "@/features/auth/state/auth-store";
+import { useCampusStore } from "@/features/campus/state/campus-store";
 import { useGradesStore } from "@/features/grades/state/grades-store";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import {
@@ -43,6 +45,8 @@ interface Props {
  */
 export function EditMaterialDialog({ material, onClose }: Props) {
   const open = Boolean(material);
+  const session = useAuthStore((s) => s.session);
+  const activeCampusId = useCampusStore((s) => s.activeCampusId);
   const subjects = useSubjectsStore((s) => s.subjects);
   const grades = useGradesStore((s) => s.grades);
   const tocNodes = useSubjectsStore((s) => s.tocNodes);
@@ -127,10 +131,27 @@ export function EditMaterialDialog({ material, onClose }: Props) {
     try {
       const isLink = material.sourceType === "link";
       const newUrl = externalUrl.trim();
-      // Campus kho changes need re-approval if currently approved —
-      // mirrors how question editor knocks pending state on edit. For
-      // simplicity we keep current status; teacher must trigger
-      // approval workflow separately if they made substantive changes.
+      // Approval gating on kho switch:
+      //   personal → campus  → reset to "pending" (TBM/Admin must duyệt)
+      //   campus  → personal → "approved" (personal is auto-approved)
+      //   no kho change      → keep existing status
+      const khoChanged = kho !== material.kho;
+      const statusPatch: Partial<LearningMaterial> = khoChanged
+        ? kho === "campus"
+          ? {
+              status: "pending",
+              approvedBy: null,
+              rejectionNote: null,
+              campusId:
+                session?.campusId ?? activeCampusId ?? material.campusId ?? null,
+            }
+          : {
+              status: "approved",
+              approvedBy: session?.userId ?? material.approvedBy ?? null,
+              rejectionNote: null,
+              campusId: null,
+            }
+        : {};
       update(material.id, {
         title: title.trim(),
         description: description.trim() || undefined,
@@ -139,6 +160,7 @@ export function EditMaterialDialog({ material, onClose }: Props) {
         tocNodeId: tocNodeId || null,
         tags,
         kho,
+        ...statusPatch,
         // Link material — URL edit propagates to both downloadUrl and
         // externalUrl. fileType re-inferred from the new URL.
         ...(isLink
@@ -149,7 +171,11 @@ export function EditMaterialDialog({ material, onClose }: Props) {
             }
           : {}),
       });
-      toast.success("Đã cập nhật học liệu");
+      toast.success(
+        khoChanged && kho === "campus"
+          ? "Đã gửi học liệu sang kho trường — chờ TBM/Admin duyệt"
+          : "Đã cập nhật học liệu",
+      );
       onClose();
     } catch (e) {
       toast.error(
