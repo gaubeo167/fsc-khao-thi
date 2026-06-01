@@ -54,13 +54,42 @@ const ANTHROPIC_MEDIA_TYPES = new Set([
   "image/webp",
 ]);
 
-/** Top-level entry — picks a provider, returns text completion. */
+/** Top-level entry — picks a provider, returns text completion.
+ *
+ *  Strategy:
+ *    1. Try Anthropic (if key set) with 2 retries on transient 429/529
+ *       (overloaded) errors using exponential backoff (1s, 2s).
+ *    2. If Anthropic is permanently unavailable (overloaded after all
+ *       retries, or any other failure) AND a Gemini key is configured,
+ *       fall back to Gemini automatically. Surfaces a hint in the error
+ *       message so the UI can show "đang tự chuyển sang Gemini" or
+ *       similar.
+ *    3. If only Gemini key set, use Gemini.
+ *    4. If no keys, fail with config hint.
+ */
 export async function aiComplete(req: AiCompletionRequest): Promise<AiCompletionResult> {
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   const geminiKey = process.env.GEMINI_API_KEY;
 
   if (anthropicKey) {
-    return runAnthropic(anthropicKey, req);
+    try {
+      return await runAnthropicWithRetry(anthropicKey, req);
+    } catch (err) {
+      // Only fall back to Gemini for transient/overload errors.
+      // Auth / quota / config errors should surface directly.
+      if (
+        err instanceof AiProviderError &&
+        geminiKey &&
+        (err.status === 529 ||
+          err.status === 503 ||
+          err.status === 429 ||
+          /overload/i.test(err.message) ||
+          /high demand/i.test(err.message))
+      ) {
+        return runGemini(geminiKey, req);
+      }
+      throw err;
+    }
   }
   if (geminiKey) {
     return runGemini(geminiKey, req);
@@ -71,6 +100,31 @@ export async function aiComplete(req: AiCompletionRequest): Promise<AiCompletion
     503,
     "Lấy key Gemini miễn phí tại https://aistudio.google.com/app/apikey (1500 request/ngày).",
   );
+}
+
+/** Wraps runAnthropic with retry on overload (529) + rate-limit (429).
+ *  Backoff: 1s → 2s. Final failure rethrows the original error. */
+async function runAnthropicWithRetry(
+  apiKey: string,
+  req: AiCompletionRequest,
+): Promise<AiCompletionResult> {
+  const DELAYS = [1000, 2000];
+  for (let attempt = 0; attempt <= DELAYS.length; attempt++) {
+    try {
+      return await runAnthropic(apiKey, req);
+    } catch (err) {
+      const isTransient =
+        err instanceof AiProviderError &&
+        (err.status === 529 ||
+          err.status === 429 ||
+          /overload/i.test(err.message) ||
+          /high demand/i.test(err.message));
+      if (!isTransient || attempt === DELAYS.length) throw err;
+      await new Promise((r) => setTimeout(r, DELAYS[attempt]!));
+    }
+  }
+  // Unreachable — loop exits via return or throw.
+  throw new AiProviderError("Anthropic retry loop exited unexpectedly.", 500);
 }
 
 /* ─────────────────────────── Anthropic ─────────────────────────── */
@@ -107,9 +161,15 @@ async function runAnthropic(
       .trim();
     return { provider: "anthropic", text };
   } catch (err) {
+    // Anthropic SDK error has `.status` (HTTP status code). Preserve it
+    // so the retry-with-fallback logic upstream can distinguish 529
+    // (overloaded — retry) from 401 (auth — fail fast).
+    const errAny = err as { status?: number; message?: string };
+    const status =
+      typeof errAny?.status === "number" ? errAny.status : 502;
     const message =
-      err instanceof Error ? err.message : "Không gọi được Anthropic API.";
-    throw new AiProviderError(message, 502);
+      errAny?.message ?? (err instanceof Error ? err.message : "Không gọi được Anthropic API.");
+    throw new AiProviderError(message, status);
   }
 }
 
