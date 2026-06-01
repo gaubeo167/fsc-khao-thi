@@ -86,13 +86,13 @@ export async function aiComplete(req: AiCompletionRequest): Promise<AiCompletion
           /overload/i.test(err.message) ||
           /high demand/i.test(err.message))
       ) {
-        return runGemini(geminiKey, req);
+        return runGeminiWithRetry(geminiKey, req);
       }
       throw err;
     }
   }
   if (geminiKey) {
-    return runGemini(geminiKey, req);
+    return runGeminiWithRetry(geminiKey, req);
   }
 
   throw new AiProviderError(
@@ -102,29 +102,50 @@ export async function aiComplete(req: AiCompletionRequest): Promise<AiCompletion
   );
 }
 
-/** Wraps runAnthropic with retry on overload (529) + rate-limit (429).
- *  Backoff: 1s → 2s. Final failure rethrows the original error. */
+/** Generic exponential-backoff retry for any provider runner. Retries
+ *  on transient overload / rate-limit signals only — auth / quota /
+ *  validation errors short-circuit so the caller can fix them. */
+function isTransientAiError(err: unknown): boolean {
+  if (!(err instanceof AiProviderError)) return false;
+  return (
+    err.status === 529 ||
+    err.status === 503 ||
+    err.status === 429 ||
+    /overload/i.test(err.message) ||
+    /high demand/i.test(err.message) ||
+    /UNAVAILABLE/i.test(err.message) ||
+    /try again later/i.test(err.message)
+  );
+}
+
+async function runWithRetry<T>(
+  fn: () => Promise<T>,
+  delays: number[] = [1000, 2000],
+): Promise<T> {
+  for (let attempt = 0; attempt <= delays.length; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (!isTransientAiError(err) || attempt === delays.length) throw err;
+      await new Promise((r) => setTimeout(r, delays[attempt]!));
+    }
+  }
+  // Unreachable — loop exits via return or throw.
+  throw new AiProviderError("Retry loop exited unexpectedly.", 500);
+}
+
 async function runAnthropicWithRetry(
   apiKey: string,
   req: AiCompletionRequest,
 ): Promise<AiCompletionResult> {
-  const DELAYS = [1000, 2000];
-  for (let attempt = 0; attempt <= DELAYS.length; attempt++) {
-    try {
-      return await runAnthropic(apiKey, req);
-    } catch (err) {
-      const isTransient =
-        err instanceof AiProviderError &&
-        (err.status === 529 ||
-          err.status === 429 ||
-          /overload/i.test(err.message) ||
-          /high demand/i.test(err.message));
-      if (!isTransient || attempt === DELAYS.length) throw err;
-      await new Promise((r) => setTimeout(r, DELAYS[attempt]!));
-    }
-  }
-  // Unreachable — loop exits via return or throw.
-  throw new AiProviderError("Anthropic retry loop exited unexpectedly.", 500);
+  return runWithRetry(() => runAnthropic(apiKey, req));
+}
+
+async function runGeminiWithRetry(
+  apiKey: string,
+  req: AiCompletionRequest,
+): Promise<AiCompletionResult> {
+  return runWithRetry(() => runGemini(apiKey, req));
 }
 
 /* ─────────────────────────── Anthropic ─────────────────────────── */
@@ -235,10 +256,21 @@ async function runGemini(
   }
 
   if (!res.ok || data.error) {
-    throw new AiProviderError(
-      data.error?.message ?? `Gemini trả về ${res.status}.`,
-      502,
-    );
+    // Preserve the upstream HTTP status so the retry wrapper can tell
+    // 429 (rate-limit) / 503 (overload) from 400 (bad request) /
+    // 401 (auth). Gemini sometimes returns the overload text in a 503
+    // and sometimes in a 200 with `error.message` populated — handle
+    // both shapes.
+    const msg = data.error?.message ?? `Gemini trả về ${res.status}.`;
+    const inferredStatus =
+      /overload|high demand|UNAVAILABLE/i.test(msg)
+        ? 503
+        : /quota|rate.?limit|RESOURCE_EXHAUSTED/i.test(msg)
+          ? 429
+          : res.ok
+            ? 502
+            : res.status;
+    throw new AiProviderError(msg, inferredStatus);
   }
   if (data.promptFeedback?.blockReason) {
     throw new AiProviderError(
