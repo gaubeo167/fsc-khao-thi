@@ -194,20 +194,18 @@ function mathBlock(label: string, latex: string): Paragraph {
 
 /**
  * Convert a Vietnamese sentence with inline `$...$` LaTeX into a
- * paragraph child list. We deliberately emit the LaTeX as PLAIN TEXT
- * (not OMath) inside the editable sample questions: this is the only
- * format guaranteed to survive a Word round-trip — the parser reads
- * `$...$` markers verbatim, regardless of whether mammoth manages to
- * extract OMath. The math is rendered by KaTeX once the question lands
- * in the question bank, so teachers still see pretty equations there.
+ * paragraph child list. Each `$...$` segment becomes a real Office
+ * Math (OMath) element — the same shape Word's Equation Editor and
+ * MathType emit — so the template displays pretty equations natively
+ * in Word.
  *
- * The reference section at the top of the template (mathBlock) shows
- * the OMath rendering for visual demo only — that section is non-
- * editable boilerplate, not a question.
+ * Round-trip safety: the parse route's preprocessor (omath-to-latex)
+ * converts every `<m:oMath>` block back to a `$LATEX$` plain text run
+ * BEFORE mammoth extracts the document, so teachers editing the
+ * template in Word (or pasting MathType equations) survive a clean
+ * re-upload.
  *
- * `baseStyle` controls bold/italic of the plain segments. The `$...$`
- * spans use a monospaced font to make them visually distinct so
- * teachers know they're editable LaTeX, not free text.
+ * `baseStyle` controls bold/italic of the plain prose segments.
  */
 function inlineMixed(text: string, baseStyle?: { bold?: boolean }): ParagraphChild[] {
   const out: ParagraphChild[] = [];
@@ -224,15 +222,7 @@ function inlineMixed(text: string, baseStyle?: { bold?: boolean }): ParagraphChi
         }),
       );
     }
-    // Keep the literal $...$ marker so teachers see the syntax + can
-    // edit it. Monospaced + tinted teal to set it apart from prose.
-    out.push(
-      new TextRun({
-        text: `$${m[1]}$`,
-        font: "Consolas",
-        color: "0F766E",
-      }),
-    );
+    out.push(new Math({ children: latexToDocxMath(m[1]) }));
     last = m.index + m[0].length;
   }
   if (last < text.length) {
@@ -354,24 +344,34 @@ function resolveTheme(input: string): Theme {
   return { key: "generic", label: "Tổng quát" };
 }
 
+/** Standalone embedded image paragraph — reused by every image-bearing
+ *  question template helper. The placeholder is a light-gray PNG with
+ *  diagonal stripes so teachers know "this is the slot for my image";
+ *  they replace it by clicking + pasting their own picture in Word. */
+function placeholderImage(width = 240, height = 120): Paragraph {
+  return new Paragraph({
+    spacing: { after: 100 },
+    children: [
+      new ImageRun({
+        type: "png",
+        data: makePlaceholderPng(width, height),
+        transformation: { width, height },
+      }),
+    ],
+  });
+}
+
 function imageQuestion(n: number, prompt: string, options: string[]): Paragraph[] {
   // Question header + meta, then the placeholder image, then options.
-  const imgBuf = makePlaceholderPng(240, 120);
   return [
     qHeader(n),
     meta("Dạng", "MCQ-SINGLE"),
     meta("Độ khó", "Trung bình"),
-    meta("Đề bài", prompt + " (Dán ảnh của bạn vào ô bên dưới, thay ảnh mẫu.)"),
-    new Paragraph({
-      spacing: { after: 100 },
-      children: [
-        new ImageRun({
-          type: "png",
-          data: imgBuf,
-          transformation: { width: 240, height: 120 },
-        }),
-      ],
-    }),
+    metaWithMath(
+      "Đề bài",
+      prompt + " (Dán ảnh của bạn vào ô bên dưới, thay ảnh mẫu.)",
+    ),
+    placeholderImage(),
     ...options.map((opt, i) =>
       optMath(
         `${String.fromCharCode(65 + i)}.`,
@@ -381,6 +381,54 @@ function imageQuestion(n: number, prompt: string, options: string[]): Paragraph[
     ),
     gap(),
   ];
+}
+
+/** Image + True/False question. Prompt + picture, then a single
+ *  `Đáp án: Đúng | Sai` line. Used to demonstrate that the parser
+ *  attaches the embedded image to ANY question type, not just MCQ. */
+function imageTrueFalseQuestion(
+  n: number,
+  prompt: string,
+  correct: boolean,
+  explanation: string,
+): Paragraph[] {
+  return [
+    qHeader(n),
+    meta("Dạng", "TRUE-FALSE"),
+    meta("Độ khó", "Dễ"),
+    metaWithMath(
+      "Đề bài",
+      prompt + " (Dán ảnh của bạn vào ô bên dưới, thay ảnh mẫu.)",
+    ),
+    placeholderImage(),
+    meta("Đáp án", correct ? "Đúng" : "Sai"),
+    metaWithMath("Giải thích", explanation),
+    gap(),
+  ];
+}
+
+/** Image + Fill-blank. The blanks live inside the `Đề bài:` line via
+ *  `___` markers; the embedded image gives visual context. */
+function imageFillBlankQuestion(
+  n: number,
+  prompt: string,
+  answers: string[],
+): Paragraph[] {
+  const paragraphs: Paragraph[] = [
+    qHeader(n),
+    meta("Dạng", "FILL-BLANK"),
+    meta("Độ khó", "Trung bình"),
+    metaWithMath(
+      "Đề bài",
+      prompt + " (Dán ảnh của bạn vào ô bên dưới, thay ảnh mẫu.)",
+    ),
+    placeholderImage(),
+  ];
+  answers.forEach((ans, i) => {
+    paragraphs.push(meta(`Đáp án ${i + 1}`, ans));
+  });
+  paragraphs.push(gap());
+  return paragraphs;
 }
 
 function sampleQuestions(theme: Theme): Paragraph[] {
@@ -431,6 +479,8 @@ function mathQuestions(): Paragraph[] {
     ),
     gap(),
   );
+  // — 3 image-bearing question types in a row so teachers see the
+  //   pattern for MCQ + True/False + Fill-blank with embedded picture.
   out.push(
     ...imageQuestion(3, "Quan sát hình tam giác bên dưới và tính diện tích:", [
       "$\\frac{1}{2} \\times a \\times h$",
@@ -440,7 +490,22 @@ function mathQuestions(): Paragraph[] {
     ]),
   );
   out.push(
-    qHeader(4),
+    ...imageTrueFalseQuestion(
+      4,
+      "Quan sát hình bên dưới, đây có phải hình chữ nhật không?",
+      true,
+      "Hình có 4 góc vuông và các cạnh đối song song bằng nhau nên là hình chữ nhật.",
+    ),
+  );
+  out.push(
+    ...imageFillBlankQuestion(
+      5,
+      "Quan sát biểu đồ cột dưới đây. Cột cao nhất ứng với giá trị ___, cột thấp nhất ứng với giá trị ___.",
+      ["8", "2"],
+    ),
+  );
+  out.push(
+    qHeader(6),
     meta("Dạng", "TRUE-FALSE"),
     meta("Độ khó", "Dễ"),
     metaWithMath("Đề bài", "Phương trình $x^2 + 1 = 0$ có nghiệm thực."),
@@ -452,7 +517,7 @@ function mathQuestions(): Paragraph[] {
     gap(),
   );
   out.push(
-    qHeader(5),
+    qHeader(7),
     meta("Dạng", "FILL-BLANK"),
     meta("Độ khó", "Trung bình"),
     metaWithMath(
@@ -464,7 +529,7 @@ function mathQuestions(): Paragraph[] {
     gap(),
   );
   out.push(
-    qHeader(6),
+    qHeader(8),
     meta("Dạng", "ORDERING"),
     meta("Độ khó", "Dễ"),
     metaWithMath("Đề bài", "Sắp xếp các số sau từ bé đến lớn."),
@@ -476,7 +541,7 @@ function mathQuestions(): Paragraph[] {
     gap(),
   );
   out.push(
-    qHeader(7),
+    qHeader(9),
     meta("Dạng", "MATCHING"),
     meta("Độ khó", "Trung bình"),
     metaWithMath("Đề bài", "Ghép hàm số với đạo hàm của nó."),
