@@ -672,7 +672,9 @@ function ReviewCard({
               >
                 {String.fromCharCode(65 + i)}
               </span>
-              <span className="min-w-0 flex-1">{o.content}</span>
+              <span className="min-w-0 flex-1">
+                <RenderedContent content={o.content} />
+              </span>
               {o.isCorrect && (
                 <span className="rounded-full bg-emerald-500 px-1.5 py-0.5 text-[9px] font-bold uppercase text-white">
                   Đúng
@@ -705,7 +707,7 @@ function ReviewCard({
                   key={a}
                   className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 ring-1 ring-emerald-200"
                 >
-                  {a}
+                  <RenderedContent content={a} />
                 </span>
               ))}
             </li>
@@ -714,10 +716,10 @@ function ReviewCard({
       ) : null}
 
       {question.explanation && (
-        <p className="mt-2 text-[12px] italic text-muted-foreground">
-          <Sparkles className="mr-1 inline h-3 w-3" />
-          {question.explanation}
-        </p>
+        <div className="mt-2 flex items-start gap-1 text-[12px] italic text-muted-foreground">
+          <Sparkles className="mt-0.5 h-3 w-3 shrink-0" />
+          <RenderedContent content={question.explanation} />
+        </div>
       )}
     </li>
   );
