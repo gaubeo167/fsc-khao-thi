@@ -97,17 +97,28 @@ export function parseImportText(raw: string): ParseResult {
   return { questions, warnings };
 }
 
-const BLOCK_HEADER_RE = /^\s*(?:#\s*Câu\s*\d+|={2,}\s*CÂU\s*\d+\s*={2,})/im;
+// Accept any of:
+//   "# Câu 1"            ← canonical FSC marker
+//   "=== CÂU 1 ==="      ← legacy heavy marker
+//   "Câu 1"  /  "Câu 1:" ← bare Vietnamese marker (Word default)
+const BLOCK_HEADER_RE = /^\s*(?:#\s*)?Câu\s*\d+\b\s*[:.\-]?\s*$/i;
+const LEGACY_HEAVY_RE = /^\s*={2,}\s*CÂU\s*\d+\s*={2,}/i;
 
 function splitIntoBlocks(raw: string): string[] {
   const lines = raw.split(/\r?\n/);
   const blocks: string[][] = [];
   let current: string[] = [];
+  // Anything appearing BEFORE the first "# Câu N" header is treated as
+  // template prelude / reference / instructions and discarded. Without
+  // this, the prose at the top of FSC's template generator was being
+  // pushed in as Câu 1 with a "Không nhận diện được dạng" warning.
+  let seenHeader = false;
   for (const line of lines) {
-    if (BLOCK_HEADER_RE.test(line)) {
-      if (current.length > 0) blocks.push(current);
+    if (BLOCK_HEADER_RE.test(line) || LEGACY_HEAVY_RE.test(line)) {
+      if (seenHeader && current.length > 0) blocks.push(current);
       current = [];
-    } else {
+      seenHeader = true;
+    } else if (seenHeader) {
       current.push(line);
     }
   }
@@ -133,12 +144,18 @@ function parseBlock(block: string, index: number): ParseOne {
       otherLines.push("");
       continue;
     }
-    const m = /^([A-Za-zÀ-ỹ\s]+):\s*(.+)$/.exec(line);
+    const m = /^([A-Za-zÀ-ỹ\s\d]+):\s*(.+)$/.exec(line);
     if (m) {
       const key = normaliseKey(m[1]);
       const val = m[2].trim();
-      // Only keys we recognise go into meta; others fall through into content
-      if (RECOGNISED_KEYS.has(key)) {
+      // Recognise the canonical fixed keys, plus the numbered variants
+      // `dapan1`, `dapan2`, ... and `tieuchi1`, `tieuchi2`, ... that
+      // fill-blank / essay parsers expect to find on `meta`.
+      if (
+        RECOGNISED_KEYS.has(key) ||
+        /^dapan\d+$/.test(key) ||
+        /^tieuchi\d+$/.test(key)
+      ) {
         meta[key] = val;
         continue;
       }
@@ -154,7 +171,36 @@ function parseBlock(block: string, index: number): ParseOne {
   const difficulty = normaliseDifficulty(
     meta["dokho"] ?? meta["difficulty"] ?? "medium",
   );
-  const content = (meta["debai"] ?? meta["content"] ?? "").trim();
+  // Prefer explicit `Đề bài:` value; fall back to any narrative lines
+  // that aren't recognised as options / pairs / list items, so a teacher
+  // writing free-form content under the meta block still gets imported.
+  let content = (meta["debai"] ?? meta["content"] ?? "").trim();
+  const narrativeLines = otherLines
+    .map((l) => l.trim())
+    .filter(
+      (l) =>
+        l.length > 0 &&
+        // Skip option lines (A. ... [đúng]) — handled by parseMcq.
+        !/^[A-H][\.\)]\s/.test(l) &&
+        // Skip numbered list / pair lines — used by matching/ordering.
+        !/^\d+\.\s/.test(l) &&
+        // Skip leftover meta-like lines just in case.
+        !/^[A-Za-zÀ-ỹ\s\d]+:\s/.test(l),
+    );
+  if (!content && narrativeLines.length > 0) {
+    content = narrativeLines.join("\n").trim();
+  } else {
+    // Even when an explicit `Đề bài:` line was provided, any continuation
+    // lines that are images (`![](data:...)`) belong to the question
+    // statement — Word stores embedded images as separate paragraphs.
+    // Append them so the rendered question shows the image inline.
+    const inlineImages = narrativeLines.filter((l) =>
+      /^!\[[^\]]*\]\([^)]+\)$/.test(l),
+    );
+    if (inlineImages.length > 0) {
+      content = `${content}\n\n${inlineImages.join("\n")}`.trim();
+    }
+  }
   const explanation = meta["giaithich"] ?? meta["explanation"];
 
   switch (type) {

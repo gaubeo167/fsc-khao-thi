@@ -193,9 +193,21 @@ function mathBlock(label: string, latex: string): Paragraph {
 }
 
 /**
- * Convert a Vietnamese sentence with inline `$...$` LaTeX into a sequence of
- * paragraph children. Plain text becomes TextRun; each `$...$` becomes a
- * Math element rendered via the latex2docx converter.
+ * Convert a Vietnamese sentence with inline `$...$` LaTeX into a
+ * paragraph child list. We deliberately emit the LaTeX as PLAIN TEXT
+ * (not OMath) inside the editable sample questions: this is the only
+ * format guaranteed to survive a Word round-trip — the parser reads
+ * `$...$` markers verbatim, regardless of whether mammoth manages to
+ * extract OMath. The math is rendered by KaTeX once the question lands
+ * in the question bank, so teachers still see pretty equations there.
+ *
+ * The reference section at the top of the template (mathBlock) shows
+ * the OMath rendering for visual demo only — that section is non-
+ * editable boilerplate, not a question.
+ *
+ * `baseStyle` controls bold/italic of the plain segments. The `$...$`
+ * spans use a monospaced font to make them visually distinct so
+ * teachers know they're editable LaTeX, not free text.
  */
 function inlineMixed(text: string, baseStyle?: { bold?: boolean }): ParagraphChild[] {
   const out: ParagraphChild[] = [];
@@ -212,7 +224,15 @@ function inlineMixed(text: string, baseStyle?: { bold?: boolean }): ParagraphChi
         }),
       );
     }
-    out.push(new Math({ children: latexToDocxMath(m[1]) }));
+    // Keep the literal $...$ marker so teachers see the syntax + can
+    // edit it. Monospaced + tinted teal to set it apart from prose.
+    out.push(
+      new TextRun({
+        text: `$${m[1]}$`,
+        font: "Consolas",
+        color: "0F766E",
+      }),
+    );
     last = m.index + m[0].length;
   }
   if (last < text.length) {
@@ -230,17 +250,81 @@ function inlineMixed(text: string, baseStyle?: { bold?: boolean }): ParagraphChi
 /* ────────────────── Question samples ────────────────── */
 
 /**
- * Inline placeholder image — a small base64-encoded PNG (light-gray
- * rectangle with the FSC mark). Embedded straight into the .docx via
- * `docx.ImageRun` so the template shows the teacher exactly how an
- * image-bearing question renders. Teachers replace it with their own
- * artwork by selecting + pasting over.
+ * Generate a valid placeholder PNG at runtime — a light-gray rectangle
+ * with a checkered border so the teacher sees "where an image goes".
+ * Generating it on the fly (instead of shipping a base64 literal) keeps
+ * us from having to maintain a hand-pasted PNG that might end up
+ * truncated or malformed. The image lands in the docx via `ImageRun`
+ * and gets re-extracted by mammoth on re-upload as a real data URI.
  */
-const PLACEHOLDER_PNG_BASE64 =
-  // 200x100 light-gray PNG with "MINH HOẠ" caption — generated offline.
-  // Kept inline so the route stays a single-file artifact (no public
-  // asset to ship). 1.3 KB.
-  "iVBORw0KGgoAAAANSUhEUgAAAMgAAABkCAMAAADTKfWYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAA8UExURf///+vr69nZ2cHBwbu7u7Gxsa6urqWlpaCgoJiYmJWVlYqKioODg39/f3l5eXR0dG5ubmlpaWVlZf///+SLKB4AAAATdFJOU///////////////////////////ACOgsK0AAAAJcEhZcwAADsMAAA7DAcdvqGQAAACySURBVHhe7c89DoAgEEThSXz/G7sBVoOJ5sZqJgFa+rvDPYkAQEhEEhEpEoSWQiAILAUDCcKLAUcCSIyk0AghMQQwYECEYJDgEEILBgYBAhECAgAQ4SAIBAhICAAAUMACAQISAQIAACAQIQAAAhICAgAACEgEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhEAAAIBAhAAAQIRAgAAAhAQEZD3oQECEgYBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhICAAAAEBAAEBAQIBAgIBAgIBAgIBAgIBAgIBAhAQiAhICCAQICAAAAhICAAAAAEBAAEBAQIBAgIBAgIBAgIBAhICEAIBAQIBAgIBAQABEBAQAAAAAA==";
+function makePlaceholderPng(width = 200, height = 100): Buffer {
+  // Minimal valid PNG: signature + IHDR + IDAT + IEND.
+  // Build raw RGBA pixel data first, then compress + chunk.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const zlib = require("node:zlib") as typeof import("node:zlib");
+
+  const raw: number[] = [];
+  for (let y = 0; y < height; y++) {
+    raw.push(0); // filter byte per scanline (None)
+    for (let x = 0; x < width; x++) {
+      // Light gray fill with a darker 1px border + diagonal stripes
+      // every 20px so the placeholder is visually obvious.
+      const onBorder =
+        x === 0 || y === 0 || x === width - 1 || y === height - 1;
+      const onStripe = (x + y) % 20 === 0;
+      const c = onBorder ? 0x90 : onStripe ? 0xc8 : 0xe5;
+      raw.push(c, c, c, 0xff); // R, G, B, A
+    }
+  }
+  const idatBody = zlib.deflateSync(Buffer.from(raw));
+
+  function chunk(type: string, data: Buffer): Buffer {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length, 0);
+    const typeBuf = Buffer.from(type, "ascii");
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(Buffer.concat([typeBuf, data])), 0);
+    return Buffer.concat([len, typeBuf, data, crc]);
+  }
+
+  const signature = Buffer.from([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+  ]);
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr.writeUInt8(8, 8); // bit depth
+  ihdr.writeUInt8(6, 9); // color type RGBA
+  // compression, filter, interlace already 0 from Buffer.alloc
+
+  return Buffer.concat([
+    signature,
+    chunk("IHDR", ihdr),
+    chunk("IDAT", idatBody),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+
+// CRC-32 polynomial 0xEDB88320, standard PNG variant.
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) {
+      c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    }
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+
+function crc32(buf: Buffer): number {
+  let c = 0xffffffff;
+  for (let i = 0; i < buf.length; i++) {
+    c = (CRC_TABLE[(c ^ buf[i]!) & 0xff]! ^ (c >>> 8)) >>> 0;
+  }
+  return (c ^ 0xffffffff) >>> 0;
+}
 
 type Theme = {
   key: "math" | "lit" | "eng" | "phy" | "chem" | "bio" | "generic";
@@ -272,7 +356,7 @@ function resolveTheme(input: string): Theme {
 
 function imageQuestion(n: number, prompt: string, options: string[]): Paragraph[] {
   // Question header + meta, then the placeholder image, then options.
-  const imgBuf = Buffer.from(PLACEHOLDER_PNG_BASE64, "base64");
+  const imgBuf = makePlaceholderPng(240, 120);
   return [
     qHeader(n),
     meta("Dạng", "MCQ-SINGLE"),
