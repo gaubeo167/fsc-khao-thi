@@ -16,6 +16,8 @@ import {
   useUserScope,
 } from "@/features/auth/lib/use-scope";
 import { findCampus } from "@/features/campus/data/seed-campuses";
+import { useCampusStore } from "@/features/campus/state/campus-store";
+import { useCampusesStore } from "@/features/campus/state/campuses-store";
 import { useGradesStore } from "@/features/grades/state/grades-store";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import { cn } from "@/lib/utils";
@@ -39,11 +41,35 @@ export function SharedMetaFields({ register, errors, watch }: Props) {
   const session = useAuthStore((s) => s.session);
   const grades = useGradesStore((s) => s.grades);
   const subjects = useSubjectsStore((s) => s.subjects);
+  const activeCampusId = useCampusStore((s) => s.activeCampusId);
+  const allCampuses = useCampusesStore((s) => s.campuses);
   const kho = watch("kho") as "personal" | "campus";
   const scope = useUserScope();
 
-  const allowedSubjects = filterSubjectsByScope(subjects, scope);
-  const allowedGrades = filterGradesByScope(grades, scope);
+  // Campus scope — superadmin can switch via activeCampusId; everyone
+  // else is locked to their own campus. Used to filter subjects + grades
+  // so a brand-new campus doesn't see other campuses' subjects.
+  const operatingCampusId =
+    session?.role === "superadmin"
+      ? activeCampusId
+      : session?.campusId ?? null;
+  const operatingCampus = operatingCampusId
+    ? allCampuses.find((c) => c.id === operatingCampusId) ?? null
+    : null;
+
+  const allowedSubjects = filterSubjectsByScope(subjects, scope).filter(
+    (s) => {
+      if (!operatingCampus) return true;
+      return (
+        !s.campusIds ||
+        s.campusIds.length === 0 ||
+        s.campusIds.includes(operatingCampus.id)
+      );
+    },
+  );
+  const allowedGrades = filterGradesByScope(grades, scope).filter((g) =>
+    operatingCampus ? operatingCampus.gradeIds.includes(g.id) : true,
+  );
 
   return (
     <div className="grid gap-4 sm:grid-cols-2">

@@ -201,6 +201,24 @@ export function ImportWordDialog({ open, onOpenChange }: Props) {
   const grades = operatingCampus
     ? allGrades.filter((g) => operatingCampus.gradeIds.includes(g.id))
     : allGrades;
+  // Scope subjects to the operating campus too — without this, brand-new
+  // campuses (e.g. one with only 2 subjects) saw every subject from
+  // every other campus mixed into the dropdown. Mirrors the filter on
+  // /admin/question-bank: subject is in scope iff it has no campus
+  // restriction OR its campusIds includes the current campus, AND it
+  // teaches at least one grade in the campus's grade list.
+  const scopedSubjects = operatingCampus
+    ? subjects.filter((s) => {
+        const inCampus =
+          !s.campusIds ||
+          s.campusIds.length === 0 ||
+          s.campusIds.includes(operatingCampus.id);
+        if (!inCampus) return false;
+        return s.gradeIds.some((gid) =>
+          operatingCampus.gradeIds.includes(gid),
+        );
+      })
+    : subjects;
 
   // TOC: prefer exact (subject, grade) match, fall back to subject-only
   // so admins who built a Mục lục under one grade don't have to rebuild
@@ -448,7 +466,7 @@ export function ImportWordDialog({ open, onOpenChange }: Props) {
                 }}
               >
                 <option value="">— Chọn môn —</option>
-                {subjects.map((s) => (
+                {scopedSubjects.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
                   </option>

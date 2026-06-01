@@ -55,10 +55,26 @@ type State =
 export function AiBatchDialog({ open, onOpenChange, onBack }: Props) {
   const session = useAuthStore((s) => s.session);
   const activeCampusId = useCampusStore((s) => s.activeCampusId);
-  const subjects = useSubjectsStore((s) => s.subjects);
+  const allSubjects = useSubjectsStore((s) => s.subjects);
   const grades = useGradesStore((s) => s.grades);
   const tocNodes = useSubjectsStore((s) => s.tocNodes);
   const createQuestion = useQuestionsStore((s) => s.create);
+
+  // Scope subjects to the current campus so a freshly-created campus
+  // doesn't see subjects from other campuses leak into the dropdown.
+  // Same shape as the filter in /admin/question-bank.
+  const operatingCampusId =
+    session?.role === "superadmin"
+      ? activeCampusId
+      : session?.campusId ?? null;
+  const subjects = operatingCampusId
+    ? allSubjects.filter(
+        (s) =>
+          !s.campusIds ||
+          s.campusIds.length === 0 ||
+          s.campusIds.includes(operatingCampusId),
+      )
+    : allSubjects;
 
   const [subjectId, setSubjectId] = useState("");
   const [gradeId, setGradeId] = useState("");

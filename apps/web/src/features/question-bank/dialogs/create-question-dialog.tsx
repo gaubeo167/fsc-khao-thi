@@ -307,7 +307,20 @@ export function QuestionForm({
   const campusGradeIds = operatingCampus
     ? new Set(operatingCampus.gradeIds)
     : null;
-  const allowedSubjects = filterSubjectsByScope(subjects, scope);
+  // Subjects: role-scope first (teacher → assigned subjects only), then
+  // campus-scope (subject must belong to or be unrestricted-on the
+  // operating campus). Without the campus pass, brand-new campuses saw
+  // subjects from every other campus mixed into the dropdown.
+  const allowedSubjects = filterSubjectsByScope(subjects, scope).filter(
+    (s) => {
+      if (!operatingCampus) return true;
+      return (
+        !s.campusIds ||
+        s.campusIds.length === 0 ||
+        s.campusIds.includes(operatingCampus.id)
+      );
+    },
+  );
   const allowedGrades = filterGradesByScope(grades, scope).filter(
     (g) => (campusGradeIds ? campusGradeIds.has(g.id) : true),
   );
