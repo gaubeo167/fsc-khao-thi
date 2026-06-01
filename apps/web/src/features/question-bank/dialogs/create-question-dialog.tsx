@@ -554,6 +554,30 @@ export function QuestionForm({
                 showBlankButton={type === "fill-blank"}
                 showZoneButton={type === "drag-drop"}
                 showUnderlineButton={type === "underline"}
+                onBlankDeleted={
+                  type === "fill-blank"
+                    ? (deletedIdx) => {
+                        // Splice the matching answer entry so the
+                        // answer fields below renumber together with
+                        // the chips in the prompt. Without this, the
+                        // sync-by-count in FillBlankBlanksField just
+                        // truncates the END of the array — wiping the
+                        // wrong answer when teacher deletes a middle
+                        // blank.
+                        const current =
+                          form.getValues("blanks") ?? [];
+                        if (deletedIdx < 1 || deletedIdx > current.length) {
+                          return;
+                        }
+                        const next = current.slice();
+                        next.splice(deletedIdx - 1, 1);
+                        form.setValue("blanks", next, {
+                          shouldValidate: true,
+                          shouldDirty: true,
+                        });
+                      }
+                    : undefined
+                }
               />
             )}
           />

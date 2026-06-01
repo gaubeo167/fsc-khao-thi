@@ -222,6 +222,20 @@ export function AiQuestionEditDialog({ open, onOpenChange, initial, onSave }: Pr
                   showBlankButton={initial.type === "fill-blank"}
                   showZoneButton={initial.type === "drag-drop"}
                   showUnderlineButton={initial.type === "underline"}
+                  onBlankDeleted={
+                    initial.type === "fill-blank"
+                      ? (deletedIdx) => {
+                          const current = form.getValues("blanks") ?? [];
+                          if (deletedIdx < 1 || deletedIdx > current.length) return;
+                          const next = current.slice();
+                          next.splice(deletedIdx - 1, 1);
+                          form.setValue("blanks", next, {
+                            shouldValidate: true,
+                            shouldDirty: true,
+                          });
+                        }
+                      : undefined
+                  }
                 />
               )}
             />

@@ -21,6 +21,12 @@ interface Props {
   minHeight?: number;
   /** Compact mode used inside answer rows. */
   compact?: boolean;
+  /** Fires BEFORE the blank chip is removed from the DOM and the
+   *  surviving blanks are renumbered. The argument is the ORIGINAL
+   *  1-based index of the deleted blank. The fill-blank form uses
+   *  this to splice the matching entry out of its `blanks` array so
+   *  the answers below renumber to match the chips. */
+  onBlankDeleted?: (deletedIndex: number) => void;
 }
 
 export interface WysiwygApi {
@@ -75,6 +81,7 @@ export function WysiwygEditor({
   toolbar,
   minHeight = 120,
   compact = false,
+  onBlankDeleted,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   /** Track the last value we serialized out — used to skip re-renders. */
@@ -1017,9 +1024,15 @@ export function WysiwygEditor({
     const blank = target.closest<HTMLElement>("[data-blank='1']");
     if (blank) {
       e.preventDefault();
+      // Capture the ORIGINAL 1-based index BEFORE removing so the
+      // parent form can splice the correct answer out of its array.
+      // Without this, renumbering loses the link between the deleted
+      // chip and which `blanks[i]` entry it referred to.
+      const deletedIdx = Number(blank.getAttribute("data-index") ?? "0");
       blank.remove();
       renumberBlanks();
       emit();
+      if (deletedIdx > 0) onBlankDeleted?.(deletedIdx);
       return;
     }
 

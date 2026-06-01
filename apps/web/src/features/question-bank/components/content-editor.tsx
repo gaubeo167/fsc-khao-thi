@@ -45,6 +45,11 @@ interface Props {
    *  (essay / ai-generated answer) where AI generation would defeat the
    *  point of the assessment. */
   hideAi?: boolean;
+  /** Forwarded to WysiwygEditor — fires with the ORIGINAL 1-based
+   *  index of a blank chip when the teacher clicks it to delete. The
+   *  fill-blank form uses this to splice the matching `blanks[i]` so
+   *  answers below renumber with the chips. */
+  onBlankDeleted?: (deletedIndex: number) => void;
 }
 
 export function ContentEditor({
@@ -58,6 +63,7 @@ export function ContentEditor({
   showZoneButton,
   showUnderlineButton,
   hideAi,
+  onBlankDeleted,
 }: Props) {
   const [aiOpen, setAiOpen] = useState(false);
 
@@ -69,6 +75,7 @@ export function ContentEditor({
         placeholder={placeholder}
         minHeight={minHeight}
         invalid={invalid}
+        onBlankDeleted={onBlankDeleted}
         toolbar={(api) => (
           <Toolbar
             api={api}
