@@ -627,41 +627,60 @@ function FillBlankArea({ values, submitted, onSubmit }: AreaProps) {
         ? "partial"
         : "wrong";
 
-  // Replace [blank:N] tokens with inline inputs to give a paragraph-style UI
-  const segments = useMemo(() => {
-    const out: Array<{ kind: "text" | "blank"; value: string; index?: number }> = [];
+  // Build per-LINE segment lists so the author's line breaks survive.
+  // Without splitting by \n first, inline rendering collapses every
+  // newline into a single space — a 2-column layout like
+  //   6 [blank:1] 8     [blank:2] 10
+  //   6 [blank:3] 19    [blank:4] 30
+  // would render as one long ribbon.
+  const lines = useMemo(() => {
     const regex = /\[blank:(\d+)\]/g;
-    let last = 0;
-    let m: RegExpExecArray | null;
-    while ((m = regex.exec(content)) !== null) {
-      if (m.index > last) out.push({ kind: "text", value: content.slice(last, m.index) });
-      out.push({ kind: "blank", value: "", index: Number(m[1]) - 1 });
-      last = m.index + m[0].length;
-    }
-    if (last < content.length) out.push({ kind: "text", value: content.slice(last) });
-    return out;
+    return content.split(/\r?\n/).map((line) => {
+      const segs: Array<{ kind: "text" | "blank"; value: string; index?: number }> = [];
+      let last = 0;
+      regex.lastIndex = 0;
+      let m: RegExpExecArray | null;
+      while ((m = regex.exec(line)) !== null) {
+        if (m.index > last) segs.push({ kind: "text", value: line.slice(last, m.index) });
+        segs.push({ kind: "blank", value: "", index: Number(m[1]) - 1 });
+        last = m.index + m[0].length;
+      }
+      if (last < line.length) segs.push({ kind: "text", value: line.slice(last) });
+      return segs;
+    });
   }, [content]);
 
   return (
     <div className="space-y-2.5">
       <div className="rounded-lg border bg-surface p-4 text-[14px] leading-loose">
-        {segments.map((seg, i) =>
-          seg.kind === "text" ? (
-            <RenderedContent inline key={i} content={seg.value} />
+        {/* One block element per author line so newlines in the
+            content show as actual line breaks. Empty lines collapse
+            to a small vertical gap. */}
+        {lines.map((segs, li) =>
+          segs.length === 0 ? (
+            <div key={li} className="h-2" aria-hidden />
           ) : (
-            <span key={i} className="mx-1 inline-block">
-              <Input
-                disabled={submitted}
-                value={answers[seg.index!] ?? ""}
-                onChange={(e) => setAt(seg.index!, e.target.value)}
-                placeholder={`#${(seg.index ?? 0) + 1}`}
-                className={cn(
-                  "inline-block h-8 w-32 text-center text-[13px] align-middle",
-                  submitted && correctness[seg.index!] && "border-emerald-400 bg-emerald-50",
-                  submitted && !correctness[seg.index!] && "border-rose-400 bg-rose-50",
-                )}
-              />
-            </span>
+            <div key={li} className="block">
+              {segs.map((seg, i) =>
+                seg.kind === "text" ? (
+                  <RenderedContent inline key={i} content={seg.value} />
+                ) : (
+                  <span key={i} className="mx-1 inline-block align-middle">
+                    <Input
+                      disabled={submitted}
+                      value={answers[seg.index!] ?? ""}
+                      onChange={(e) => setAt(seg.index!, e.target.value)}
+                      placeholder={`#${(seg.index ?? 0) + 1}`}
+                      className={cn(
+                        "inline-block h-8 w-32 text-center text-[13px] align-middle",
+                        submitted && correctness[seg.index!] && "border-emerald-400 bg-emerald-50",
+                        submitted && !correctness[seg.index!] && "border-rose-400 bg-rose-50",
+                      )}
+                    />
+                  </span>
+                ),
+              )}
+            </div>
           ),
         )}
       </div>
