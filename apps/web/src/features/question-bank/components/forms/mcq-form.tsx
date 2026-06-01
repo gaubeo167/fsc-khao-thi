@@ -296,14 +296,18 @@ export function McqExplanationField({ control }: { control: Control<any> }) {
               AI hỗ trợ
             </button>
           </div>
-          <textarea
-            {...field}
-            rows={2}
+          {/* Switched from raw <textarea> to WysiwygEditor so inline math
+              (\\(...\\), $...$, OMath-imported $LATEX$) renders live as
+              the teacher types — the previous textarea showed raw LaTeX
+              source and HS never saw the rendered formula in editor.
+              The editor preserves the same string shape on change so
+              react-hook-form serialization is unchanged. */}
+          <WysiwygEditor
+            value={field.value ?? ""}
+            onChange={field.onChange}
             placeholder="Giải thích vì sao đáp án đúng — hiển thị sau khi học sinh nộp."
-            className={cn(
-              "w-full rounded-md border border-input bg-background px-3 py-2 text-sm",
-              "focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30",
-            )}
+            minHeight={72}
+            compact
           />
           <AiAssistDialog
             open={aiOpen}

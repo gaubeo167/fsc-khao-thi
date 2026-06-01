@@ -738,9 +738,10 @@ function ReviewCard({
       <AnswerSummary q={question} />
 
       {question.explanation && (
-        <p className="mt-2 text-[12px] italic text-muted-foreground">
-          📝 {question.explanation}
-        </p>
+        <div className="mt-2 flex items-start gap-1 text-[12px] italic text-muted-foreground">
+          <span aria-hidden>📝</span>
+          <RenderedContent content={question.explanation} />
+        </div>
       )}
     </li>
   );
@@ -768,7 +769,9 @@ function AnswerSummary({ q }: { q: ImportedQuestion }) {
               >
                 {String.fromCharCode(65 + i)}
               </span>
-              <span className="min-w-0 flex-1">{o.content}</span>
+              <span className="min-w-0 flex-1">
+                <RenderedContent content={o.content} />
+              </span>
               {o.isCorrect && (
                 <span className="rounded-full bg-emerald-500 px-1.5 py-0.5 text-[9px] font-bold uppercase text-white">
                   Đúng
@@ -805,7 +808,7 @@ function AnswerSummary({ q }: { q: ImportedQuestion }) {
                   key={a}
                   className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700 ring-1 ring-emerald-200"
                 >
-                  {a}
+                  <RenderedContent content={a} />
                 </span>
               ))}
             </li>
@@ -818,9 +821,11 @@ function AnswerSummary({ q }: { q: ImportedQuestion }) {
           {q.pairs.map((p, i) => (
             <li key={i} className="flex items-center gap-2">
               <span className="text-meta">{i + 1}.</span>
-              <span>{p.left}</span>
+              <RenderedContent content={p.left} />
               <span className="text-muted-foreground">→</span>
-              <span className="text-emerald-700">{p.right}</span>
+              <span className="text-emerald-700">
+                <RenderedContent content={p.right} />
+              </span>
             </li>
           ))}
         </ul>
@@ -833,7 +838,7 @@ function AnswerSummary({ q }: { q: ImportedQuestion }) {
               <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary-soft text-[10px] font-bold text-primary-text">
                 {i + 1}
               </span>
-              <span>{it}</span>
+              <RenderedContent content={it} />
             </li>
           ))}
         </ol>
