@@ -40,6 +40,13 @@ const CreateUserDialog = dynamic(
     ),
   { ssr: false, loading: () => null },
 );
+const BulkCreateStudentsDialog = dynamic(
+  () =>
+    import(
+      "@/features/admin/users/dialogs/bulk-create-students-dialog"
+    ).then((m) => m.BulkCreateStudentsDialog),
+  { ssr: false, loading: () => null },
+);
 const EditUserDialog = dynamic(
   () =>
     import("@/features/admin/users/dialogs/edit-user-dialog").then(
@@ -75,6 +82,7 @@ export default function UsersAdminPage() {
 
   // Dialog state
   const [createOpen, setCreateOpen] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [viewing, setViewing] = useState<SeedUser | null>(null);
   const [editing, setEditing] = useState<SeedUser | null>(null);
   const [resetting, setResetting] = useState<SeedUser | null>(null);
@@ -215,9 +223,19 @@ export default function UsersAdminPage() {
         description={scopeLabel}
         actions={
           <>
-            <Button variant="outline" size="sm" disabled title="Sắp ra mắt">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setBulkOpen(true)}
+              disabled={!canMutate}
+              title={
+                !canMutate
+                  ? "Chọn 1 campus để nhập HS hàng loạt"
+                  : "Tạo HS hàng loạt từ file Excel"
+              }
+            >
               <Upload className="h-4 w-4" />
-              Nhập CSV
+              Nhập HS từ Excel
             </Button>
             <Button
               size="sm"
@@ -297,6 +315,7 @@ export default function UsersAdminPage() {
 
       {/* Dialogs */}
       <CreateUserDialog open={createOpen} onOpenChange={setCreateOpen} />
+      <BulkCreateStudentsDialog open={bulkOpen} onOpenChange={setBulkOpen} />
       <UserDetailsDialog user={viewing} onClose={() => setViewing(null)} />
       <EditUserDialog user={editing} onClose={() => setEditing(null)} />
       <ResetPasswordDialog user={resetting} onClose={() => setResetting(null)} />
