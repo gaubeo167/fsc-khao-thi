@@ -39,6 +39,7 @@ import { Select } from "@/components/ui/select";
 import { useUsersStore } from "@/features/admin/users/users-store";
 import { useAuthStore } from "@/features/auth/state/auth-store";
 import { useCampusStore } from "@/features/campus/state/campus-store";
+import { useCampusScope } from "@/features/campus/lib/use-campus-scope";
 import { useGradesStore } from "@/features/grades/state/grades-store";
 import { useMaterialsStore } from "@/features/learning-materials/state/materials-store";
 import {
@@ -101,10 +102,15 @@ interface Props {
 export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
   const session = useAuthStore((s) => s.session);
   const activeCampusId = useCampusStore((s) => s.activeCampusId);
-  const subjects = useSubjectsStore((s) => s.subjects);
-  const grades = useGradesStore((s) => s.grades);
+  const allSubjects = useSubjectsStore((s) => s.subjects);
+  const allGrades = useGradesStore((s) => s.grades);
   const allClasses = useGradesStore((s) => s.classes);
   const allUsers = useUsersStore((s) => s.users);
+  // Campus-scoped subject + grade lists so a teacher creating BTVN on
+  // campus A never sees subjects/grades belonging to campus B.
+  const campusScope = useCampusScope();
+  const subjects = campusScope.scopeSubjects(allSubjects);
+  const grades = campusScope.scopeGrades(allGrades);
   const allQuestions = useQuestionsStore((s) => s.questions);
   const allMaterials = useMaterialsStore((s) => s.materials);
   const createHomework = useHomeworkStore((s) => s.create);

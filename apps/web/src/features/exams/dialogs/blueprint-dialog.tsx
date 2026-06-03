@@ -21,6 +21,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { useAuthStore } from "@/features/auth/state/auth-store";
 import { useCampusStore } from "@/features/campus/state/campus-store";
+import { useCampusScope } from "@/features/campus/lib/use-campus-scope";
 import {
   filterGradesByScope,
   filterSubjectsByScope,
@@ -57,10 +58,18 @@ export function BlueprintDialog({ open, onOpenChange, editing }: Props) {
   const allSubjects = useSubjectsStore((s) => s.subjects);
   const allGrades = useGradesStore((s) => s.grades);
   // Teachers / TBM are locked to their assigned subjects + grades for
-  // blueprint authoring — same rule as the question bank.
+  // blueprint authoring — same rule as the question bank. Layered on
+  // top, the campus scope ensures we never surface subjects/grades
+  // belonging to other campuses (the user complaint that triggered
+  // this audit).
   const scope = useUserScope();
-  const subjects = filterSubjectsByScope(allSubjects, scope);
-  const grades = filterGradesByScope(allGrades, scope);
+  const campusScope = useCampusScope();
+  const subjects = campusScope.scopeSubjects(
+    filterSubjectsByScope(allSubjects, scope),
+  );
+  const grades = campusScope.scopeGrades(
+    filterGradesByScope(allGrades, scope),
+  );
   const allQuestions = useQuestionsStore((s) => s.questions);
   const createBlueprint = useBlueprintsStore((s) => s.create);
   const updateBlueprint = useBlueprintsStore((s) => s.update);

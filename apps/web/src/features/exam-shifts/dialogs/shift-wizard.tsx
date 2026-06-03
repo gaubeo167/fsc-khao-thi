@@ -955,7 +955,7 @@ function Step1Targets({
           </p>
         ) : subjects.length === 0 ? (
           <p className="rounded-md border border-dashed bg-muted/20 px-3 py-2 text-[12px] text-muted-foreground">
-            Khối này chưa khai báo môn học nào.
+            Khối này chưa khai báo môn học nào trong campus của bạn.
           </p>
         ) : (
           <div className="flex flex-wrap gap-2">
