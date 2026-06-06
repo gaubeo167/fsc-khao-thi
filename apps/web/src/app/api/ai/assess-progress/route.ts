@@ -74,29 +74,19 @@ const Body = z.object({
   audience: z.enum(["teacher", "student"]).default("teacher"),
 });
 
-const SYSTEM_TEACHER = `Bạn là cố vấn học vụ. Bạn nhận số liệu tổng quan về 1 học sinh và viết phân tích NGẮN GỌN bằng tiếng Việt cho GIÁO VIÊN tham khảo.
+const SYSTEM_TEACHER = `Bạn là cố vấn học vụ. Bạn nhận số liệu tổng quan về 1 học sinh và viết phân tích cho GIÁO VIÊN tham khảo bằng tiếng Việt.
 
-TRẢ VỀ DUY NHẤT 1 JSON OBJECT, không kèm prose hay markdown:
+Phong cách: khách quan, không phán xét HS; ưu tiên chỉ ra nguyên nhân khả năng cao + can thiệp nhẹ trước.
 
-{
-  "verdict": "1 câu kết luận xu hướng (≤ 25 từ). Bắt đầu bằng 1 emoji: 📈 đang tiến bộ · 📉 đang sụt giảm · 📊 ổn định · ⚠️ ít dữ liệu",
-  "observations": ["3-4 quan sát cụ thể, mỗi dòng ≤ 30 từ, trích dẫn số liệu (vd: 'TB điểm thi 6.5/10, dưới chuẩn lớp')"],
-  "suggestions": ["2-3 hành động giáo viên có thể làm, mỗi dòng ≤ 30 từ, cụ thể, có thể thực thi"]
-}
+OUTPUT BẮT BUỘC: chỉ 1 JSON object duy nhất, đúng schema sau, KHÔNG kèm markdown fence, KHÔNG kèm prose trước/sau:
+{"verdict": string (1 câu, ≤25 từ, bắt đầu bằng 1 emoji 📈📉📊⚠️), "observations": string[] (3-4 dòng, mỗi dòng ≤30 từ, dẫn số liệu cụ thể), "suggestions": string[] (2-3 hành động GV có thể làm, mỗi dòng ≤30 từ, cụ thể)}`;
 
-Phong cách: khách quan, không phán xét HS; ưu tiên chỉ ra nguyên nhân khả năng cao + can thiệp nhẹ trước.`;
+const SYSTEM_STUDENT = `Bạn là người bạn đồng hành học tập của 1 học sinh. Bạn nhận số liệu của EM và viết phản hồi cho EM bằng tiếng Việt.
 
-const SYSTEM_STUDENT = `Bạn là người bạn đồng hành học tập của 1 học sinh. Bạn nhận số liệu tổng quan của EM và viết phản hồi NGẮN GỌN bằng tiếng Việt cho EM tự đọc.
+Phong cách: ấm áp, khích lệ, không trách móc. Dùng từ EM / bạn. Tập trung điều EM kiểm soát được.
 
-TRẢ VỀ DUY NHẤT 1 JSON OBJECT, không kèm prose hay markdown:
-
-{
-  "verdict": "1 câu khích lệ kết luận xu hướng (≤ 25 từ). Bắt đầu bằng 1 emoji phù hợp",
-  "observations": ["3-4 điều EM đã làm tốt + cần cải thiện, mỗi dòng ≤ 30 từ, dùng từ EM/bạn"],
-  "suggestions": ["2-3 hành động EM tự làm tuần này, mỗi dòng ≤ 30 từ, hành động cụ thể"]
-}
-
-Phong cách: ấm áp, khích lệ, không trách móc. Tập trung vào điều EM kiểm soát được.`;
+OUTPUT BẮT BUỘC: chỉ 1 JSON object duy nhất, đúng schema sau, KHÔNG kèm markdown fence, KHÔNG kèm prose trước/sau:
+{"verdict": string (1 câu khích lệ, ≤25 từ, bắt đầu bằng 1 emoji phù hợp), "observations": string[] (3-4 điều EM đã làm tốt + cần cải thiện, mỗi dòng ≤30 từ), "suggestions": string[] (2-3 hành động EM tự làm tuần này, mỗi dòng ≤30 từ, cụ thể)}`;
 
 export async function POST(req: Request) {
   let body: z.infer<typeof Body>;
@@ -184,25 +174,24 @@ export async function POST(req: Request) {
     });
 
     const parsed = parseJsonObject(aiText);
-    if (!parsed) {
-      return NextResponse.json(
-        {
-          error: "parse_failed",
-          message: "AI không trả về JSON hợp lệ.",
-          raw: aiText,
-        },
-        { status: 502 },
-      );
+    if (parsed) {
+      return NextResponse.json({
+        verdict: String(parsed.verdict ?? ""),
+        observations: Array.isArray(parsed.observations)
+          ? parsed.observations.map(String).slice(0, 5)
+          : [],
+        suggestions: Array.isArray(parsed.suggestions)
+          ? parsed.suggestions.map(String).slice(0, 5)
+          : [],
+        provider,
+      });
     }
-
+    // Fallback: AI ignored the JSON format instruction. Best-effort
+    // extract bullet lines as observations + suggestions so the user
+    // still sees actionable content instead of an opaque error.
+    const fallback = bestEffortFromProse(aiText);
     return NextResponse.json({
-      verdict: String(parsed.verdict ?? ""),
-      observations: Array.isArray(parsed.observations)
-        ? parsed.observations.map(String).slice(0, 5)
-        : [],
-      suggestions: Array.isArray(parsed.suggestions)
-        ? parsed.suggestions.map(String).slice(0, 5)
-        : [],
+      ...fallback,
       provider,
     });
   } catch (err) {
@@ -223,12 +212,131 @@ export async function POST(req: Request) {
 }
 
 function parseJsonObject(raw: string): Record<string, unknown> | null {
-  const startIdx = raw.indexOf("{");
-  const endIdx = raw.lastIndexOf("}");
-  if (startIdx < 0 || endIdx <= startIdx) return null;
+  if (!raw) return null;
+  // 1) Strip common markdown fences first — ```json ... ``` or just ``` ... ```
+  let cleaned = raw
+    .replace(/^\s*```(?:json)?\s*/i, "")
+    .replace(/\s*```\s*$/i, "")
+    .trim();
+
+  // 2) Try to parse the cleaned blob as-is.
+  const parsed = tryParse(cleaned);
+  if (parsed) return parsed;
+
+  // 3) Find balanced { … } substrings (handles AI that wraps JSON in
+  //    explanatory prose like "Đây là kết quả: { ... }").
+  const candidates = extractBalancedObjects(cleaned);
+  for (const c of candidates) {
+    const p = tryParse(c);
+    if (p) return p;
+  }
+
+  // 4) Last-resort: repair common issues (trailing commas, single quotes
+  //    around keys, smart quotes) on the longest candidate, then retry.
+  const longest = candidates.sort((a, b) => b.length - a.length)[0];
+  if (longest) {
+    const repaired = longest
+      .replace(/,\s*([}\]])/g, "$1") // trailing commas
+      .replace(/[“”]/g, '"') // smart double quotes
+      .replace(/[‘’]/g, "'"); // smart single quotes
+    const p = tryParse(repaired);
+    if (p) return p;
+  }
+  return null;
+}
+
+function tryParse(s: string): Record<string, unknown> | null {
   try {
-    return JSON.parse(raw.slice(startIdx, endIdx + 1));
+    const v = JSON.parse(s);
+    if (v && typeof v === "object" && !Array.isArray(v)) return v;
+    return null;
   } catch {
     return null;
   }
+}
+
+/** Walk the string and extract every top-level balanced `{…}` substring
+ *  ignoring braces that appear inside string literals. Returns longest-
+ *  first so the caller tries the biggest one first. */
+function extractBalancedObjects(s: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escape = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i]!;
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (inString) {
+      if (ch === "\\") escape = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (ch === "}") {
+      depth--;
+      if (depth === 0 && start >= 0) {
+        out.push(s.slice(start, i + 1));
+        start = -1;
+      }
+    }
+  }
+  return out.sort((a, b) => b.length - a.length);
+}
+
+/** When the model writes prose instead of JSON, salvage as much as we
+ *  can: the first non-empty line becomes the verdict, bullet/numbered
+ *  lines become observations + suggestions. The split is heuristic —
+ *  prose under a "Gợi ý" / "Khuyến nghị" / "Hành động" header is
+ *  treated as suggestions; the rest is observations. */
+function bestEffortFromProse(raw: string): {
+  verdict: string;
+  observations: string[];
+  suggestions: string[];
+} {
+  const text = raw.trim();
+  if (!text) {
+    return {
+      verdict: "AI tạm thời chưa phản hồi được — thử lại sau.",
+      observations: [],
+      suggestions: [],
+    };
+  }
+  const lines = text
+    .split(/\r?\n+/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  // Verdict = first non-bullet sentence (or the first line if all are
+  // bullets).
+  const verdict =
+    lines.find((l) => !/^[-•*\d+.)\s]+/.test(l)) ?? lines[0] ?? "";
+
+  const observations: string[] = [];
+  const suggestions: string[] = [];
+  let bucket: "obs" | "sug" = "obs";
+  for (const l of lines) {
+    if (/gợi ý|khuyến nghị|hành động|đề xuất|next ?step/i.test(l)) {
+      bucket = "sug";
+      continue;
+    }
+    if (l === verdict) continue;
+    const clean = l.replace(/^[-•*]\s+|^\d+[.)]\s+/, "").trim();
+    if (!clean) continue;
+    (bucket === "obs" ? observations : suggestions).push(clean);
+  }
+  return {
+    verdict,
+    observations: observations.slice(0, 5),
+    suggestions: suggestions.slice(0, 5),
+  };
 }
