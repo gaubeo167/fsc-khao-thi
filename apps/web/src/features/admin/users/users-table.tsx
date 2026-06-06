@@ -27,6 +27,8 @@ interface Props {
   onResetPassword: (user: SeedUser) => void;
   onToggleSuspend: (user: SeedUser) => void;
   onDelete: (user: SeedUser) => void;
+  /** Optional — opens the student progress dialog. */
+  onViewProgress?: (user: SeedUser) => void;
 }
 
 const STATUS_LABEL: Record<SeedUser["status"], string> = {
@@ -43,6 +45,7 @@ export function UsersTable({
   onResetPassword,
   onToggleSuspend,
   onDelete,
+  onViewProgress,
 }: Props) {
   const campuses = useCampusesStore((s) => s.campuses);
   const subjects = useSubjectsStore((s) => s.subjects);
@@ -145,6 +148,7 @@ export function UsersTable({
                     onResetPassword={onResetPassword}
                     onToggleSuspend={onToggleSuspend}
                     onDelete={onDelete}
+                    onViewProgress={onViewProgress}
                   />
                 </TableCell>
               </TableRow>

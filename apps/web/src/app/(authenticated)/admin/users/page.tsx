@@ -47,6 +47,13 @@ const BulkCreateStudentsDialog = dynamic(
     ).then((m) => m.BulkCreateStudentsDialog),
   { ssr: false, loading: () => null },
 );
+const StudentProgressDialog = dynamic(
+  () =>
+    import(
+      "@/features/student-progress/dialogs/student-progress-dialog"
+    ).then((m) => m.StudentProgressDialog),
+  { ssr: false, loading: () => null },
+);
 const EditUserDialog = dynamic(
   () =>
     import("@/features/admin/users/dialogs/edit-user-dialog").then(
@@ -83,6 +90,7 @@ export default function UsersAdminPage() {
   // Dialog state
   const [createOpen, setCreateOpen] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [progressStudentId, setProgressStudentId] = useState<string | null>(null);
   const [viewing, setViewing] = useState<SeedUser | null>(null);
   const [editing, setEditing] = useState<SeedUser | null>(null);
   const [resetting, setResetting] = useState<SeedUser | null>(null);
@@ -299,6 +307,7 @@ export default function UsersAdminPage() {
           onResetPassword={setResetting}
           onToggleSuspend={setSuspendTarget}
           onDelete={setDeleteTarget}
+          onViewProgress={(u) => setProgressStudentId(u.id)}
         />
 
         <UsersPagination
@@ -316,6 +325,10 @@ export default function UsersAdminPage() {
       {/* Dialogs */}
       <CreateUserDialog open={createOpen} onOpenChange={setCreateOpen} />
       <BulkCreateStudentsDialog open={bulkOpen} onOpenChange={setBulkOpen} />
+      <StudentProgressDialog
+        studentId={progressStudentId}
+        onClose={() => setProgressStudentId(null)}
+      />
       <UserDetailsDialog user={viewing} onClose={() => setViewing(null)} />
       <EditUserDialog user={editing} onClose={() => setEditing(null)} />
       <ResetPasswordDialog user={resetting} onClose={() => setResetting(null)} />

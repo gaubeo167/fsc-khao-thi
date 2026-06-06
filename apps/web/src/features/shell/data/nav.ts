@@ -17,6 +17,7 @@ import {
   Library,
   Play,
   Settings,
+  TrendingUp,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -76,6 +77,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/my-exams/history", icon: History, label: "Lịch sử bài thi", roles: STUDENT },
       { href: "/my-homework", icon: ClipboardList, label: "Bài tập về nhà", roles: STUDENT },
       { href: "/my-materials", icon: Play, label: "Học liệu", roles: STUDENT },
+      { href: "/my-progress", icon: TrendingUp, label: "Tiến độ học tập", roles: STUDENT },
     ],
   },
   {
