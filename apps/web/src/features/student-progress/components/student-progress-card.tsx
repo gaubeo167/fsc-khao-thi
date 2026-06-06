@@ -6,12 +6,13 @@ import {
   CheckCircle2,
   ClipboardList,
   Loader2,
+  RotateCcw,
   Sparkles,
   TrendingDown,
   TrendingUp,
   Trophy,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -42,6 +43,12 @@ export function StudentProgressCard({
     "idle",
   );
   const [aiError, setAiError] = useState<string | null>(null);
+  const [aiErrorKind, setAiErrorKind] = useState<
+    "overload" | "auth" | "other" | null
+  >(null);
+  // Bump on retry click to re-trigger the effect.
+  const [retryNonce, setRetryNonce] = useState(0);
+  const inflightRef = useRef<AbortController | null>(null);
 
   // Re-request the AI verdict whenever the underlying data changes.
   // Cheap-shot debounce: dependent on the JSON-stringified KPIs.
@@ -50,51 +57,75 @@ export function StudentProgressCard({
     [progress.kpis, audience],
   );
 
-  useEffect(() => {
-    let cancelled = false;
-    async function run() {
-      if (!hasEnoughDataForAi(progress)) {
-        setAi(null);
+  const fetchAi = useCallback(async () => {
+    if (!hasEnoughDataForAi(progress)) {
+      setAi(null);
+      setAiState("idle");
+      return;
+    }
+    // Cancel any in-flight request to avoid stale overwrites.
+    inflightRef.current?.abort();
+    const ac = new AbortController();
+    inflightRef.current = ac;
+    setAiState("loading");
+    setAiError(null);
+    setAiErrorKind(null);
+    try {
+      const summary = {
+        kpis: progress.kpis,
+        examTrend: progress.examTrend,
+        homeworkTrend: progress.homeworkTrend,
+        recentScores: {
+          examTimeline: progress.examTimeline.slice(-10),
+          homeworkTimeline: progress.homeworkTimeline.slice(-10),
+        },
+      };
+      const res = await fetch("/api/ai/assess-progress", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ summary, studentName, audience }),
+        signal: ac.signal,
+      });
+      const data = await res.json();
+      if (ac.signal.aborted) return;
+      if (!res.ok) {
+        setAiState("error");
+        const msg = String(data?.message ?? "AI không phản hồi");
+        setAiError(msg);
+        // Classify so the UI can show a friendlier message + retry CTA.
+        if (
+          res.status === 429 ||
+          res.status === 503 ||
+          res.status === 529 ||
+          /overload|high demand|try again later/i.test(msg)
+        ) {
+          setAiErrorKind("overload");
+        } else if (res.status === 401 || res.status === 403) {
+          setAiErrorKind("auth");
+        } else {
+          setAiErrorKind("other");
+        }
         return;
       }
-      setAiState("loading");
-      setAiError(null);
-      try {
-        const summary = {
-          kpis: progress.kpis,
-          examTrend: progress.examTrend,
-          homeworkTrend: progress.homeworkTrend,
-          recentScores: {
-            examTimeline: progress.examTimeline.slice(-10),
-            homeworkTimeline: progress.homeworkTimeline.slice(-10),
-          },
-        };
-        const res = await fetch("/api/ai/assess-progress", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ summary, studentName, audience }),
-        });
-        const data = await res.json();
-        if (cancelled) return;
-        if (!res.ok) {
-          setAiState("error");
-          setAiError(data?.message ?? "AI không phản hồi");
-          return;
-        }
-        setAi(data);
-        setAiState("idle");
-      } catch (err) {
-        if (cancelled) return;
-        setAiState("error");
-        setAiError(err instanceof Error ? err.message : "Lỗi mạng");
-      }
+      setAi(data);
+      setAiState("idle");
+    } catch (err) {
+      if (ac.signal.aborted) return;
+      setAiState("error");
+      setAiError(err instanceof Error ? err.message : "Lỗi mạng");
+      setAiErrorKind("other");
     }
-    void run();
+  }, [progress, audience, studentName]);
+
+  useEffect(() => {
+    void fetchAi();
     return () => {
-      cancelled = true;
+      inflightRef.current?.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kpisKey]);
+  }, [kpisKey, retryNonce]);
+
+  const retry = useCallback(() => setRetryNonce((n) => n + 1), []);
 
   return (
     <div className="space-y-4">
@@ -198,10 +229,57 @@ export function StudentProgressCard({
             AI đang phân tích…
           </div>
         )}
-        {aiState === "error" && aiError && (
-          <div className="flex items-start gap-2 text-[13px] text-rose-700">
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{aiError}</span>
+        {aiState === "error" && (
+          <div className="space-y-2">
+            <div className="flex items-start gap-2 text-[13px] text-rose-700">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div className="min-w-0 flex-1">
+                {aiErrorKind === "overload" ? (
+                  <>
+                    <p className="font-semibold">
+                      Mô hình AI đang quá tải tạm thời
+                    </p>
+                    <p className="mt-0.5 text-[12px] text-rose-600/85">
+                      Đây là tình trạng nhất thời từ phía nhà cung cấp (Gemini /
+                      Anthropic). Thường khôi phục sau vài phút. KPI và xu hướng
+                      bên trên vẫn được tính từ dữ liệu thật của hệ thống.
+                    </p>
+                  </>
+                ) : aiErrorKind === "auth" ? (
+                  <>
+                    <p className="font-semibold">
+                      Cấu hình AI API key chưa đúng
+                    </p>
+                    <p className="mt-0.5 text-[12px] text-rose-600/85">
+                      Liên hệ admin để kiểm tra biến môi trường
+                      <code className="mx-1 rounded bg-rose-100 px-1">
+                        ANTHROPIC_API_KEY
+                      </code>
+                      /
+                      <code className="mx-1 rounded bg-rose-100 px-1">
+                        GEMINI_API_KEY
+                      </code>
+                      trên Vercel.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-semibold">Không gọi được AI</p>
+                    <p className="mt-0.5 text-[12px] text-rose-600/85">
+                      {aiError}
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={retry}
+              className="inline-flex items-center gap-1.5 rounded-md border border-rose-200 bg-white px-2.5 py-1 text-[12px] font-semibold text-rose-700 transition-colors hover:bg-rose-50"
+            >
+              <RotateCcw className="h-3 w-3" strokeWidth={2} />
+              Thử lại
+            </button>
           </div>
         )}
         {aiState === "idle" && !ai && !hasEnoughDataForAi(progress) && (
