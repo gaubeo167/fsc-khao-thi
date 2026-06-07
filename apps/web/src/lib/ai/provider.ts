@@ -196,7 +196,14 @@ async function runAnthropic(
 
 /* ─────────────────────────── Gemini ─────────────────────────── */
 
-const GEMINI_MODEL = "gemini-2.5-flash";
+/** Ordered fallback list — when the primary model returns overload /
+ *  rate-limit, try the next one. Older models often have separate quota
+ *  pools so they survive a 2.5-flash overload event. */
+const GEMINI_MODELS = [
+  "gemini-2.5-flash",
+  "gemini-2.0-flash",
+  "gemini-1.5-flash",
+] as const;
 
 interface GeminiPart {
   text?: string;
@@ -216,6 +223,31 @@ async function runGemini(
   apiKey: string,
   req: AiCompletionRequest,
 ): Promise<AiCompletionResult> {
+  // Try the model list in order. On a transient (overload / rate-limit)
+  // error, fall through to the next model — each model has its own
+  // quota pool so a 2.5-flash spike doesn't take down 2.0-flash or
+  // 1.5-flash. On any non-transient error (400, 401, content block)
+  // surface immediately.
+  let lastErr: AiProviderError | null = null;
+  for (const model of GEMINI_MODELS) {
+    try {
+      return await runGeminiOnce(apiKey, req, model);
+    } catch (err) {
+      if (err instanceof AiProviderError && isTransientAiError(err)) {
+        lastErr = err;
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr ?? new AiProviderError("Gemini không phản hồi.", 503);
+}
+
+async function runGeminiOnce(
+  apiKey: string,
+  req: AiCompletionRequest,
+  model: string,
+): Promise<AiCompletionResult> {
   const parts: GeminiPart[] = req.user.map((part) => {
     if (part.type === "text") return { text: part.text };
     const m = /^data:(image\/[^;]+);base64,(.+)$/.exec(part.dataUrl);
@@ -233,7 +265,7 @@ async function runGemini(
     },
   };
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
   let res: Response;
   try {
     res = await fetch(`${url}?key=${encodeURIComponent(apiKey)}`, {
@@ -256,11 +288,6 @@ async function runGemini(
   }
 
   if (!res.ok || data.error) {
-    // Preserve the upstream HTTP status so the retry wrapper can tell
-    // 429 (rate-limit) / 503 (overload) from 400 (bad request) /
-    // 401 (auth). Gemini sometimes returns the overload text in a 503
-    // and sometimes in a 200 with `error.message` populated — handle
-    // both shapes.
     const msg = data.error?.message ?? `Gemini trả về ${res.status}.`;
     const inferredStatus =
       /overload|high demand|UNAVAILABLE/i.test(msg)

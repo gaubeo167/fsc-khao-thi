@@ -57,14 +57,35 @@ export function StudentProgressCard({
     [progress.kpis, audience],
   );
 
+  // Number of automatic background retries already attempted for the
+  // CURRENT overload error. Reset when KPI changes or user clicks Thử
+  // lại manually. We schedule the next retry from inside fetchAi.
+  const autoRetryRef = useRef(0);
+  const autoRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const [nextAutoRetryAt, setNextAutoRetryAt] = useState<number | null>(
+    null,
+  );
+
+  function clearAutoRetry() {
+    if (autoRetryTimerRef.current) {
+      clearTimeout(autoRetryTimerRef.current);
+      autoRetryTimerRef.current = null;
+    }
+    setNextAutoRetryAt(null);
+  }
+
   const fetchAi = useCallback(async () => {
     if (!hasEnoughDataForAi(progress)) {
       setAi(null);
       setAiState("idle");
       return;
     }
-    // Cancel any in-flight request to avoid stale overwrites.
+    // Cancel any in-flight request + pending auto-retry to avoid stale
+    // overwrites.
     inflightRef.current?.abort();
+    clearAutoRetry();
     const ac = new AbortController();
     inflightRef.current = ac;
     setAiState("loading");
@@ -100,6 +121,19 @@ export function StudentProgressCard({
           /overload|high demand|try again later/i.test(msg)
         ) {
           setAiErrorKind("overload");
+          // Schedule a background retry — backoff 30s, 60s, 120s. After
+          // that the user keeps the manual button.
+          const schedule = [30, 60, 120];
+          const idx = autoRetryRef.current;
+          if (idx < schedule.length) {
+            const wait = schedule[idx]! * 1000;
+            const at = Date.now() + wait;
+            setNextAutoRetryAt(at);
+            autoRetryTimerRef.current = setTimeout(() => {
+              autoRetryRef.current++;
+              setRetryNonce((n) => n + 1);
+            }, wait);
+          }
         } else if (res.status === 401 || res.status === 403) {
           setAiErrorKind("auth");
         } else {
@@ -109,6 +143,7 @@ export function StudentProgressCard({
       }
       setAi(data);
       setAiState("idle");
+      autoRetryRef.current = 0;
     } catch (err) {
       if (ac.signal.aborted) return;
       setAiState("error");
@@ -121,11 +156,24 @@ export function StudentProgressCard({
     void fetchAi();
     return () => {
       inflightRef.current?.abort();
+      if (autoRetryTimerRef.current) {
+        clearTimeout(autoRetryTimerRef.current);
+        autoRetryTimerRef.current = null;
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kpisKey, retryNonce]);
 
-  const retry = useCallback(() => setRetryNonce((n) => n + 1), []);
+  // Reset auto-retry attempt counter whenever the KPI inputs change —
+  // a new student / fresh data deserves the full backoff schedule again.
+  useEffect(() => {
+    autoRetryRef.current = 0;
+  }, [kpisKey]);
+
+  const retry = useCallback(() => {
+    autoRetryRef.current = 0; // manual click — restart backoff schedule
+    setRetryNonce((n) => n + 1);
+  }, []);
 
   return (
     <div className="space-y-4">
@@ -241,9 +289,12 @@ export function StudentProgressCard({
                     </p>
                     <p className="mt-0.5 text-[12px] text-rose-600/85">
                       Đây là tình trạng nhất thời từ phía nhà cung cấp (Gemini /
-                      Anthropic). Thường khôi phục sau vài phút. KPI và xu hướng
-                      bên trên vẫn được tính từ dữ liệu thật của hệ thống.
+                      Anthropic). KPI và xu hướng bên trên vẫn được tính từ dữ
+                      liệu thật của hệ thống.
                     </p>
+                    {nextAutoRetryAt && (
+                      <RetryCountdown targetAt={nextAutoRetryAt} />
+                    )}
                   </>
                 ) : aiErrorKind === "auth" ? (
                   <>
@@ -369,6 +420,23 @@ export function StudentProgressCard({
 function hasEnoughDataForAi(p: StudentProgress): boolean {
   return (
     p.kpis.totalShiftsSubmitted > 0 || p.kpis.totalHomeworkSubmitted > 0
+  );
+}
+
+/** Tiny live counter showing "Tự thử lại sau Xs" — ticks every second
+ *  until the parent re-triggers fetchAi via retryNonce. */
+function RetryCountdown({ targetAt }: { targetAt: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const remaining = Math.max(0, Math.ceil((targetAt - now) / 1000));
+  if (remaining <= 0) return null;
+  return (
+    <p className="mt-1 text-[11.5px] text-rose-600/75">
+      ⏳ Tự thử lại sau {remaining}s
+    </p>
   );
 }
 
