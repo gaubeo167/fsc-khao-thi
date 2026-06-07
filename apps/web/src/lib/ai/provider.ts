@@ -197,12 +197,15 @@ async function runAnthropic(
 /* ─────────────────────────── Gemini ─────────────────────────── */
 
 /** Ordered fallback list — when the primary model returns overload /
- *  rate-limit, try the next one. Older models often have separate quota
- *  pools so they survive a 2.5-flash overload event. */
+ *  rate-limit / model-not-found, try the next one. Each model has its
+ *  own quota pool at Google's end so a 2.5-flash spike doesn't take
+ *  down 2.0-flash. gemini-1.5-* was removed entirely; only models
+ *  currently supported by v1beta `generateContent` belong here. */
 const GEMINI_MODELS = [
   "gemini-2.5-flash",
+  "gemini-2.5-flash-lite",
   "gemini-2.0-flash",
-  "gemini-1.5-flash",
+  "gemini-2.0-flash-lite",
 ] as const;
 
 interface GeminiPart {
@@ -223,17 +226,18 @@ async function runGemini(
   apiKey: string,
   req: AiCompletionRequest,
 ): Promise<AiCompletionResult> {
-  // Try the model list in order. On a transient (overload / rate-limit)
-  // error, fall through to the next model — each model has its own
-  // quota pool so a 2.5-flash spike doesn't take down 2.0-flash or
-  // 1.5-flash. On any non-transient error (400, 401, content block)
-  // surface immediately.
+  // Try the model list in order. Fall through to the next model on:
+  //   - transient overload / rate-limit / UNAVAILABLE
+  //   - model-not-found / not-supported (Google retires models over
+  //     time and an old name in our list shouldn't surface to the user)
+  // On any other non-transient error (400 bad request, 401 auth,
+  // content block) surface immediately so admin can fix the root cause.
   let lastErr: AiProviderError | null = null;
   for (const model of GEMINI_MODELS) {
     try {
       return await runGeminiOnce(apiKey, req, model);
     } catch (err) {
-      if (err instanceof AiProviderError && isTransientAiError(err)) {
+      if (err instanceof AiProviderError && shouldFallthroughGemini(err)) {
         lastErr = err;
         continue;
       }
@@ -241,6 +245,15 @@ async function runGemini(
     }
   }
   throw lastErr ?? new AiProviderError("Gemini không phản hồi.", 503);
+}
+
+function shouldFallthroughGemini(err: AiProviderError): boolean {
+  if (isTransientAiError(err)) return true;
+  return (
+    err.status === 404 ||
+    /not found/i.test(err.message) ||
+    /not supported/i.test(err.message)
+  );
 }
 
 async function runGeminiOnce(
