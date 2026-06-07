@@ -74,19 +74,29 @@ const Body = z.object({
   audience: z.enum(["teacher", "student"]).default("teacher"),
 });
 
-const SYSTEM_TEACHER = `Bạn là cố vấn học vụ. Bạn nhận số liệu tổng quan về 1 học sinh và viết phân tích cho GIÁO VIÊN tham khảo bằng tiếng Việt.
+const SYSTEM_TEACHER = `Bạn là cố vấn học vụ. Bạn nhận số liệu tổng quan về 1 học sinh và viết phân tích chuyên sâu cho GIÁO VIÊN bằng tiếng Việt.
 
-Phong cách: khách quan, không phán xét HS; ưu tiên chỉ ra nguyên nhân khả năng cao + can thiệp nhẹ trước.
+Phong cách:
+- Khách quan, dẫn số liệu cụ thể (vd: "điểm thi TB 6.5/10 — dưới chuẩn lớp 7.0", "tỉ lệ nộp BTVN 60% — thấp hơn kỳ trước 80%")
+- Phân tích cả mặt mạnh + mặt yếu, không phán xét HS
+- Đưa nguyên nhân khả năng cao trước khi đề xuất can thiệp
+- Tránh chung chung, mỗi câu phải có thông tin riêng
 
-OUTPUT BẮT BUỘC: chỉ 1 JSON object duy nhất, đúng schema sau, KHÔNG kèm markdown fence, KHÔNG kèm prose trước/sau:
-{"verdict": string (1 câu, ≤25 từ, bắt đầu bằng 1 emoji 📈📉📊⚠️), "observations": string[] (3-4 dòng, mỗi dòng ≤30 từ, dẫn số liệu cụ thể), "suggestions": string[] (2-3 hành động GV có thể làm, mỗi dòng ≤30 từ, cụ thể)}`;
+OUTPUT BẮT BUỘC: chỉ 1 JSON object duy nhất, đúng schema sau. KHÔNG markdown fence, KHÔNG prose trước/sau, KHÔNG xuống dòng giữa các key:
+
+{"verdict": string (1-2 câu kết luận xu hướng + dẫn 1 số liệu, ≤40 từ, bắt đầu bằng 1 emoji 📈📉📊⚠️), "observations": string[] (4-5 quan sát có dẫn chứng, mỗi dòng 15-40 từ; ít nhất 1 mặt tích cực + 1 mặt cần lưu ý + 1 so sánh xu hướng), "suggestions": string[] (3-4 hành động GV có thể làm ngay, mỗi dòng 15-35 từ, cụ thể bao gồm phương pháp/thời điểm/cách đo lường)}`;
 
 const SYSTEM_STUDENT = `Bạn là người bạn đồng hành học tập của 1 học sinh. Bạn nhận số liệu của EM và viết phản hồi cho EM bằng tiếng Việt.
 
-Phong cách: ấm áp, khích lệ, không trách móc. Dùng từ EM / bạn. Tập trung điều EM kiểm soát được.
+Phong cách:
+- Ấm áp, khích lệ, không trách móc. Dùng từ EM / bạn.
+- Dẫn số liệu cụ thể từ bài làm thật (vd: "điểm thi gần nhất 7.0 — tăng 1 điểm so với 4 tuần trước")
+- Tập trung điều EM kiểm soát được; gợi ý hành động khả thi trong 1 tuần
+- Mỗi câu phải có thông tin riêng, không lặp ý
 
-OUTPUT BẮT BUỘC: chỉ 1 JSON object duy nhất, đúng schema sau, KHÔNG kèm markdown fence, KHÔNG kèm prose trước/sau:
-{"verdict": string (1 câu khích lệ, ≤25 từ, bắt đầu bằng 1 emoji phù hợp), "observations": string[] (3-4 điều EM đã làm tốt + cần cải thiện, mỗi dòng ≤30 từ), "suggestions": string[] (2-3 hành động EM tự làm tuần này, mỗi dòng ≤30 từ, cụ thể)}`;
+OUTPUT BẮT BUỘC: chỉ 1 JSON object duy nhất, đúng schema sau. KHÔNG markdown fence, KHÔNG prose trước/sau:
+
+{"verdict": string (1-2 câu khích lệ + dẫn 1 số liệu, ≤40 từ, bắt đầu bằng 1 emoji phù hợp), "observations": string[] (4-5 điều EM đã làm tốt + cần cải thiện, mỗi dòng 15-40 từ; xen kẽ tích cực và cải thiện), "suggestions": string[] (3-4 hành động EM tự làm tuần này, mỗi dòng 15-35 từ, cụ thể bao gồm thời điểm/cách làm/mục tiêu đo được)}`;
 
 export async function POST(req: Request) {
   let body: z.infer<typeof Body>;
@@ -169,7 +179,11 @@ export async function POST(req: Request) {
     const { text: aiText, provider } = await aiComplete({
       system: audience === "student" ? SYSTEM_STUDENT : SYSTEM_TEACHER,
       user: [{ type: "text", text: prompt }],
-      maxTokens: 800,
+      // Bumped from 800 → 2000 because Gemini was occasionally getting
+      // truncated mid-string with 4-5 observations + 3-4 suggestions,
+      // each up to 40 từ. A typical valid response is ~600-900 tokens;
+      // the headroom protects against verbose models.
+      maxTokens: 2000,
       expectJson: true,
     });
 
@@ -214,7 +228,7 @@ export async function POST(req: Request) {
 function parseJsonObject(raw: string): Record<string, unknown> | null {
   if (!raw) return null;
   // 1) Strip common markdown fences first — ```json ... ``` or just ``` ... ```
-  let cleaned = raw
+  const cleaned = raw
     .replace(/^\s*```(?:json)?\s*/i, "")
     .replace(/\s*```\s*$/i, "")
     .trim();
@@ -231,18 +245,75 @@ function parseJsonObject(raw: string): Record<string, unknown> | null {
     if (p) return p;
   }
 
-  // 4) Last-resort: repair common issues (trailing commas, single quotes
-  //    around keys, smart quotes) on the longest candidate, then retry.
+  // 4) Repair common issues (trailing commas, smart quotes) on the
+  //    longest candidate, then retry.
   const longest = candidates.sort((a, b) => b.length - a.length)[0];
   if (longest) {
-    const repaired = longest
-      .replace(/,\s*([}\]])/g, "$1") // trailing commas
-      .replace(/[“”]/g, '"') // smart double quotes
-      .replace(/[‘’]/g, "'"); // smart single quotes
+    const repaired = repairJsonString(longest);
     const p = tryParse(repaired);
     if (p) return p;
   }
+
+  // 5) Truncated response — Gemini hit max_tokens mid-string. Find
+  //    the largest UNCLOSED { … } prefix and synthesize a closing for
+  //    the open string + open array + open object so we can salvage
+  //    whatever was already written.
+  const truncated = repairTruncatedJson(cleaned);
+  if (truncated) {
+    const p = tryParse(truncated);
+    if (p) return p;
+  }
   return null;
+}
+
+function repairJsonString(s: string): string {
+  return s
+    .replace(/,\s*([}\]])/g, "$1") // trailing commas
+    .replace(/[“”]/g, '"') // smart double quotes
+    .replace(/[‘’]/g, "'"); // smart single quotes
+}
+
+/** Best-effort recovery for truncated JSON produced when Gemini hits
+ *  max_tokens mid-string. Walks the cleaned text from the first `{`,
+ *  tracks string-literal + nesting state, and emits a closing sequence
+ *  that turns the open prefix into syntactically valid JSON. Drops the
+ *  in-progress last value (the truncated tail after the final complete
+ *  key:value pair) so we don't keep half a sentence. */
+function repairTruncatedJson(s: string): string | null {
+  const start = s.indexOf("{");
+  if (start < 0) return null;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  // Track the last position where we were at depth 1 and NOT inside a
+  // string — that's a safe truncation point right after a comma. We
+  // backtrack to here if the tail is broken.
+  let lastSafeAfterComma = -1;
+  for (let i = start; i < s.length; i++) {
+    const ch = s[i]!;
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (inString) {
+      if (ch === "\\") escape = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === "{" || ch === "[") depth++;
+    else if (ch === "}" || ch === "]") depth--;
+    else if (ch === "," && depth === 1) lastSafeAfterComma = i;
+  }
+  if (lastSafeAfterComma < 0) return null;
+  // Take prefix up to (but not including) the comma, then close the
+  // top-level object. Anything after `lastSafeAfterComma` is discarded
+  // (likely a half-written value).
+  const head = s.slice(0, lastSafeAfterComma);
+  return head + "}";
 }
 
 function tryParse(s: string): Record<string, unknown> | null {
@@ -314,12 +385,35 @@ function bestEffortFromProse(raw: string): {
   const lines = text
     .split(/\r?\n+/)
     .map((l) => l.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    // Drop JSON syntax noise so a half-parsed response doesn't surface
+    // bare braces as the verdict. Also drop empty / structure-only lines.
+    .filter(
+      (l) =>
+        l !== "{" &&
+        l !== "}" &&
+        l !== "[" &&
+        l !== "]" &&
+        !/^"?(verdict|observations|suggestions)"?\s*:?\s*\[?\s*$/i.test(l),
+    );
 
-  // Verdict = first non-bullet sentence (or the first line if all are
-  // bullets).
+  // Try to lift the verdict out of a `"verdict": "..."` pattern first
+  // (handles truncated JSON where the structural parser couldn't
+  // recover but the verdict string was already written).
+  const verdictMatch = /"verdict"\s*:\s*"([^"]+)/.exec(text);
+  const verdictFromJson = verdictMatch?.[1]?.trim() ?? null;
+
+  // Otherwise: verdict = first non-bullet non-JSON-key sentence.
   const verdict =
-    lines.find((l) => !/^[-•*\d+.)\s]+/.test(l)) ?? lines[0] ?? "";
+    verdictFromJson ??
+    lines.find(
+      (l) =>
+        !/^[-•*\d+.)\s]+/.test(l) &&
+        !/^[{}\[\]]/.test(l) &&
+        !/^"[a-z]+"\s*:/i.test(l),
+    ) ??
+    lines[0] ??
+    "";
 
   const observations: string[] = [];
   const suggestions: string[] = [];
@@ -330,8 +424,15 @@ function bestEffortFromProse(raw: string): {
       continue;
     }
     if (l === verdict) continue;
-    const clean = l.replace(/^[-•*]\s+|^\d+[.)]\s+/, "").trim();
+    const clean = l
+      .replace(/^[-•*]\s+|^\d+[.)]\s+/, "")
+      // Strip leftover JSON quote chars at edges.
+      .replace(/^["']+/, "")
+      .replace(/[",]+$/, "")
+      .trim();
     if (!clean) continue;
+    // Skip residual JSON-shaped lines.
+    if (/^[{}\[\]]+$/.test(clean)) continue;
     (bucket === "obs" ? observations : suggestions).push(clean);
   }
   return {
