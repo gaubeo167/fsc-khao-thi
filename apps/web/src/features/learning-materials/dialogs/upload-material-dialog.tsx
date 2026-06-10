@@ -28,6 +28,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { useAuthStore } from "@/features/auth/state/auth-store";
 import { useCampusStore } from "@/features/campus/state/campus-store";
+import { useCampusScope } from "@/features/campus/lib/use-campus-scope";
 import { useGradesStore } from "@/features/grades/state/grades-store";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import {
@@ -59,10 +60,16 @@ const MAX_DESC = 500;
 export function UploadMaterialDialog({ open, onOpenChange }: Props) {
   const session = useAuthStore((s) => s.session);
   const activeCampusId = useCampusStore((s) => s.activeCampusId);
-  const subjects = useSubjectsStore((s) => s.subjects);
-  const grades = useGradesStore((s) => s.grades);
+  const allSubjects = useSubjectsStore((s) => s.subjects);
+  const allGrades = useGradesStore((s) => s.grades);
   const tocNodes = useSubjectsStore((s) => s.tocNodes);
   const create = useMaterialsStore((s) => s.create);
+  // Scope subjects + grades to the operating campus so the dropdown
+  // doesn't leak other campuses' subjects (the long list with
+  // duplicates the user reported).
+  const campusScope = useCampusScope();
+  const subjects = campusScope.scopeSubjects(allSubjects);
+  const grades = campusScope.scopeGrades(allGrades);
 
   const [sourceType, setSourceType] = useState<MaterialSourceType>("upload");
   const [file, setFile] = useState<File | null>(null);

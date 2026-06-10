@@ -15,6 +15,7 @@ import { Select } from "@/components/ui/select";
 import { useAuthStore } from "@/features/auth/state/auth-store";
 import { useUserScope } from "@/features/auth/lib/use-scope";
 import { useCampusStore } from "@/features/campus/state/campus-store";
+import { useCampusScope } from "@/features/campus/lib/use-campus-scope";
 import { useGradesStore } from "@/features/grades/state/grades-store";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 
@@ -76,8 +77,11 @@ export function MaterialsTab({
   const session = useAuthStore((s) => s.session);
   const scope = useUserScope();
   const activeCampusId = useCampusStore((s) => s.activeCampusId);
-  const subjects = useSubjectsStore((s) => s.subjects);
-  const grades = useGradesStore((s) => s.grades);
+  const allSubjects = useSubjectsStore((s) => s.subjects);
+  const allGrades = useGradesStore((s) => s.grades);
+  const campusScope = useCampusScope();
+  const subjects = campusScope.scopeSubjects(allSubjects);
+  const grades = campusScope.scopeGrades(allGrades);
   const allMaterials = useMaterialsStore((s) => s.materials);
   const archiveMaterial = useMaterialsStore((s) => s.archive);
   const restoreMaterial = useMaterialsStore((s) => s.restore);
