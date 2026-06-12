@@ -22,10 +22,15 @@ import { useMyShifts } from "@/features/student/hooks/use-my-shifts";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import { cn } from "@/lib/utils";
 
-type FilterValue = ShiftStatus | "all";
+/** "active" is a virtual filter that bundles ca thi đang diễn ra +
+ *  sắp diễn ra. It's the default landing view so HS không bị rối mắt
+ *  bởi đống ca thi đã kết thúc/đã huỷ tích luỹ qua nhiều tháng — họ
+ *  tự chọn "Tất cả" nếu muốn xem lịch sử. */
+type FilterValue = ShiftStatus | "all" | "active";
 
 const FILTER_OPTIONS: Array<{ value: FilterValue; label: string }> = [
-  { value: "all", label: "Tất cả" },
+  { value: "active", label: "Đang & sắp diễn ra" },
+  { value: "all", label: "Tất cả (bao gồm đã kết thúc)" },
   { value: "in-progress", label: "Đang diễn ra" },
   { value: "scheduled", label: "Sắp diễn ra" },
   { value: "completed", label: "Đã kết thúc" },
@@ -35,7 +40,8 @@ const FILTER_OPTIONS: Array<{ value: FilterValue; label: string }> = [
 export default function MyExamsPage() {
   const session = useAuthStore((s) => s.session);
   const searchParams = useSearchParams();
-  const initialFilter = (searchParams.get("filter") as FilterValue | null) ?? "all";
+  const initialFilter =
+    (searchParams.get("filter") as FilterValue | null) ?? "active";
 
   const [filter, setFilter] = useState<FilterValue>(initialFilter);
   const [search, setSearch] = useState("");
@@ -59,7 +65,16 @@ export default function MyExamsPage() {
 
   const filtered = useMemo(() => {
     return myShifts.filter((m) => {
-      if (filter !== "all" && m.effectiveStatus !== filter) return false;
+      if (filter === "active") {
+        if (
+          m.effectiveStatus !== "in-progress" &&
+          m.effectiveStatus !== "scheduled"
+        ) {
+          return false;
+        }
+      } else if (filter !== "all" && m.effectiveStatus !== filter) {
+        return false;
+      }
       if (subjectFilter !== "all" && m.shift.subjectId !== subjectFilter) {
         return false;
       }
@@ -83,6 +98,11 @@ export default function MyExamsPage() {
 
   const counts = {
     all: myShifts.length,
+    active: myShifts.filter(
+      (m) =>
+        m.effectiveStatus === "in-progress" ||
+        m.effectiveStatus === "scheduled",
+    ).length,
     "in-progress": myShifts.filter((m) => m.effectiveStatus === "in-progress").length,
     scheduled: myShifts.filter((m) => m.effectiveStatus === "scheduled").length,
     completed: myShifts.filter((m) => m.effectiveStatus === "completed").length,
@@ -91,13 +111,17 @@ export default function MyExamsPage() {
   };
 
   const dirty =
-    filter !== "all" || subjectFilter !== "all" || search.trim() !== "";
+    filter !== "active" || subjectFilter !== "all" || search.trim() !== "";
 
   return (
     <>
       <PageHeader
         title="Lịch thi của tôi"
-        description="Các ca thi bạn được gán — sắp tới, đang diễn ra và đã hoàn thành."
+        description={
+          filter === "active"
+            ? "Đang hiện các ca thi đang diễn ra + sắp diễn ra. Đổi bộ lọc sang \"Tất cả\" để xem cả ca đã kết thúc."
+            : "Các ca thi bạn được gán — sắp tới, đang diễn ra và đã hoàn thành."
+        }
       />
 
       {/* KPI strip — same shape as /admin/shifts */}
@@ -174,7 +198,7 @@ export default function MyExamsPage() {
           <button
             type="button"
             onClick={() => {
-              setFilter("all");
+              setFilter("active");
               setSubjectFilter("all");
               setSearch("");
             }}
@@ -192,12 +216,29 @@ export default function MyExamsPage() {
           <p className="mt-3 text-[14px] font-semibold">
             {myShifts.length === 0
               ? "Bạn chưa được gán ca thi nào"
-              : "Không có ca thi phù hợp với bộ lọc"}
+              : filter === "active" && counts.completed + counts.cancelled > 0
+                ? "Hiện không có ca thi nào đang diễn ra hoặc sắp tới"
+                : "Không có ca thi phù hợp với bộ lọc"}
           </p>
           <p className="mt-1 text-[12px] text-muted-foreground">
-            {myShifts.length === 0
-              ? "Khi giáo viên tạo ca thi và gán bạn vào, bạn sẽ thấy danh sách ở đây."
-              : "Thử bỏ bớt bộ lọc hoặc đổi từ khoá tìm kiếm."}
+            {myShifts.length === 0 ? (
+              "Khi giáo viên tạo ca thi và gán bạn vào, bạn sẽ thấy danh sách ở đây."
+            ) : filter === "active" &&
+              counts.completed + counts.cancelled > 0 ? (
+              <>
+                Bạn có {counts.completed + counts.cancelled} ca thi cũ đã ẩn —{" "}
+                <button
+                  type="button"
+                  onClick={() => setFilter("all")}
+                  className="font-semibold text-primary underline-offset-2 hover:underline"
+                >
+                  hiện tất cả
+                </button>{" "}
+                để xem lại.
+              </>
+            ) : (
+              "Thử bỏ bớt bộ lọc hoặc đổi từ khoá tìm kiếm."
+            )}
           </p>
         </div>
       ) : (
