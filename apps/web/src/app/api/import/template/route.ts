@@ -61,9 +61,10 @@ export async function GET(req: Request) {
               '`Giải thích: ...` — đặt mỗi trường trên một dòng riêng.',
           ),
           bullet(
-            "Công thức toán: file mẫu hiển thị bằng OMath cho dễ nhìn; " +
-              "khi soạn câu mới, hãy dùng Word Equation Editor/OMath. " +
-              "Parser xử lý công thức Word này.",
+            "Công thức toán: gõ trực tiếp bằng MathType hoặc Equation Editor " +
+              "của Word (Insert → Equation). Các công thức mẫu bên dưới đã " +
+              "soạn sẵn — click vào để sửa. Hệ thống tự đọc công thức khi " +
+              "upload, bạn KHÔNG cần gõ LaTeX.",
           ),
           bullet(
             "Ảnh trong câu hỏi: dán trực tiếp vào Word (sẽ kèm theo khi " +
@@ -75,7 +76,7 @@ export async function GET(req: Request) {
           ),
           gap(),
 
-          heading("Vài công thức tham khảo (render bằng Equation Editor/OMath)", 3),
+          heading("Vài công thức tham khảo (click vào để sửa trực tiếp)", 3),
           mathBlock("Phương trình bậc 2:", "x^2 - 5x + 6 = 0"),
           mathBlock("Định lý Pythagoras:", "a^2 + b^2 = c^2"),
           mathBlock("Phân số:", "\\frac{a}{b}"),
