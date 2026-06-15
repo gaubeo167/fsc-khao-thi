@@ -449,8 +449,9 @@ export function ImportWordDialog({ open, onOpenChange }: Props) {
               <p className="text-meta leading-relaxed text-amber-700">
                 File Word với 14 câu hỏi ví dụ ở tất cả 8 dạng (MCQ-single,
                 MCQ-multi, True-False, Fill-blank, Matching, Ordering,
-                Underline, Essay) + hướng dẫn dùng LaTeX cho công thức toán.
-                Mở trong Word → sửa nội dung → lưu .docx → upload bên dưới.
+                Underline, Essay) + hướng dẫn dùng Equation Editor/OMath cho
+                công thức toán. Mở trong Word → sửa nội dung → lưu .docx →
+                upload bên dưới.
               </p>
             </div>
           </a>

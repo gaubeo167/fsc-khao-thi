@@ -20,9 +20,9 @@ import { latexToDocxMath } from "./latex-to-docx-math";
  *
  * Math is rendered as real Office Math (OMath) elements (the same engine
  * Word uses for equations). When the teacher edits the file and re-uploads,
- * the import parser still relies on `$...$` LaTeX markers in plain text —
- * Word's Equation Editor output WILL be flattened by mammoth. The template
- * instructs teachers to keep math in `$...$` form when editing.
+ * the import parser converts Word/MathType equations to the same internal
+ * representation before mammoth extracts the document. The template shows
+ * math as native Word equations so teachers can edit formulas directly.
  */
 export async function GET(req: Request) {
   // Subject theme — drives which sample questions get generated.
@@ -61,9 +61,9 @@ export async function GET(req: Request) {
               '`Giải thích: ...` — đặt mỗi trường trên một dòng riêng.',
           ),
           bullet(
-            "Công thức toán: file mẫu hiển thị bằng OMath cho dễ nhìn, nhưng " +
-              "khi BẠN soạn câu mới, hãy gõ LaTeX trong $...$ (vd: " +
-              '"$x^2 - 5x + 6 = 0$"). Parser chỉ đọc được LaTeX.',
+            "Công thức toán: file mẫu hiển thị bằng OMath cho dễ nhìn; " +
+              "khi soạn câu mới, hãy dùng Word Equation Editor/OMath. " +
+              "Parser xử lý công thức Word này.",
           ),
           bullet(
             "Ảnh trong câu hỏi: dán trực tiếp vào Word (sẽ kèm theo khi " +
@@ -75,7 +75,7 @@ export async function GET(req: Request) {
           ),
           gap(),
 
-          heading("Vài công thức tham khảo (render bằng OMath)", 3),
+          heading("Vài công thức tham khảo (render bằng Equation Editor/OMath)", 3),
           mathBlock("Phương trình bậc 2:", "x^2 - 5x + 6 = 0"),
           mathBlock("Định lý Pythagoras:", "a^2 + b^2 = c^2"),
           mathBlock("Phân số:", "\\frac{a}{b}"),
@@ -181,13 +181,7 @@ function mathBlock(label: string, latex: string): Paragraph {
     children: [
       new TextRun({ text: label + "  ", bold: true, color: "0F172A" }),
       new Math({ children: latexToDocxMath(latex) }),
-      new TextRun({ text: `   ·   gõ trong file là  `, color: "94A3B8" }),
-      new TextRun({
-        text: `$${latex}$`,
-        font: "Consolas",
-        color: "64748B",
-        size: 18,
-      }),
+
     ],
   });
 }
