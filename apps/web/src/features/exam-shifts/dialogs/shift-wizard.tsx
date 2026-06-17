@@ -442,6 +442,15 @@ export function ShiftWizard({
     }
     if (s >= 2) {
       if (!state.packageId) return "Chọn 1 bộ đề đã duyệt.";
+      // Bắt buộc gói đề phải sinh đề xong mới được tạo ca thi. Không có
+      // đề nào sinh ra → chặn ngay, không fallback về blueprint pool.
+      const selectedPkg = packages.find((p) => p.id === state.packageId);
+      const variantCount = selectedPkg
+        ? generated.filter((g) => g.packageId === selectedPkg.id).length
+        : 0;
+      if (variantCount === 0) {
+        return "Gói đề này chưa sinh đề. Vào Khung đề & Gói đề để sinh đề trước, rồi quay lại tạo ca thi.";
+      }
       if (!state.scoring.maxScore || state.scoring.maxScore <= 0) {
         return "Điểm tối đa phải > 0.";
       }
@@ -2020,6 +2029,7 @@ function PackageList({
   grades: ReturnType<typeof useGradesStore.getState>["grades"];
   pickPackage: (id: string) => void;
 }) {
+  const generated = useGeneratedStore((s) => s.generated);
   return (
     <section>
       <p
@@ -2040,24 +2050,34 @@ function PackageList({
             0,
           );
           const checked = state.packageId === p.id;
+          // Gói đề phải sinh đề xong mới được chọn để tạo ca thi.
+          const genCount = generated.filter(
+            (g) => g.packageId === p.id,
+          ).length;
+          const notReady = genCount === 0;
           return (
             <li key={p.id}>
               <label
                 className={cn(
-                  "flex cursor-pointer items-start gap-3 rounded-xl border-2 bg-card p-3 transition-colors",
+                  "flex items-start gap-3 rounded-xl border-2 bg-card p-3 transition-colors",
+                  notReady && "cursor-not-allowed opacity-60",
+                  !notReady && "cursor-pointer",
                   checked
                     ? "border-primary bg-primary/5"
-                    : highlighted
-                      ? "border-emerald-200 hover:border-primary/40 hover:bg-accent/30"
-                      : "border-border hover:border-primary/40 hover:bg-accent/30",
+                    : notReady
+                      ? "border-amber-200"
+                      : highlighted
+                        ? "border-emerald-200 hover:border-primary/40 hover:bg-accent/30"
+                        : "border-border hover:border-primary/40 hover:bg-accent/30",
                 )}
               >
                 <input
                   type="radio"
                   name="package"
                   checked={checked}
+                  disabled={notReady}
                   onChange={() => pickPackage(p.id)}
-                  className="mt-1 h-4 w-4 accent-[var(--color-primary)]"
+                  className="mt-1 h-4 w-4 accent-[var(--color-primary)] disabled:cursor-not-allowed"
                 />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-1.5">
@@ -2087,9 +2107,28 @@ function PackageList({
                   <p className="mt-1 text-[12px] text-foreground/80">
                     {perExam} câu/đề · ⏱ {p.duration} phút
                   </p>
+                  {notReady && (
+                    <p className="mt-1 text-[12px] font-medium text-amber-700">
+                      ⚠ Chưa sinh đề — vào{" "}
+                      <a
+                        href="/admin/exam-blueprints"
+                        className="font-semibold underline"
+                      >
+                        Khung đề &amp; Gói đề
+                      </a>{" "}
+                      để sinh đề trước khi tạo ca thi.
+                    </p>
+                  )}
                 </div>
-                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-700">
-                  Đã duyệt
+                <span
+                  className={cn(
+                    "rounded-full px-2 py-0.5 text-[10px] font-bold uppercase",
+                    notReady
+                      ? "bg-amber-100 text-amber-700"
+                      : "bg-emerald-100 text-emerald-700",
+                  )}
+                >
+                  {notReady ? "Chưa sinh đề" : `${genCount} đề`}
                 </span>
               </label>
             </li>
