@@ -4,6 +4,7 @@ import { create } from "zustand";
 
 import { useUsersStore } from "@/features/admin/users/users-store";
 import {
+  resolveLoginEmail,
   signInWithEmail,
   signOut as fbSignOut,
   subscribeAuth,
@@ -134,10 +135,11 @@ export const useAuthStore = create<AuthState & AuthActions>()((set, get) => ({
       const synthetic = `${loginIdentifier.toLowerCase()}@students.fsc.local`;
       result = await signInWithEmail(synthetic, password);
       if (!result.ok) {
-        // Fallback: try real email resolved from the mirror.
-        const u = useUsersStore.getState().findByIdentifier(loginIdentifier);
-        if (u && u.email && u.email !== synthetic) {
-          result = await signInWithEmail(u.email, password);
+        // Fallback for legacy accounts: resolve the real email with a
+        // scoped /users query (no full-collection mirror needed).
+        const email = await resolveLoginEmail(loginIdentifier);
+        if (email && email !== synthetic) {
+          result = await signInWithEmail(email, password);
         }
       }
     } else {

@@ -42,7 +42,9 @@ import {
 function startDataSubscriptions(session: AuthSession): Array<() => void> {
   const isStudent = session.role === "student";
   const subs: Array<() => void> = [
-    subscribeUsers(),
+    // Students load only their own user doc (permissions + class
+    // membership); staff need the whole directory for admin / reports.
+    isStudent ? subscribeUsers({ selfId: session.userId }) : subscribeUsers(),
     subscribeCampuses(),
     subscribeSubjects(),
     subscribeGradesCatalog(),
@@ -90,11 +92,10 @@ function startDataSubscriptions(session: AuthSession): Array<() => void> {
 export function AuthBootstrap() {
   const dataUnsubsRef = useRef<Array<() => void>>([]);
 
-  // Auth subscription + early /users mirror.
-  // The /users mirror runs PRE-SIGNIN so the login form can map a typed
-  // username / mã HS → the underlying Firebase Auth email before
-  // calling signInWithEmailAndPassword. (Firestore rule has been
-  // relaxed to public-read on /users for this reason.)
+  // Auth subscription only.
+  // (Login no longer needs a pre-signin full /users mirror — the login
+  // form resolves a typed username / mã HS → email via a scoped /users
+  // query on demand. See resolveLoginEmail in firebase-auth.ts.)
   useEffect(() => {
     if (!isFirebaseConfigured()) {
       // eslint-disable-next-line no-console
@@ -106,10 +107,8 @@ export function AuthBootstrap() {
       return;
     }
     const unsubAuth = startAuthSubscription();
-    const unsubUsers = subscribeUsers();
     return () => {
       unsubAuth();
-      unsubUsers();
     };
   }, []);
 

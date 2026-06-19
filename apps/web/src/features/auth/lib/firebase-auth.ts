@@ -18,12 +18,50 @@ import {
   signOut as fbSignOut,
   type User as FbUser,
 } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  limit,
+  query,
+  where,
+} from "firebase/firestore";
 
 import { getAuthSafe, getDb } from "@/lib/firebase";
 import { COLLECTIONS } from "@/lib/firestore-collections";
 
 import type { AuthSession, Role } from "../state/auth-store";
+
+/**
+ * Resolve a typed login identifier (username / mã HS) → the Firebase Auth
+ * email, by querying /users directly instead of keeping the whole
+ * collection mirrored client-side. Used only as a fallback when the
+ * synthetic `{username}@students.fsc.local` email doesn't exist (legacy
+ * accounts). The /users read rule is public so this runs pre-auth.
+ *
+ * Tries username then studentCode, each in the typed and lower-cased form
+ * (Firestore queries are case-sensitive; the old mirror matched
+ * case-insensitively). Returns the first email found, or null.
+ */
+export async function resolveLoginEmail(
+  identifier: string,
+): Promise<string | null> {
+  const raw = identifier.trim();
+  if (!raw) return null;
+  const candidates = Array.from(new Set([raw, raw.toLowerCase()]));
+  const col = collection(getDb(), COLLECTIONS.users);
+  for (const field of ["username", "studentCode"] as const) {
+    for (const value of candidates) {
+      const snap = await getDocs(
+        query(col, where(field, "==", value), limit(1)),
+      );
+      const data = snap.docs[0]?.data() as { email?: string } | undefined;
+      if (data?.email) return data.email;
+    }
+  }
+  return null;
+}
 
 /** Doc shape stored at /users/{uid} — Firestore schema, NOT the Zustand store shape. */
 export interface UserProfileDoc {

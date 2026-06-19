@@ -10,11 +10,13 @@ import {
   collection,
   deleteDoc,
   doc,
+  documentId,
   onSnapshot,
   query,
   setDoc,
   updateDoc,
   serverTimestamp,
+  where,
   type Unsubscribe,
 } from "firebase/firestore";
 import { create } from "zustand";
@@ -383,11 +385,13 @@ export const useUsersStore = create<UsersState & UsersActions>()((set, get) => (
  * Start listening to the /users collection. Call once on the client.
  * Returns the unsubscribe fn for cleanup.
  *
- * NOTE: this listener returns ALL users — Firestore security rules
- * filter what the caller can actually read. Admins see their campus;
- * superadmin sees everyone; teachers/students see only themselves.
+ * Pass `{ selfId }` for student sessions to load ONLY that student's own
+ * user doc (they only ever need their own permissions / class membership).
+ * Without it the listener returns the whole collection — fine for staff
+ * screens (user admin, monitoring, reports) but far too much to push to
+ * 1700 student devices. Staff call with no args.
  */
-export function subscribeUsers(): Unsubscribe {
+export function subscribeUsers(opts?: { selfId?: string }): Unsubscribe {
   if (!isFirebaseConfigured()) {
     // No backend to subscribe to. Mark hydrated so the rest of the app
     // doesn't wait on a snapshot that will never arrive.
@@ -396,7 +400,10 @@ export function subscribeUsers(): Unsubscribe {
       /* no-op */
     };
   }
-  const q = query(collection(getDb(), COLLECTIONS.users));
+  const col = collection(getDb(), COLLECTIONS.users);
+  const q = opts?.selfId
+    ? query(col, where(documentId(), "==", opts.selfId))
+    : query(col);
   return onSnapshot(
     q,
     (snap) => {
