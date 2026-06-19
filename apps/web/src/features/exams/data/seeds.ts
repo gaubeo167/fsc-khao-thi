@@ -21,7 +21,7 @@ export const SEED_BLUEPRINTS: ExamBlueprint[] = [
       {
         id: "tp-0002",
         name: "Hình học",
-        pickedQuestionIds: [],
+        pickedQuestionIds: ["Q-0001"],
       },
     ],
     createdAt: "2026-05-10T00:00:00.000Z",
@@ -29,7 +29,47 @@ export const SEED_BLUEPRINTS: ExamBlueprint[] = [
   },
 ];
 
-export const SEED_PACKAGES: ExamPackage[] = [];
-// Note: SEED_PACKAGES is empty so we don't have to maintain a sample with the
-// new approval fields. Future seeds should include `status: "approved"`.
-export const SEED_GENERATED: GeneratedExam[] = [];
+// Demo-mode sample package (approved) built on BP-0001 so the "Quản lý đề thi",
+// the shift wizard (step 2) and the student exam flow have data without
+// Firebase. Production (Firebase configured) ignores these — the store inits
+// to [] there.
+export const SEED_PACKAGES: ExamPackage[] = [
+  {
+    id: "PKG-0001",
+    name: "Gói đề Toán 7 — Giữa kỳ I",
+    blueprintId: "BP-0001",
+    duration: 45,
+    campusId: "campus-cau-giay",
+    ownerId: "U-301",
+    ownerName: "Phạm Minh",
+    matrix: [
+      { topicId: "tp-0001", easyCount: 1, mediumCount: 0, hardCount: 0 },
+      { topicId: "tp-0002", easyCount: 1, mediumCount: 0, hardCount: 0 },
+    ],
+    status: "approved",
+    approvedBy: "U-201",
+    createdAt: "2026-05-12T00:00:00.000Z",
+    updatedAt: NOW,
+  },
+];
+
+// Two generated variants for PKG-0001 so it reads "đã sinh đề" (required
+// before a shift can be created from it).
+export const SEED_GENERATED: GeneratedExam[] = [
+  {
+    id: "GEN-0001",
+    name: "Đề 001",
+    packageId: "PKG-0001",
+    questionIds: ["Q-0002", "Q-0001"],
+    duration: 45,
+    createdAt: "2026-05-12T01:00:00.000Z",
+  },
+  {
+    id: "GEN-0002",
+    name: "Đề 002",
+    packageId: "PKG-0001",
+    questionIds: ["Q-0001", "Q-0002"],
+    duration: 45,
+    createdAt: "2026-05-12T01:00:00.000Z",
+  },
+];

@@ -4,7 +4,10 @@ import { where, type Unsubscribe } from "firebase/firestore";
 import { create } from "zustand";
 
 import type { Question } from "@/features/question-bank/data/seed-questions";
+import { isFirebaseConfigured } from "@/lib/firebase";
 import { COLLECTIONS } from "@/lib/firestore-collections";
+
+import { SEED_EXAM_ATTEMPTS } from "../data/seed-attempts";
 import {
   patchDoc,
   sanitizeForFirestore,
@@ -220,8 +223,11 @@ function toDoc(att: StudentAttempt): Record<string, unknown> {
   return sanitizeForFirestore(att as unknown as Record<string, unknown>);
 }
 
+// Demo-only seed; empty in production.
+const INITIAL_ATTEMPTS = isFirebaseConfigured() ? [] : SEED_EXAM_ATTEMPTS;
+
 export const useAttemptsStore = create<State & Actions>()((set, get) => ({
-  attempts: [],
+  attempts: INITIAL_ATTEMPTS,
   hydrated: false,
 
   startOrResume({

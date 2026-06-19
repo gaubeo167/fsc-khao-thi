@@ -13,8 +13,12 @@ import {
   writeDoc,
 } from "@/lib/firestore-sync";
 
+import { SEED_HOMEWORK } from "../data/seed-homework";
 import type { Homework, HomeworkStatus } from "../data/types";
 import { useHomeworkAttemptsStore } from "./homework-attempts-store";
+
+// Demo-only seed; empty in production.
+const INITIAL_HOMEWORK = isFirebaseConfigured() ? [] : SEED_HOMEWORK;
 
 interface State {
   homework: Homework[];
@@ -55,7 +59,7 @@ function pickAuditFields(h: Homework | undefined) {
 }
 
 export const useHomeworkStore = create<State & Actions>()((set, get) => ({
-  homework: [],
+  homework: INITIAL_HOMEWORK,
   hydrated: false,
 
   create(input) {

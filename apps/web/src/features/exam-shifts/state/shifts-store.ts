@@ -4,6 +4,7 @@ import type { Unsubscribe } from "firebase/firestore";
 import { create } from "zustand";
 
 import { recordAudit } from "@/lib/audit/record";
+import { isFirebaseConfigured } from "@/lib/firebase";
 import { COLLECTIONS } from "@/lib/firestore-collections";
 import {
   patchDoc,
@@ -12,7 +13,11 @@ import {
   writeDoc,
 } from "@/lib/firestore-sync";
 
+import { SEED_SHIFTS } from "../data/seed-shifts";
 import type { ExamShift, ShiftStatus } from "../data/types";
+
+// Demo-only seed; empty when Firebase is configured (production).
+const INITIAL_SHIFTS = isFirebaseConfigured() ? [] : SEED_SHIFTS;
 
 interface State {
   shifts: ExamShift[];
@@ -72,7 +77,7 @@ function nextId(existing: ExamShift[]): string {
 }
 
 export const useShiftsStore = create<State & Actions>()((set, get) => ({
-  shifts: [],
+  shifts: INITIAL_SHIFTS,
   hydrated: false,
 
   create(input) {

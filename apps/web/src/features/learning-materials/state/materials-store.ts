@@ -15,10 +15,14 @@ import {
 import { deleteStoredFile } from "@/lib/storage";
 import { nextVersionFields, rootId, versionOf } from "@/lib/version";
 
+import { SEED_MATERIALS } from "../data/seed-materials";
 import type {
   LearningMaterial,
   MaterialStatus,
 } from "../data/types";
+
+// Demo-only seed; empty in production.
+const INITIAL_MATERIALS = isFirebaseConfigured() ? [] : SEED_MATERIALS;
 
 interface State {
   materials: LearningMaterial[];
@@ -79,7 +83,7 @@ function pickAuditFields(m: LearningMaterial | undefined) {
 }
 
 export const useMaterialsStore = create<State & Actions>()((set, get) => ({
-  materials: [],
+  materials: INITIAL_MATERIALS,
   hydrated: false,
 
   create(input) {

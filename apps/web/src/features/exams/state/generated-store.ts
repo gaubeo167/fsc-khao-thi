@@ -4,8 +4,14 @@ import { create } from "zustand";
 import { debouncedLocalStorage } from "@/lib/debounced-local-storage";
 import { persist } from "zustand/middleware";
 
+import { isFirebaseConfigured } from "@/lib/firebase";
+
 import { SEED_GENERATED } from "../data/seeds";
 import type { GeneratedExam } from "../data/types";
+
+// Demo-only initial data. With Firebase configured this store is empty
+// until real generated exams are added.
+const INITIAL_GENERATED = isFirebaseConfigured() ? [] : SEED_GENERATED;
 
 interface State {
   generated: GeneratedExam[];
@@ -33,7 +39,7 @@ function nextId(existing: GeneratedExam[]): string {
 export const useGeneratedStore = create<State & Actions>()(
   persist(
     (set, get) => ({
-      generated: SEED_GENERATED,
+      generated: INITIAL_GENERATED,
 
       addBatch(input, nameTemplate) {
         const now = new Date().toISOString();
