@@ -1,6 +1,6 @@
 "use client";
 
-import type { Unsubscribe } from "firebase/firestore";
+import { where, type Unsubscribe } from "firebase/firestore";
 import { create } from "zustand";
 
 import type { Question } from "@/features/question-bank/data/seed-questions";
@@ -152,7 +152,18 @@ export const useHomeworkAttemptsStore = create<State & Actions>()(
   }),
 );
 
-export function subscribeHomeworkAttempts(): Unsubscribe {
+/**
+ * Subscribe to homework attempts.
+ *
+ * Pass `{ studentId }` for student sessions so the listener only watches
+ * that student's own attempts (`where studentId == uid`). This is
+ * essential at scale: without it every student would re-download — and be
+ * billed for — every other student's attempt on each save. Teachers /
+ * admins call with no args to read all attempts for the stats page.
+ */
+export function subscribeHomeworkAttempts(opts?: {
+  studentId?: string;
+}): Unsubscribe {
   if (!isFirebaseConfigured()) {
     useHomeworkAttemptsStore.getState()._applySnapshot([]);
     return () => {
@@ -161,6 +172,9 @@ export function subscribeHomeworkAttempts(): Unsubscribe {
   }
   return subscribeCollection<HomeworkAttempt>({
     collectionName: COLLECTIONS.homeworkAttempts,
+    constraints: opts?.studentId
+      ? [where("studentId", "==", opts.studentId)]
+      : [],
     fromDoc: (id, data) => ({ ...(data as HomeworkAttempt), id }),
     onChange: (rows) =>
       useHomeworkAttemptsStore.getState()._applySnapshot(rows),

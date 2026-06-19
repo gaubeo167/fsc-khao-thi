@@ -20,7 +20,53 @@ import { subscribeSubjects } from "@/features/subjects/state/subjects-store";
 import { subscribeTeaching } from "@/features/teaching/state/teaching-store";
 import { isFirebaseConfigured } from "@/lib/firebase";
 
-import { startAuthSubscription, useAuthStore } from "../state/auth-store";
+import {
+  startAuthSubscription,
+  useAuthStore,
+  type AuthSession,
+} from "../state/auth-store";
+
+/**
+ * Build the data subscriptions for a signed-in session.
+ *
+ * Students get a SCOPED set: their homework attempts are filtered to
+ * their own uid (so one student's save doesn't fan out to all 1700
+ * listeners), and teaching assignments (teacher-only) are skipped.
+ * Proctor events ARE kept for students — the exam runtime reads them to
+ * show live messages the proctor sends during a shift. Staff keep the
+ * full set.
+ *
+ * Note: collections like questions/users/attempts are still loaded whole
+ * here — narrowing those per-student is the next scaling step (P1).
+ */
+function startDataSubscriptions(session: AuthSession): Array<() => void> {
+  const isStudent = session.role === "student";
+  const subs: Array<() => void> = [
+    subscribeUsers(),
+    subscribeCampuses(),
+    subscribeSubjects(),
+    subscribeGradesCatalog(),
+    subscribeQuestions(),
+    subscribeBlueprints(),
+    subscribePackages(),
+    subscribeShifts(),
+    subscribeExamForms(),
+    subscribeAttempts(),
+    subscribeProctorEvents(),
+    subscribeGrading(),
+    subscribeMaterials(),
+    subscribeHomework(),
+    isStudent
+      ? subscribeHomeworkAttempts({ studentId: session.userId })
+      : subscribeHomeworkAttempts(),
+  ];
+  // Teaching assignments map teachers → classes; no student screen reads
+  // them, so skip the whole-collection load for students.
+  if (!isStudent) {
+    subs.push(subscribeTeaching());
+  }
+  return subs;
+}
 
 /**
  * Boots Firebase listeners.
@@ -77,24 +123,7 @@ export function AuthBootstrap() {
       if (!state.session) return;
       // Start a fresh set of subscriptions under the new auth context.
       try {
-        dataUnsubsRef.current = [
-          subscribeUsers(),
-          subscribeCampuses(),
-          subscribeSubjects(),
-          subscribeGradesCatalog(),
-          subscribeTeaching(),
-          subscribeQuestions(),
-          subscribeBlueprints(),
-          subscribePackages(),
-          subscribeShifts(),
-          subscribeExamForms(),
-          subscribeAttempts(),
-          subscribeProctorEvents(),
-          subscribeGrading(),
-          subscribeMaterials(),
-          subscribeHomework(),
-          subscribeHomeworkAttempts(),
-        ];
+        dataUnsubsRef.current = startDataSubscriptions(state.session);
       } catch (e) {
         // eslint-disable-next-line no-console
         console.error("[FSC] Data subscriptions failed:", e);
@@ -105,24 +134,7 @@ export function AuthBootstrap() {
     const current = useAuthStore.getState().session;
     if (current) {
       try {
-        dataUnsubsRef.current = [
-          subscribeUsers(),
-          subscribeCampuses(),
-          subscribeSubjects(),
-          subscribeGradesCatalog(),
-          subscribeTeaching(),
-          subscribeQuestions(),
-          subscribeBlueprints(),
-          subscribePackages(),
-          subscribeShifts(),
-          subscribeExamForms(),
-          subscribeAttempts(),
-          subscribeProctorEvents(),
-          subscribeGrading(),
-          subscribeMaterials(),
-          subscribeHomework(),
-          subscribeHomeworkAttempts(),
-        ];
+        dataUnsubsRef.current = startDataSubscriptions(current);
       } catch (e) {
         // eslint-disable-next-line no-console
         console.error("[FSC] Data subscriptions failed:", e);

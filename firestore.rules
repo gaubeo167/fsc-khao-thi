@@ -293,10 +293,16 @@ service cloud.firestore {
     }
 
     // ───── /homework_attempts — per-student attempts ──────────────────────
-    // Students write their own attempt; teachers + admins read all to
-    // power the stats page.
+    // Students read ONLY their own attempt (scoped query
+    // where studentId == uid); teachers + admins read all for the stats
+    // page. The student-side scoping is critical for scale: an unfiltered
+    // read would let one student's save fan out to every other student's
+    // listener. Rules enforce the scope so the client query MUST filter.
     match /homework_attempts/{id} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() && (
+        resource.data.studentId == uid() ||
+        isTeacherOrAbove()
+      );
       allow create: if isSignedIn() &&
         request.resource.data.studentId == uid();
       allow update: if isSignedIn() && (
