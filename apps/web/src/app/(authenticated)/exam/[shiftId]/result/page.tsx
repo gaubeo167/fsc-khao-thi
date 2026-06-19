@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { notFound, useParams } from "next/navigation";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { useAuthStore } from "@/features/auth/state/auth-store";
 import {
@@ -44,9 +44,31 @@ export default function ExamResultPage() {
       : undefined,
   );
   const allQuestions = useQuestionsStore((s) => s.questions);
+  const ensureQuestions = useQuestionsStore((s) => s.ensureQuestions);
   const subjects = useSubjectsStore((s) => s.subjects);
   const packages = usePackagesStore((s) => s.packages);
   const blueprints = useBlueprintsStore((s) => s.blueprints);
+
+  // Students load only this attempt's questions on demand (they don't
+  // subscribe to the whole bank). `resultQReady` gates the score view so
+  // it never renders a wrong score from a half-loaded question set.
+  const qIdsKey = attempt?.questionIds?.join(",") ?? "";
+  const [resultQReady, setResultQReady] = useState(false);
+  useEffect(() => {
+    if (!attempt || !attempt.questionIds?.length) {
+      setResultQReady(true);
+      return;
+    }
+    let alive = true;
+    setResultQReady(false);
+    ensureQuestions(attempt.questionIds).finally(() => {
+      if (alive) setResultQReady(true);
+    });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qIdsKey, ensureQuestions]);
 
   // IMPORTANT: every hook below must run on every render. Do NOT add
   // early returns above this comment — React's Rules of Hooks require a
@@ -85,6 +107,14 @@ export default function ExamResultPage() {
         >
           ← Lịch thi
         </Link>
+      </div>
+    );
+  }
+
+  if (!resultQReady) {
+    return (
+      <div className="flex items-center justify-center py-20 text-muted-foreground">
+        Đang tải kết quả…
       </div>
     );
   }

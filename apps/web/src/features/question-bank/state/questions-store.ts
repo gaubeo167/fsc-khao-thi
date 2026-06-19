@@ -1,10 +1,17 @@
 "use client";
 
-import type { Unsubscribe } from "firebase/firestore";
+import {
+  collection,
+  documentId,
+  getDocs,
+  query,
+  where,
+  type Unsubscribe,
+} from "firebase/firestore";
 import { create } from "zustand";
 
 import { recordAudit } from "@/lib/audit/record";
-import { isFirebaseConfigured } from "@/lib/firebase";
+import { getDb, isFirebaseConfigured } from "@/lib/firebase";
 import { COLLECTIONS } from "@/lib/firestore-collections";
 import { nextVersionFields, rootId, versionOf } from "@/lib/version";
 import {
@@ -57,6 +64,15 @@ interface Actions {
   ): Question | null;
   setStatus(id: string, status: QuestionStatus, approverId?: string, note?: string): void;
   findById(id: string): Question | undefined;
+  /**
+   * Fetch specific questions by ID and merge them into the store.
+   *
+   * Used by student sessions, which (for scale) do NOT subscribe to the
+   * whole /questions collection — they load only the questions of the
+   * homework / exam they're actually viewing. Skips IDs already present,
+   * batches the rest by Firestore's 30-per-`in` limit. No-op in demo mode.
+   */
+  ensureQuestions(ids: string[]): Promise<void>;
   /** Internal — called by the Firestore snapshot listener. */
   _applySnapshot(rows: Question[]): void;
 }
@@ -277,6 +293,33 @@ export const useQuestionsStore = create<State & Actions>()((set, get) => ({
 
   findById(id) {
     return get().questions.find((q) => q.id === id);
+  },
+
+  async ensureQuestions(ids) {
+    if (!isFirebaseConfigured()) return;
+    const have = new Set(get().questions.map((q) => q.id));
+    const missing = [...new Set(ids)].filter((id) => id && !have.has(id));
+    if (missing.length === 0) return;
+    const db = getDb();
+    const fetched: Question[] = [];
+    // Firestore allows at most 30 values in an `in` filter.
+    for (let i = 0; i < missing.length; i += 30) {
+      const chunk = missing.slice(i, i + 30);
+      const snap = await getDocs(
+        query(
+          collection(db, COLLECTIONS.questions),
+          where(documentId(), "in", chunk),
+        ),
+      );
+      for (const d of snap.docs) {
+        fetched.push({ ...(d.data() as Question), id: d.id });
+      }
+    }
+    if (fetched.length === 0) return;
+    // Merge into the store, de-duping by id (keep the freshly fetched copy).
+    const byId = new Map(get().questions.map((q) => [q.id, q]));
+    for (const q of fetched) byId.set(q.id, q);
+    set({ questions: [...byId.values()], hydrated: true });
   },
 
   _applySnapshot(rows) {

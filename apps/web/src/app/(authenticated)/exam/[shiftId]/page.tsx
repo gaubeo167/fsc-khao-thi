@@ -96,6 +96,39 @@ export default function ExamPage() {
     return targetTotal > 0 ? shuffled.slice(0, targetTotal) : shuffled;
   }, [examForm, bp, pkg, allQuestions, shift, session]);
 
+  // Students don't subscribe to all /questions. The snapshot path
+  // (examForm) already carries frozen questions, so nothing to load. Only
+  // the legacy fallback (shift with no exam form) reads the live bank —
+  // fetch just that blueprint's picked questions on demand. Hook stays
+  // above the early returns to keep hook order stable (see note above).
+  const ensureQuestions = useQuestionsStore((s) => s.ensureQuestions);
+  const needFallbackQuestions = !examForm && session?.role === "student";
+  const fallbackIdsKey =
+    needFallbackQuestions && bp
+      ? bp.topics.flatMap((t) => t.pickedQuestionIds).join(",")
+      : "";
+  const [fallbackQReady, setFallbackQReady] = useState(false);
+  useEffect(() => {
+    if (!needFallbackQuestions || !bp) {
+      setFallbackQReady(true);
+      return;
+    }
+    const ids = bp.topics.flatMap((t) => t.pickedQuestionIds);
+    if (ids.length === 0) {
+      setFallbackQReady(true);
+      return;
+    }
+    let alive = true;
+    setFallbackQReady(false);
+    ensureQuestions(ids).finally(() => {
+      if (alive) setFallbackQReady(true);
+    });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needFallbackQuestions, fallbackIdsKey, ensureQuestions]);
+
   if (!shift) return notFound();
   if (!session) {
     return (
@@ -188,6 +221,17 @@ export default function ExamPage() {
     }
   }
 
+  // Legacy fallback still fetching its questions — don't flash the
+  // "no questions" gate at a student mid-exam.
+  if (needFallbackQuestions && !fallbackQReady) {
+    return (
+      <Gate
+        title="Đang tải đề thi…"
+        hint="Vui lòng đợi trong giây lát."
+        backHref="/my-exams"
+      />
+    );
+  }
   if (questions.length === 0) {
     return (
       <Gate

@@ -46,7 +46,6 @@ function startDataSubscriptions(session: AuthSession): Array<() => void> {
     subscribeCampuses(),
     subscribeSubjects(),
     subscribeGradesCatalog(),
-    subscribeQuestions(),
     subscribeBlueprints(),
     subscribePackages(),
     subscribeShifts(),
@@ -62,10 +61,14 @@ function startDataSubscriptions(session: AuthSession): Array<() => void> {
       ? subscribeHomeworkAttempts({ studentId: session.userId })
       : subscribeHomeworkAttempts(),
   ];
-  // Teaching assignments map teachers → classes; no student screen reads
-  // them, so skip the whole-collection load for students.
+  // Staff-only whole-collection loads. Students skip these:
+  //   • questions — students load only their homework/exam questions on
+  //     demand via useQuestionsStore.ensureQuestions() (the exam runtime
+  //     itself reads frozen snapshots from the exam form, not /questions).
+  //   • teaching — assignments map teachers → classes; no student screen
+  //     reads them.
   if (!isStudent) {
-    subs.push(subscribeTeaching());
+    subs.push(subscribeQuestions(), subscribeTeaching());
   }
   return subs;
 }

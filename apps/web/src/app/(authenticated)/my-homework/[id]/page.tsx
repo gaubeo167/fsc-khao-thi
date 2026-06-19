@@ -14,7 +14,7 @@ import {
 import Link from "next/link";
 import { notFound, useParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -49,6 +49,7 @@ export default function HomeworkRuntimePage() {
   const homework = useHomeworkStore((s) => s.findById(id));
   const homeworkHydrated = useHomeworkStore((s) => s.hydrated);
   const allQuestions = useQuestionsStore((s) => s.questions);
+  const ensureQuestions = useQuestionsStore((s) => s.ensureQuestions);
   const allMaterials = useMaterialsStore((s) => s.materials);
   const startOrResume = useHomeworkAttemptsStore((s) => s.startOrResume);
   const saveAnswer = useHomeworkAttemptsStore((s) => s.saveAnswer);
@@ -98,6 +99,29 @@ export default function HomeworkRuntimePage() {
       .filter((m): m is LearningMaterial => !!m);
   }, [homework, allMaterials]);
 
+  // Students don't subscribe to the whole /questions collection, so pull
+  // just this homework's questions on demand. `questionsReady` gates the
+  // "no questions" / result views until the fetch settles, otherwise the
+  // page would flash "BTVN này chưa có câu hỏi nào" before they load.
+  const questionIdsKey = homework?.questionIds.join(",") ?? "";
+  const [questionsReady, setQuestionsReady] = useState(false);
+  useEffect(() => {
+    if (!homework) return;
+    if (homework.questionIds.length === 0) {
+      setQuestionsReady(true);
+      return;
+    }
+    let alive = true;
+    setQuestionsReady(false);
+    ensureQuestions(homework.questionIds).finally(() => {
+      if (alive) setQuestionsReady(true);
+    });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [questionIdsKey, ensureQuestions]);
+
   if (!homework) {
     if (!homeworkHydrated) {
       return (
@@ -120,6 +144,16 @@ export default function HomeworkRuntimePage() {
         hint="Đăng nhập bằng tài khoản học sinh để làm BTVN."
         backHref="/dashboard"
       />
+    );
+  }
+  // Wait for on-demand question fetch before any view that needs them
+  // (result panel + runtime + the "no questions" gate).
+  if (homework.questionIds.length > 0 && !questionsReady) {
+    return (
+      <div className="flex items-center justify-center py-20 text-muted-foreground">
+        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+        Đang tải câu hỏi…
+      </div>
     );
   }
   const eff = effectiveHomeworkState(homework);
