@@ -5,6 +5,7 @@ import { memo } from "react";
 
 import { Input } from "@/components/ui/input";
 import { UserMenu } from "@/features/auth/components/user-menu";
+import { HelpButton } from "@/features/help/components/help-button";
 
 import { CampusBadge } from "./campus-badge";
 
@@ -28,6 +29,7 @@ export const TopBar = memo(function TopBar() {
       </div>
 
       <div className="ml-auto flex items-center gap-2">
+        <HelpButton />
         <button
           type="button"
           aria-label="Thông báo"
