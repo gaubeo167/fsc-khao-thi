@@ -207,9 +207,16 @@ service cloud.firestore {
     }
 
     // ───── /attempts — student submissions ────────────────────────────────
-    // Reads open to any signed-in user (UI scopes by studentId / campus).
+    // Students read ONLY their own attempts (scoped query
+    // where studentId == uid); teacher+ read all for grading / monitoring
+    // / reports. Enforcing the scope here forces the client to query with
+    // a filter, which is what keeps per-student login load bounded as the
+    // attempts collection grows.
     match /attempts/{attemptId} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() && (
+        resource.data.studentId == uid() ||
+        isTeacherOrAbove()
+      );
       allow create: if isSignedIn() &&
         request.resource.data.studentId == uid();
       allow update: if isSignedIn() && (

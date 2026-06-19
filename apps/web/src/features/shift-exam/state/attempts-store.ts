@@ -1,6 +1,6 @@
 "use client";
 
-import type { Unsubscribe } from "firebase/firestore";
+import { where, type Unsubscribe } from "firebase/firestore";
 import { create } from "zustand";
 
 import type { Question } from "@/features/question-bank/data/seed-questions";
@@ -408,9 +408,22 @@ export const useAttemptsStore = create<State & Actions>()((set, get) => ({
   },
 }));
 
-export function subscribeAttempts(): Unsubscribe {
+/**
+ * Subscribe to exam attempts.
+ *
+ * Pass `{ studentId }` for student sessions so the listener only watches
+ * that student's own attempts (`where studentId == uid`) instead of every
+ * attempt in the campus. Without it, each student would download — and be
+ * billed for — the whole (ever-growing) attempts collection on login, and
+ * every submit would fan out to all listeners. Staff (teacher+) call with
+ * no args to read all attempts for grading / monitoring / reports.
+ */
+export function subscribeAttempts(opts?: { studentId?: string }): Unsubscribe {
   return subscribeCollection<StudentAttempt>({
     collectionName: COLLECTIONS.attempts,
+    constraints: opts?.studentId
+      ? [where("studentId", "==", opts.studentId)]
+      : [],
     fromDoc: (id, data) => ({ ...(data as StudentAttempt), id }),
     onChange: (rows) => {
       useAttemptsStore.getState()._applySnapshot(rows);

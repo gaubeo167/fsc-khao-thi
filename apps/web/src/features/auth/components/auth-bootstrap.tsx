@@ -51,7 +51,9 @@ function startDataSubscriptions(session: AuthSession): Array<() => void> {
     subscribePackages(),
     subscribeShifts(),
     subscribeExamForms(),
-    subscribeAttempts(),
+    isStudent
+      ? subscribeAttempts({ studentId: session.userId })
+      : subscribeAttempts(),
     subscribeProctorEvents(),
     subscribeGrading(),
     subscribeMaterials(),
