@@ -29,6 +29,8 @@ import { useAuthStore } from "@/features/auth/state/auth-store";
 import { useCampusStore } from "@/features/campus/state/campus-store";
 import { useCampusesStore } from "@/features/campus/state/campuses-store";
 import { useGradesStore } from "@/features/grades/state/grades-store";
+import { InlineGuideButton } from "@/features/help/components/inline-guide-button";
+import { getQuestionTypeGuide } from "@/features/help/data/guides";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 
 import { ContentEditor } from "../components/content-editor";
@@ -597,6 +599,7 @@ export function QuestionForm({
               <span className="text-meta font-normal">— {answerHint(type)}</span>
             </>
           }
+          headerEnd={<InlineGuideButton guide={getQuestionTypeGuide(type)} />}
         >
           <TypeSpecificFields
             type={type}

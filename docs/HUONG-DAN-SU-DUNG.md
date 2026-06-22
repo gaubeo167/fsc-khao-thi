@@ -147,6 +147,10 @@ Giáo viên thấy 2 nhóm menu: **Của tôi** và **Vận hành**.
 
 ![Ngân hàng câu hỏi](images/10-question-bank.png)
 
+> 💡 **Hướng dẫn nhập theo từng loại câu hỏi:** khi soạn câu, ở khu vực nhập đáp án có nút **“Hướng dẫn nhập loại này”**. Bấm vào sẽ hiện hướng dẫn **từng bước riêng cho loại câu đang chọn** (trắc nghiệm, đúng/sai, điền khuyết, nối, sắp xếp, kéo thả, gạch chân, tự luận…) kèm ảnh minh hoạ.
+>
+> ![Hướng dẫn nhập theo từng loại câu hỏi](images/help-qtype.png)
+
 ### Import câu hỏi từ Word
 1. **Ngân hàng câu hỏi → Import từ Word**.
 2. **Tải file mẫu (.docx)** — file có 14 câu ví dụ đủ 8 dạng.
