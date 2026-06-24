@@ -22,8 +22,10 @@ export const SEED_EXAM_ATTEMPTS: StudentAttempt[] = [
     markedForReview: [],
     startedAt: "2026-06-10T01:05:00.000Z",
     submittedAt: "2026-06-10T01:18:00.000Z",
-    score: 10,
-    maxScore: 10,
+    // Matches attempts-store.submit(): score = percent (0–100), maxScore =
+    // question count. Here 2/2 correct → 100%.
+    score: 100,
+    maxScore: 2,
     correctCount: 2,
     violations: { tabSwitches: 0, fullscreenExits: 0, pasteAttempts: 0 },
   },

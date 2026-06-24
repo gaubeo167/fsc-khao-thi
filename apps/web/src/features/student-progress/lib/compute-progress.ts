@@ -104,11 +104,16 @@ export function computeStudentProgress({
   const submittedHw = mineHw.filter((a) => a.submittedAt != null);
 
   // Build exam timeline on a 0-10 scale.
+  // NOTE: attempts-store.submit() stores `score` as a 0–100 PERCENT
+  // (round(correct/total * 100)) and `maxScore` as the question COUNT —
+  // NOT points. So the 0–10 value is simply percent / 10. (The old code
+  // did (score / maxScore) * 10, which treated the percent as points and
+  // produced impossible values like 48.89/10 or 62.5/10.)
   const examTimeline: ScorePoint[] = submittedExams
-    .filter((a) => a.score != null && a.maxScore && a.maxScore > 0)
+    .filter((a) => a.score != null)
     .map((a) => {
       const shift = shifts.find((s) => s.id === a.shiftId);
-      const normalised = (a.score! / a.maxScore!) * 10;
+      const normalised = Math.max(0, Math.min(10, a.score! / 10));
       return {
         at: a.submittedAt!,
         score: Math.round(normalised * 100) / 100,
