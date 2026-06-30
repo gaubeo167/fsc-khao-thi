@@ -16,6 +16,7 @@ Thư mục này là **bộ bàn giao tự chứa** để mở một phiên Claud
 | `03-DATA-MODEL.md` | Mô hình dữ liệu 20 thực thể (để viết converter) | Tham chiếu schema |
 | `04-SETUP-MOODLE.md` | docker-compose + cấu hình Moodle lần đầu | Dựng môi trường |
 | `05-QUESTION-CONVERTER.md` | Spec chuyển câu hỏi Firestore → Moodle XML | Di trú ngân hàng câu hỏi |
+| `convert-questions.mjs` | **Script chuyển câu hỏi hoàn chỉnh** (11 loại) — chạy `node convert-questions.mjs ./firestore-export ./moodle-xml` | Di trú (dùng ngay) |
 | `MO-TA-HE-THONG.md` | Mô tả hệ thống hiện tại (công nghệ/kiến trúc/chức năng) | Bối cảnh |
 
 > Tất cả file cần thiết đã được copy sẵn vào thư mục này → chỉ cần copy **cả thư mục `moodle-handoff/`** sang nơi mới.
