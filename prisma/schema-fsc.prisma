@@ -1,0 +1,611 @@
+// =============================================================================
+// FSC Exam Platform — PROPOSED full PostgreSQL schema (Firestore → Postgres).
+//
+// Giai đoạn 1 thiết kế. ĐÂY CHƯA phải schema đang sinh Prisma Client
+// (client hiện sinh từ prisma/schema.prisma cho apps/api). Khi đã có Supabase
+// DATABASE_URL, ta sẽ trỏ generator sang file này (hoặc gộp) rồi `prisma migrate`.
+//
+// Nguyên tắc thiết kế:
+//   • Giữ NGUYÊN id gốc từ Firestore (vd "Q-0001", "SH-0001") → @id String,
+//     không dùng cuid, để bảo toàn mọi tham chiếu khi di trú.
+//   • Cột chung (campusId, subjectId, status, ownerId, timestamps) là cột có
+//     kiểu + có index để truy vấn SQL nhanh.
+//   • Dữ liệu đa hình / lồng nhau (12 loại câu hỏi, đáp án, rooms, scoring,
+//     antiCheat, variants…) lưu `Json` (jsonb) — giữ linh hoạt, tránh nổ bảng.
+//   • Mảng id (questionIds, classIds, tags…) lưu `String[]` — phản chiếu
+//     Firestore. Có thể chuẩn hoá thành bảng nối ở giai đoạn tối ưu sau.
+//   • Tham chiếu để dạng cột String + @@index (CHƯA ràng buộc khoá ngoại) để
+//     di trú dữ liệu denormalized không bị gãy vì ref treo; siết FK ở GĐ tối ưu.
+//   • Enum @map về đúng chuỗi Firestore (vd "mcq-single") để dữ liệu khớp.
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────── Enums ─────────────────────────
+
+enum Role {
+  superadmin
+  academic_director @map("academic-director")
+  campus_admin      @map("campus-admin")
+  subject_lead      @map("subject-lead")
+  teacher
+  student
+}
+
+enum UserStatus {
+  active
+  suspended
+  invited
+}
+
+enum LifeStatus {
+  active
+  archived
+}
+
+enum Region {
+  bac    @map("Bắc")
+  trung  @map("Trung")
+  nam    @map("Nam")
+}
+
+enum CampusTier {
+  primary
+  secondary
+  high
+  primary_secondary @map("primary-secondary")
+  all
+}
+
+enum Difficulty {
+  easy
+  medium
+  hard
+}
+
+enum Kho {
+  personal
+  campus
+}
+
+enum ContentStatus {
+  draft
+  pending
+  approved
+  rejected
+}
+
+enum QuestionType {
+  mcq_single   @map("mcq-single")
+  mcq_multi    @map("mcq-multi")
+  true_false   @map("true-false")
+  multi_tf     @map("multi-tf")
+  fill_blank   @map("fill-blank")
+  matching
+  ordering
+  drag_drop    @map("drag-drop")
+  underline
+  short_answer @map("short-answer")
+  essay
+  ai_generated @map("ai-generated")
+}
+
+enum ShiftStatus {
+  draft
+  scheduled
+  in_progress @map("in-progress")
+  completed
+  cancelled
+}
+
+enum ScoringMode {
+  even
+  by_difficulty @map("by-difficulty")
+  manual
+}
+
+enum StudentResultVisibility {
+  full
+  score_only @map("score-only")
+  hidden
+}
+
+enum ExamFormLifecycle {
+  active
+  archived
+}
+
+enum HomeworkStatus {
+  draft
+  published
+  closed
+}
+
+enum MaterialFileType {
+  video
+  pdf
+  word
+  powerpoint
+  excel
+  image
+  audio
+  other
+}
+
+enum MaterialSourceType {
+  upload
+  link
+}
+
+enum ProctorEventKind {
+  warning
+  violation
+  info
+}
+
+// ───────────────────────── Danh mục tĩnh ─────────────────────────
+
+model User {
+  id           String     @id
+  email        String
+  name         String
+  role         Role
+  campusId     String?
+  subject      String?
+  className    String?
+  subjectIds   String[]
+  gradeIds     String[]
+  classIds     String[]
+  studentCode  String?
+  username     String?
+  parentPhone  String?
+  parentEmail  String?
+  contactEmail String?
+  permissions  Json? // { canCreateBlueprint?, canCreatePackage?, canCreateShift? }
+  status       UserStatus @default(active)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([campusId])
+  @@index([role])
+  @@index([studentCode])
+  @@index([username])
+  @@map("users")
+}
+
+model Campus {
+  id        String     @id
+  code      String
+  name      String
+  region    Region
+  tier      CampusTier
+  gradeIds  String[]
+  address   String?
+  phone     String?
+  status    LifeStatus @default(active)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@map("campuses")
+}
+
+model Subject {
+  id          String     @id
+  code        String
+  name        String
+  description String?
+  color       String
+  gradeIds    String[]
+  campusIds   String[]
+  status      LifeStatus @default(active)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@map("subjects")
+}
+
+model Grade {
+  id           String     @id
+  code         String
+  name         String
+  order        Int
+  classCount   Int        @default(0)
+  studentCount Int        @default(0)
+  status       LifeStatus @default(active)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@map("grades")
+}
+
+model SchoolClass {
+  id                String     @id
+  gradeId           String
+  code              String
+  name              String
+  homeroomTeacher   String
+  homeroomTeacherId String?
+  studentCount      Int        @default(0)
+  campusId          String
+  status            LifeStatus @default(active)
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  @@index([gradeId])
+  @@index([campusId])
+  @@map("classes")
+}
+
+model TocNode {
+  id        String  @id
+  subjectId String
+  gradeId   String?
+  parentId  String?
+  name      String
+  order     Int
+
+  @@index([subjectId])
+  @@index([parentId])
+  @@map("toc_nodes")
+}
+
+model TeachingAssignment {
+  id        String   @id
+  classId   String
+  subjectId String
+  teacherId String
+  createdAt DateTime @default(now())
+
+  @@index([teacherId])
+  @@index([classId])
+  @@map("teaching_assignments")
+}
+
+// ───────────────────────── Ngân hàng nội dung ─────────────────────────
+
+model Question {
+  id              String        @id
+  type            QuestionType
+  content         String
+  explanation     String?
+  subjectId       String
+  gradeId         String?
+  tocNodeId       String?
+  difficulty      Difficulty
+  tags            String[]
+  ownerId         String
+  ownerName       String
+  kho             Kho
+  campusId        String?
+  status          ContentStatus @default(draft)
+  approvedBy      String?
+  rejectionNote   String?
+  // Phần đặc thù theo loại: options / subQuestions / blanks / pairs /
+  // distractors / items / zones / rubric / wordMin/Max / acceptedAnswers /
+  // caseSensitive / correctAnswer / prompt …
+  data            Json
+  // Versioning + archive
+  version         Int?
+  versionOfRootId String?
+  archivedAt      DateTime?
+  archivedBy      String?
+  archiveReason   String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([subjectId])
+  @@index([gradeId])
+  @@index([campusId, status])
+  @@index([ownerId])
+  @@index([type])
+  @@map("questions")
+}
+
+model Blueprint {
+  id              String    @id
+  name            String
+  subjectId       String
+  gradeId         String
+  duration        Int
+  campusId        String?
+  ownerId         String
+  ownerName       String
+  topics          Json // [{ id, name, pickedQuestionIds[] }]
+  version         Int?
+  versionOfRootId String?
+  archivedAt      DateTime?
+  archivedBy      String?
+  archiveReason   String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([subjectId, gradeId])
+  @@index([campusId])
+  @@index([ownerId])
+  @@map("blueprints")
+}
+
+model Package {
+  id              String        @id
+  name            String
+  blueprintId     String
+  duration        Int
+  campusId        String?
+  ownerId         String
+  ownerName       String
+  matrix          Json // [{ topicId, easyCount, mediumCount, hardCount }]
+  status          ContentStatus @default(draft)
+  approvedBy      String?
+  rejectionNote   String?
+  version         Int?
+  versionOfRootId String?
+  archivedAt      DateTime?
+  archivedBy      String?
+  archiveReason   String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([blueprintId])
+  @@index([campusId, status])
+  @@map("packages")
+}
+
+model GeneratedExam {
+  id          String   @id
+  name        String
+  packageId   String
+  questionIds String[]
+  duration    Int
+  createdAt   DateTime @default(now())
+
+  @@index([packageId])
+  @@map("generated_exams")
+}
+
+model LearningMaterial {
+  id               String             @id
+  title            String
+  description      String?
+  sourceType       MaterialSourceType
+  fileType         MaterialFileType
+  storagePath      String
+  downloadUrl      String
+  externalUrl      String?
+  originalFilename String
+  contentType      String
+  sizeBytes        Int
+  subjectId        String
+  gradeId          String?
+  classIds         String[]
+  tocNodeId        String?
+  tags             String[]
+  kho              Kho
+  status           ContentStatus      @default(draft)
+  approvedBy       String?
+  rejectionNote    String?
+  ownerId          String
+  ownerName        String
+  campusId         String?
+  version          Int?
+  versionOfRootId  String?
+  archivedAt       DateTime?
+  archivedBy       String?
+  archiveReason    String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  @@index([subjectId])
+  @@index([campusId, status])
+  @@index([ownerId])
+  @@map("learning_materials")
+}
+
+// ───────────────────────── Thi ─────────────────────────
+
+model Shift {
+  id                      String                   @id
+  name                    String
+  gradeId                 String
+  subjectId               String
+  classIds                String[]
+  packageId               String
+  startAt                 DateTime
+  endAt                   DateTime
+  lateJoinMinutes         Int                      @default(0)
+  rooms                   Json // [{ id, name, capacity, classIds[], studentIds[], proctorIds[] }]
+  scoring                 Json? // { maxScore, mode, difficultyWeights?, perQuestion? }
+  studentResultVisibility StudentResultVisibility?
+  antiCheat               Json // AntiCheatConfig
+  campusId                String?
+  ownerId                 String
+  ownerName               String
+  status                  ShiftStatus              @default(scheduled)
+  archivedAt              DateTime?
+  archivedBy              String?
+  archiveReason           String?
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+
+  @@index([campusId, status])
+  @@index([packageId])
+  @@index([subjectId, gradeId])
+  @@map("shifts")
+}
+
+model ExamForm {
+  id              String            @id
+  shiftId         String
+  packageId       String
+  blueprintId     String
+  campusId        String?
+  maxScore        Int
+  durationMinutes Int
+  variants        Json // [{ variantId, name, questions: QuestionSnapshot[], perQuestion }]
+  integrityHash   String
+  materializedAt  DateTime
+  materializedBy  String
+  lifecycle       ExamFormLifecycle @default(active)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@index([shiftId])
+  @@map("exam_forms")
+}
+
+model ExamAttempt {
+  id             String    @id
+  shiftId        String
+  studentId      String
+  campusId       String?
+  questionIds    String[]
+  examFormId     String?
+  variantId      String?
+  answers        Json // Record<questionId, Answer(union)>
+  markedForReview String[]
+  startedAt      DateTime
+  submittedAt    DateTime?
+  // LƯU Ý: score là PHẦN TRĂM (0–100), maxScore là SỐ CÂU (theo submit hiện tại).
+  score          Int?
+  maxScore       Int?
+  correctCount   Int?
+  violations     Json // { tabSwitches, fullscreenExits, pasteAttempts }
+  recentEvents   Json? // ViolationEvent[]
+
+  @@unique([shiftId, studentId])
+  @@index([studentId])
+  @@index([shiftId])
+  @@index([campusId])
+  @@map("attempts")
+}
+
+// ───────────────────────── Bài tập về nhà ─────────────────────────
+
+model Homework {
+  id            String         @id
+  title         String
+  description   String?
+  subjectId     String
+  gradeId       String?
+  classIds      String[]
+  studentIds    String[]
+  questionIds   String[]
+  materialIds   String[]
+  assignedAt    String // dạng "YYYY-MM-DD" (giữ nguyên semantics so sánh chuỗi)
+  dueAt         String
+  campusId      String?
+  ownerId       String
+  ownerName     String
+  status        HomeworkStatus @default(draft)
+  archivedAt    DateTime?
+  archivedBy    String?
+  archiveReason String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([subjectId])
+  @@index([campusId, status])
+  @@index([ownerId])
+  @@map("homework")
+}
+
+model HomeworkAttempt {
+  id              String    @id
+  homeworkId      String
+  studentId       String
+  campusId        String?
+  answers         Json
+  markedForReview String[]
+  startedAt       DateTime
+  submittedAt     DateTime?
+  correctCount    Int?
+  totalQuestions  Int?
+
+  @@unique([homeworkId, studentId])
+  @@index([studentId])
+  @@index([homeworkId])
+  @@map("homework_attempts")
+}
+
+// ───────────────────────── Chấm điểm ─────────────────────────
+
+model GradingAssignment {
+  id            String   @id
+  shiftId       String
+  graderId      String
+  graderName    String
+  assignedBy    String
+  assignedByName String
+  assignedAt    DateTime
+  campusId      String?
+  note          String?
+
+  @@index([graderId])
+  @@index([shiftId])
+  @@map("grading_assignments")
+}
+
+model EssayGrade {
+  id           String   @id
+  attemptId    String
+  shiftId      String
+  studentId    String
+  questionId   String
+  graderId     String
+  graderName   String
+  campusId     String?
+  rubricScores Json // Record<criterionId, number>
+  totalPoints  Float
+  maxPoints    Float
+  comment      String
+  gradedAt     DateTime
+
+  @@index([attemptId])
+  @@index([shiftId])
+  @@index([studentId])
+  @@map("grades_essay")
+}
+
+// ───────────────────────── Giám sát & Audit ─────────────────────────
+
+model ProctorEvent {
+  id             String           @id
+  shiftId        String
+  studentId      String
+  proctorId      String
+  proctorName    String
+  kind           ProctorEventKind
+  body           String
+  tag            String?
+  createdAt      DateTime         @default(now())
+  acknowledgedAt DateTime?
+
+  @@index([shiftId, studentId])
+  @@map("proctor_events")
+}
+
+model AuditEvent {
+  id         String   @id
+  entityType String
+  entityId   String
+  action     String
+  before     Json?
+  after      Json?
+  actorUid   String
+  actorRole  String
+  actorName  String?
+  campusId   String?
+  at         DateTime @default(now())
+  reason     String?
+
+  @@index([entityType, entityId])
+  @@index([campusId])
+  @@index([actorUid])
+  @@map("audit_events")
+}
