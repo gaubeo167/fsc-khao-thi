@@ -223,10 +223,17 @@ service cloud.firestore {
       );
       allow create: if isSignedIn() &&
         request.resource.data.studentId == uid();
+      // Students may autosave answers / marks / violations while in
+      // progress, but MUST NOT set their own score/submittedAt/correctCount
+      // — those are written server-side (Admin SDK bypasses rules) by
+      // /api/exam/[shiftId]/submit. Teacher+ can update anything (grading).
       allow update: if isSignedIn() && (
+        isTeacherOrAbove() ||
         (resource.data.studentId == uid() &&
-          resource.data.submittedAt == null) ||
-        isTeacherOrAbove()
+          resource.data.submittedAt == null &&
+          request.resource.data.submittedAt == resource.data.submittedAt &&
+          request.resource.data.score == resource.data.score &&
+          request.resource.data.correctCount == resource.data.correctCount)
       );
       allow delete: if isAdmin();
     }

@@ -211,13 +211,14 @@ export function ExamRuntime({
     if (!isOver || submitted) return;
     const att = attemptRef.current;
     if (!att) return;
-    const result = submit(att.id, questions);
-    if (result) {
-      if (document.fullscreenElement && document.exitFullscreen) {
-        document.exitFullscreen().catch(() => {});
+    void submit(att.id, questions).then((result) => {
+      if (result) {
+        if (document.fullscreenElement && document.exitFullscreen) {
+          document.exitFullscreen().catch(() => {});
+        }
+        router.replace(`/exam/${shift.id}/result`);
       }
-      router.replace(`/exam/${shift.id}/result`);
-    }
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOver, submitted]);
 
@@ -237,10 +238,10 @@ export function ExamRuntime({
     if (!att || !currentQ) return;
     toggleMark(att.id, currentQ.id);
   }
-  function handleSubmit() {
+  async function handleSubmit() {
     const att = attemptRef.current;
     if (!att) return;
-    submit(att.id, questions);
+    await submit(att.id, questions);
     // Drop fullscreen so the result page renders in normal window mode
     // (the result screen isn't an exam — keeping fullscreen would be
     // disorienting).

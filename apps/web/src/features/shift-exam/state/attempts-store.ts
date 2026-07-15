@@ -103,7 +103,14 @@ interface Actions {
     attemptId: string,
     kind: keyof StudentAttempt["violations"],
   ): void;
-  submit(attemptId: string, questions: Question[]): StudentAttempt | null;
+  /**
+   * Finalize an attempt. In production (Firebase configured) this is
+   * SERVER-AUTHORITATIVE: it POSTs answers to /api/exam/[shiftId]/submit,
+   * which grades with the Admin SDK and writes score/submittedAt — the
+   * client can no longer set its own score. In demo mode it grades
+   * locally from `questions`. Async in both cases.
+   */
+  submit(attemptId: string, questions: Question[]): Promise<StudentAttempt | null>;
   findById(id: string): StudentAttempt | undefined;
   findForShift(shiftId: string, studentId: string): StudentAttempt | undefined;
   listForStudent(studentId: string): StudentAttempt[];
@@ -325,9 +332,54 @@ export const useAttemptsStore = create<State & Actions>()((set, get) => ({
     }
   },
 
-  submit(attemptId, questions) {
+  async submit(attemptId, questions) {
     const att = get().attempts.find((a) => a.id === attemptId);
     if (!att || att.submittedAt != null) return att ?? null;
+
+    // ── Production: server-authoritative grading ──────────────────────
+    if (isFirebaseConfigured()) {
+      try {
+        const { authHeaders } = await import("@/lib/api-client");
+        const res = await fetch(`/api/exam/${att.shiftId}/submit`, {
+          method: "POST",
+          headers: { "content-type": "application/json", ...(await authHeaders()) },
+          body: JSON.stringify({ answers: att.answers }),
+        });
+        if (res.status === 409) {
+          // Already submitted — mark local as submitted so the UI moves on.
+          const now = new Date().toISOString();
+          const done = { ...att, submittedAt: att.submittedAt ?? now };
+          set({ attempts: get().attempts.map((a) => (a.id === attemptId ? done : a)) });
+          return done;
+        }
+        if (!res.ok) {
+          // eslint-disable-next-line no-console
+          console.error("[attempts] server submit failed", res.status);
+          return null;
+        }
+        const data = (await res.json()) as {
+          score: number;
+          correctCount: number;
+          maxScore: number;
+          submittedAt: string;
+        };
+        const next: StudentAttempt = {
+          ...att,
+          submittedAt: data.submittedAt,
+          score: data.score,
+          maxScore: data.maxScore,
+          correctCount: data.correctCount,
+        };
+        set({ attempts: get().attempts.map((a) => (a.id === attemptId ? next : a)) });
+        return next;
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.error("[attempts] server submit error", e);
+        return null;
+      }
+    }
+
+    // ── Demo mode (no Firebase): grade locally ────────────────────────
     const qById = new Map(questions.map((q) => [q.id, q]));
     let correctCount = 0;
     let scored = 0;
@@ -343,22 +395,8 @@ export const useAttemptsStore = create<State & Actions>()((set, get) => ({
     }
     const submittedAt = new Date().toISOString();
     const score = max > 0 ? Math.round((scored / max) * 100) : 0;
-    const next: StudentAttempt = {
-      ...att,
-      submittedAt,
-      score,
-      maxScore: max,
-      correctCount,
-    };
-    set({
-      attempts: get().attempts.map((a) => (a.id === attemptId ? next : a)),
-    });
-    patchDoc(COLLECTIONS.attempts, attemptId, {
-      submittedAt,
-      score,
-      maxScore: max,
-      correctCount,
-    });
+    const next: StudentAttempt = { ...att, submittedAt, score, maxScore: max, correctCount };
+    set({ attempts: get().attempts.map((a) => (a.id === attemptId ? next : a)) });
     return next;
   },
 
