@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { authHeaders } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
 import type { StudentProgress } from "../lib/compute-progress";
@@ -103,7 +104,7 @@ export function StudentProgressCard({
       };
       const res = await fetch("/api/ai/assess-progress", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
         body: JSON.stringify({ summary, studentName, audience }),
         signal: ac.signal,
       });

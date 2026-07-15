@@ -17,6 +17,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { verifyCaller } from "@/lib/api-auth";
+
 import { aiComplete, AiProviderError } from "@/lib/ai/provider";
 
 const SummarySchema = z
@@ -99,6 +101,9 @@ OUTPUT BẮT BUỘC: chỉ 1 JSON object duy nhất, đúng schema sau. KHÔNG m
 {"verdict": string (1-2 câu khích lệ + dẫn 1 số liệu, ≤40 từ, bắt đầu bằng 1 emoji phù hợp), "observations": string[] (4-5 điều EM đã làm tốt + cần cải thiện, mỗi dòng 15-40 từ; xen kẽ tích cực và cải thiện), "suggestions": string[] (3-4 hành động EM tự làm tuần này, mỗi dòng 15-35 từ, cụ thể bao gồm thời điểm/cách làm/mục tiêu đo được)}`;
 
 export async function POST(req: Request) {
+  const gate = await verifyCaller(req, {});
+  if ("error" in gate) return gate.error;
+
   let body: z.infer<typeof Body>;
   try {
     body = Body.parse(await req.json());

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { aiComplete, AiProviderError } from "@/lib/ai/provider";
+import { verifyCaller } from "@/lib/api-auth";
 
 const Body = z.object({
   intent: z.enum(["question-content", "answer", "explanation"]),
@@ -49,6 +50,9 @@ YÊU CẦU OUTPUT:
 };
 
 export async function POST(request: Request) {
+  const gate = await verifyCaller(request, { staffOnly: true });
+  if ("error" in gate) return gate.error;
+
   let body: z.infer<typeof Body>;
   try {
     body = Body.parse(await request.json());

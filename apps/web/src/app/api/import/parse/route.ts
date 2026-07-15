@@ -3,6 +3,7 @@ import mammoth from "mammoth";
 import { NextResponse } from "next/server";
 
 import { parseImportText } from "@/features/question-bank/lib/parse-import";
+import { verifyCaller } from "@/lib/api-auth";
 
 import { inlineOMathAsLatex } from "./omath-to-latex";
 
@@ -23,6 +24,9 @@ import { inlineOMathAsLatex } from "./omath-to-latex";
  * Returns `{ questions, warnings }` from the parser.
  */
 export async function POST(request: Request) {
+  const gate = await verifyCaller(request, { staffOnly: true });
+  if ("error" in gate) return gate.error;
+
   let text = "";
 
   const contentType = request.headers.get("content-type") ?? "";

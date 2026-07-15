@@ -46,3 +46,27 @@ export async function apiFetch<T>(path: string, opts: RequestOptions = {}): Prom
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
+
+/**
+ * Returns the `Authorization: Bearer <idToken>` header for the currently
+ * signed-in user, or `{}` when not signed in (protected /api routes then
+ * reject with 401). Spread into a fetch's `headers` when calling
+ * auth-protected /api/* routes (AI generation, import parsing, …):
+ *
+ *   headers: { "content-type": "application/json", ...(await authHeaders()) }
+ *
+ * Safe for multipart/form-data uploads too — it only adds Authorization,
+ * never content-type.
+ */
+export async function authHeaders(): Promise<Record<string, string>> {
+  try {
+    // Lazy import to keep this module usable in non-browser contexts.
+    const { getAuthSafe } = await import("@/lib/firebase");
+    const user = getAuthSafe().currentUser;
+    if (!user) return {};
+    const token = await user.getIdToken();
+    return { authorization: `Bearer ${token}` };
+  } catch {
+    return {};
+  }
+}

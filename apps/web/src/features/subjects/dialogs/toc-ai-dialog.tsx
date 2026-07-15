@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { TOC_LEVELS } from "../data/seed-toc";
+import { authHeaders } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
 export interface TocAiNode {
@@ -97,7 +98,7 @@ export function TocAiDialog({
     try {
       const res = await fetch("/api/ai/generate-toc", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
         body: JSON.stringify({
           text: text.trim() || undefined,
           imageDataUrl: image?.dataUrl,

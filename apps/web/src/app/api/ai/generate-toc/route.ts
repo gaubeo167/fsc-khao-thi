@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { verifyCaller } from "@/lib/api-auth";
+
 import {
   aiComplete,
   AiProviderError,
@@ -59,6 +61,9 @@ Quy tắc:
 - KHÔNG kèm trường nào khác ngoài "tree".`;
 
 export async function POST(request: Request) {
+  const gate = await verifyCaller(request, { staffOnly: true });
+  if ("error" in gate) return gate.error;
+
   let body: z.infer<typeof Body>;
   try {
     body = Body.parse(await request.json());

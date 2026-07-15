@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { verifyCaller } from "@/lib/api-auth";
+
 const Body = z.object({
   prompt: z.string().min(1).max(2000),
   context: z
@@ -28,6 +30,9 @@ type Body = z.infer<typeof Body>;
  *    English prompts.
  */
 export async function POST(request: Request) {
+  const gate = await verifyCaller(request, { staffOnly: true });
+  if ("error" in gate) return gate.error;
+
   let body: Body;
   try {
     body = Body.parse(await request.json());

@@ -49,6 +49,7 @@ import { findQuestionType } from "@/features/question-bank/data/question-types";
 import { RenderedContent } from "@/features/question-bank/components/rendered-content";
 import { useQuestionsStore } from "@/features/question-bank/state/questions-store";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
+import { authHeaders } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
 import dynamic from "next/dynamic";
@@ -338,6 +339,7 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
       form.append("file", file);
       const res = await fetch("/api/import/parse", {
         method: "POST",
+        headers: { ...(await authHeaders()) },
         body: form,
       });
       const data = await res.json();

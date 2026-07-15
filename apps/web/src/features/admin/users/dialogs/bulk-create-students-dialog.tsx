@@ -23,6 +23,7 @@ import { useCampusStore } from "@/features/campus/state/campus-store";
 import { useCampusesStore } from "@/features/campus/state/campuses-store";
 import { useGradesStore } from "@/features/grades/state/grades-store";
 import { useUsersStore } from "@/features/admin/users/users-store";
+import { authHeaders } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -124,6 +125,7 @@ export function BulkCreateStudentsDialog({ open, onOpenChange }: Props) {
       form.append("file", file);
       const res = await fetch("/api/admin/import/students", {
         method: "POST",
+        headers: { ...(await authHeaders()) },
         body: form,
       });
       const data = await res.json();

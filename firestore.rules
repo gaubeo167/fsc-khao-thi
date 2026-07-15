@@ -136,9 +136,13 @@ service cloud.firestore {
     match /proctor_events/{id} {
       allow read: if isSignedIn();
       allow create: if isTeacherOrAbove();
-      // Acknowledge = student updates their own row; teacher can edit/
-      // delete anything they sent.
-      allow update: if isSignedIn();
+      // Acknowledge = the TARGET student updates their own row; teacher
+      // can edit anything they sent. (Was `if isSignedIn()` — any user
+      // could modify any proctor event, incl. other students'.)
+      allow update: if isSignedIn() && (
+        resource.data.studentId == uid() ||
+        isTeacherOrAbove()
+      );
       allow delete: if isTeacherOrAbove();
     }
 
@@ -230,7 +234,10 @@ service cloud.firestore {
     // ───── /grades_essay — manual essay grading by teacher ────────────────
     match /grades_essay/{gradeId} {
       allow read: if isSignedIn();
-      allow create: if isTeacherOrAbove();
+      // Grader creates their OWN grade row (can't impersonate another
+      // grader). Update/delete stays teacher+ for regrade workflows.
+      allow create: if isTeacherOrAbove() &&
+        request.resource.data.graderId == uid();
       allow update, delete: if isTeacherOrAbove();
     }
 

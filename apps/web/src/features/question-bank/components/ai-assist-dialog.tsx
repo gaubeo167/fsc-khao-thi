@@ -14,6 +14,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { authHeaders } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
 import { RenderedContent } from "./rendered-content";
@@ -124,7 +125,7 @@ export function AiAssistDialog({
         const imagePrompt = prompt.trim() || buildAutoImagePrompt(context);
         const res = await fetch("/api/ai/generate-image", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...(await authHeaders()) },
           body: JSON.stringify({
             prompt: imagePrompt,
             context: {
@@ -148,7 +149,7 @@ export function AiAssistDialog({
         const finalPrompt = prompt.trim() || buildAutoPrompt(intent, context);
         const res = await fetch("/api/ai/generate-question", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...(await authHeaders()) },
           body: JSON.stringify({
             intent,
             prompt: finalPrompt,

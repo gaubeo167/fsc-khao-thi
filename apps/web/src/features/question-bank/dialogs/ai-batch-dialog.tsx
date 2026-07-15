@@ -28,6 +28,7 @@ import { findQuestionType } from "../data/question-types";
 import { useQuestionsStore } from "../state/questions-store";
 import { RenderedContent } from "../components/rendered-content";
 import { AiQuestionEditDialog } from "./ai-question-edit-dialog";
+import { authHeaders } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -139,7 +140,7 @@ export function AiBatchDialog({ open, onOpenChange, onBack }: Props) {
     try {
       const res = await fetch("/api/ai/generate-questions-batch", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
         body: JSON.stringify({
           subject: subject?.name,
           grade: grade?.name,

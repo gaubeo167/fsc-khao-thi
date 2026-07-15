@@ -29,6 +29,7 @@ import type { Question, QuestionStatus } from "../data/seed-questions";
 import type { ImportedQuestion } from "../lib/parse-import";
 import { useQuestionsStore } from "../state/questions-store";
 import { RenderedContent } from "../components/rendered-content";
+import { authHeaders } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
 import {
@@ -235,7 +236,11 @@ export function ImportWordDialog({ open, onOpenChange }: Props) {
     try {
       const form = new FormData();
       form.append("file", file);
-      const res = await fetch("/api/import/parse", { method: "POST", body: form });
+      const res = await fetch("/api/import/parse", {
+        method: "POST",
+        headers: { ...(await authHeaders()) },
+        body: form,
+      });
       const data = await res.json();
       if (!res.ok) {
         setState({ kind: "error", message: data.message ?? "Lỗi không xác định" });
@@ -259,7 +264,7 @@ export function ImportWordDialog({ open, onOpenChange }: Props) {
     try {
       const res = await fetch("/api/import/parse", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(await authHeaders()) },
         body: JSON.stringify({ text: pasteText }),
       });
       const data = await res.json();

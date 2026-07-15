@@ -24,6 +24,8 @@
 import { NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 
+import { verifyCaller } from "@/lib/api-auth";
+
 const COLUMN_MAP: Record<string, string> = {
   // Recognise both the exact template header AND the raw key (in case
   // the admin renamed the headers but kept the key column).
@@ -69,6 +71,9 @@ function normaliseHeader(h: string): string {
 }
 
 export async function POST(req: Request) {
+  const gate = await verifyCaller(req, { staffOnly: true });
+  if ("error" in gate) return gate.error;
+
   let buf: Buffer;
   try {
     const form = await req.formData();
