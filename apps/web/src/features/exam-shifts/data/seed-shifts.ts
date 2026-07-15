@@ -33,9 +33,11 @@ export const SEED_SHIFTS: ExamShift[] = [
     subjectId: "subject-toan",
     classIds: ["class-7-a1"],
     packageId: "PKG-0001",
-    startAt: "2026-06-18T01:00:00.000Z",
-    endAt: "2026-06-30T10:00:00.000Z",
-    lateJoinMinutes: 9999,
+    // Cửa sổ rất rộng + vào muộn ~190 năm để ca demo LUÔN cho vào
+    // (không mục theo đồng hồ máy).
+    startAt: "2026-01-01T00:00:00.000Z",
+    endAt: "2099-12-31T00:00:00.000Z",
+    lateJoinMinutes: 99999999,
     rooms: [
       {
         id: "room-1",

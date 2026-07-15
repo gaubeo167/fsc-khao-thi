@@ -16,6 +16,8 @@ import { usePackagesStore } from "@/features/exams/state/packages-store";
 import { useQuestionsStore } from "@/features/question-bank/state/questions-store";
 import { ExamRuntime } from "@/features/shift-exam/components/exam-runtime";
 import { useAttemptsStore } from "@/features/shift-exam/state/attempts-store";
+import type { Question } from "@/features/question-bank/data/seed-questions";
+import { isFirebaseConfigured } from "@/lib/firebase";
 
 export default function ExamPage() {
   const params = useParams<{ shiftId: string }>();
@@ -101,8 +103,39 @@ export default function ExamPage() {
   // the legacy fallback (shift with no exam form) reads the live bank —
   // fetch just that blueprint's picked questions on demand. Hook stays
   // above the early returns to keep hook order stable (see note above).
+  // Production students get ANSWER-STRIPPED questions from the server
+  // (/api/exam/[id]/questions) — they no longer read /questions or
+  // /exam_forms (which carry the answer key). Demo mode + staff keep the
+  // local snapshot/fallback path below.
+  const useServer = isFirebaseConfigured() && session?.role === "student";
+  const [serverQuestions, setServerQuestions] = useState<Question[] | null>(null);
+  useEffect(() => {
+    if (!useServer || !shift || !session) return;
+    let alive = true;
+    setServerQuestions(null);
+    (async () => {
+      try {
+        const { authHeaders } = await import("@/lib/api-client");
+        const res = await fetch(`/api/exam/${shift.id}/questions`, {
+          method: "POST",
+          headers: { ...(await authHeaders()) },
+        });
+        if (!alive) return;
+        setServerQuestions(res.ok ? (await res.json()).questions ?? [] : []);
+      } catch {
+        if (alive) setServerQuestions([]);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useServer, shift?.id, session?.userId]);
+
   const ensureQuestions = useQuestionsStore((s) => s.ensureQuestions);
-  const needFallbackQuestions = !examForm && session?.role === "student";
+  // Client fallback fetch only in demo/staff (server handles it in prod).
+  const needFallbackQuestions =
+    !useServer && !examForm && session?.role === "student";
   const fallbackIdsKey =
     needFallbackQuestions && bp
       ? bp.topics.flatMap((t) => t.pickedQuestionIds).join(",")
@@ -128,6 +161,9 @@ export default function ExamPage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [needFallbackQuestions, fallbackIdsKey, ensureQuestions]);
+
+  // Questions actually shown: server-stripped (prod student) or local.
+  const effectiveQuestions = useServer ? serverQuestions ?? [] : questions;
 
   if (!shift) return notFound();
   if (!session) {
@@ -223,7 +259,10 @@ export default function ExamPage() {
 
   // Legacy fallback still fetching its questions — don't flash the
   // "no questions" gate at a student mid-exam.
-  if (needFallbackQuestions && !fallbackQReady) {
+  if (
+    (needFallbackQuestions && !fallbackQReady) ||
+    (useServer && serverQuestions === null)
+  ) {
     return (
       <Gate
         title="Đang tải đề thi…"
@@ -232,7 +271,7 @@ export default function ExamPage() {
       />
     );
   }
-  if (questions.length === 0) {
+  if (effectiveQuestions.length === 0) {
     return (
       <Gate
         title="Bộ đề chưa có câu hỏi"
@@ -257,7 +296,7 @@ export default function ExamPage() {
   return (
     <ExamRuntime
       shift={shift}
-      questions={questions}
+      questions={effectiveQuestions}
       durationMin={durationMin}
       examFormId={examForm?.id ?? null}
       variantId={variantForStudent?.variantId ?? null}

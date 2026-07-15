@@ -107,6 +107,42 @@ export function gradeQuestion(
   }
 }
 
+/**
+ * Return a DISPLAY-SAFE copy of a question with the answer key removed,
+ * for serving to a student who is taking (not reviewing) the exam.
+ *
+ * Fully stripped: mcq-single/multi (isCorrect→false), true-false &
+ * multi-tf (correctAnswer→false), short-answer & fill-blank
+ * (acceptedAnswers→[]). Essay/ai-generated have no auto key.
+ *
+ * ⚠️ NOT fully hidden yet (answer lives in the STRUCTURE, not a field):
+ *   matching (pairs alignment), ordering (item order), drag-drop (zone
+ *   content), underline ([u:] markers). These need an opaque-id protocol
+ *   redesign before they can be served leak-free — tracked as a follow-up.
+ */
+export function stripAnswers(q: Question): Question {
+  switch (q.type) {
+    case "mcq-single":
+    case "mcq-multi":
+      return { ...q, options: q.options.map((o) => ({ ...o, isCorrect: false })) };
+    case "true-false":
+      return { ...q, correctAnswer: false };
+    case "short-answer":
+      return { ...q, acceptedAnswers: [] };
+    case "fill-blank":
+      return { ...q, blanks: q.blanks.map(() => ({ acceptedAnswers: [] })) };
+    case "multi-tf":
+      return {
+        ...q,
+        subQuestions: q.subQuestions.map((s) => ({ ...s, correctAnswer: false })),
+      };
+    // TODO(harden): matching/ordering/drag-drop/underline — answer is
+    // structural; passthrough for now (see warning above).
+    default:
+      return q;
+  }
+}
+
 export interface AutoScore {
   /** 0–100 percent over auto-gradable questions. */
   score: number;
