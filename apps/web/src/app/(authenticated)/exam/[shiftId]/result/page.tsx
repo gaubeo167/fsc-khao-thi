@@ -24,7 +24,9 @@ import { useBlueprintsStore } from "@/features/exams/state/blueprints-store";
 import { usePackagesStore } from "@/features/exams/state/packages-store";
 import { useGradingStore } from "@/features/grading/state/grading-store";
 import { RenderedContent } from "@/features/question-bank/components/rendered-content";
+import type { Question } from "@/features/question-bank/data/seed-questions";
 import { useQuestionsStore } from "@/features/question-bank/state/questions-store";
+import { isFirebaseConfigured } from "@/lib/firebase";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import { useAttemptsStore } from "@/features/shift-exam/state/attempts-store";
 import { cn } from "@/lib/utils";
@@ -52,10 +54,15 @@ export default function ExamResultPage() {
   // Students load only this attempt's questions on demand (they don't
   // subscribe to the whole bank). `resultQReady` gates the score view so
   // it never renders a wrong score from a half-loaded question set.
+  // Production students fetch their submitted attempt's questions (with
+  // answers, post-submit) from /api/exam/[id]/review — they don't read
+  // /questions directly. Demo/staff use the local bank.
+  const useServer = isFirebaseConfigured() && session?.role === "student";
+  const [reviewQuestions, setReviewQuestions] = useState<Question[] | null>(null);
   const qIdsKey = attempt?.questionIds?.join(",") ?? "";
   const [resultQReady, setResultQReady] = useState(false);
   useEffect(() => {
-    if (!attempt || !attempt.questionIds?.length) {
+    if (!attempt || !attempt.questionIds?.length || useServer) {
       setResultQReady(true);
       return;
     }
@@ -68,7 +75,29 @@ export default function ExamResultPage() {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [qIdsKey, ensureQuestions]);
+  }, [qIdsKey, ensureQuestions, useServer]);
+  useEffect(() => {
+    if (!useServer || !attempt?.submittedAt || !shift) return;
+    let alive = true;
+    setReviewQuestions(null);
+    (async () => {
+      try {
+        const { authHeaders } = await import("@/lib/api-client");
+        const res = await fetch(`/api/exam/${shift.id}/review`, {
+          method: "POST",
+          headers: { ...(await authHeaders()) },
+        });
+        if (!alive) return;
+        setReviewQuestions(res.ok ? (await res.json()).questions ?? [] : []);
+      } catch {
+        if (alive) setReviewQuestions([]);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useServer, shift?.id, attempt?.submittedAt]);
 
   // IMPORTANT: every hook below must run on every render. Do NOT add
   // early returns above this comment — React's Rules of Hooks require a
@@ -111,7 +140,7 @@ export default function ExamResultPage() {
     );
   }
 
-  if (!resultQReady) {
+  if (!resultQReady || (useServer && reviewQuestions === null)) {
     return (
       <div className="flex items-center justify-center py-20 text-muted-foreground">
         Đang tải kết quả…
@@ -128,8 +157,9 @@ export default function ExamResultPage() {
   // Essay: rubric ratio × per-question score, with `null` (chưa chấm)
   // treated as 0 for now (the "pending" pill flags this to the student).
   const scoring = shift.scoring ?? DEFAULT_SCORING;
+  const questionSource = useServer ? reviewQuestions ?? [] : allQuestions;
   const examQuestions = attempt.questionIds
-    .map((qid) => allQuestions.find((q) => q.id === qid))
+    .map((qid) => questionSource.find((q) => q.id === qid))
     .filter((q): q is NonNullable<typeof q> => !!q);
   const perQuestionScore = computePerQuestionScores(scoring, examQuestions);
   // Sum of MAX possible across the actually-administered subset. Manual
@@ -168,7 +198,7 @@ export default function ExamResultPage() {
 
   // Pending essay count (questions awaiting grader review).
   const pendingEssayCount = attempt.questionIds.filter((qid) => {
-    const q = allQuestions.find((x) => x.id === qid);
+    const q = questionSource.find((x) => x.id === qid);
     if (!q) return false;
     if (q.type !== "essay" && q.type !== "ai-generated") return false;
     return !essayGrades.some((g) => g.questionId === qid);
@@ -384,7 +414,7 @@ export default function ExamResultPage() {
         </header>
         <ul className="divide-y">
           {attempt.questionIds.map((qid, idx) => {
-            const q = allQuestions.find((x) => x.id === qid);
+            const q = questionSource.find((x) => x.id === qid);
             const ans = attempt.answers[qid];
             const isManual =
               q && (q.type === "essay" || q.type === "ai-generated");
