@@ -155,7 +155,11 @@ service cloud.firestore {
     //
     // Writes stay strict.
     match /questions/{questionId} {
-      allow read: if isSignedIn();
+      // Answer keys live here → students must NOT read directly. They get
+      // answer-stripped questions from /api/exam|homework/[id]/questions
+      // (and full answers only after submitting, via /review). Staff read
+      // the bank for authoring/approval/reports.
+      allow read: if isTeacherOrAbove();
       allow create: if isTeacherOrAbove() &&
         request.resource.data.ownerId == uid() &&
         (request.resource.data.kho == "personal" ||
@@ -269,7 +273,10 @@ service cloud.firestore {
     //   field-level rule via request.resource.data.variants ==
     //   resource.data.variants).
     match /exam_forms/{formId} {
-      allow read: if isSignedIn();
+      // Frozen snapshots embed the questions WITH answers → students must
+      // not read directly. The exam runtime gets stripped questions via
+      // /api/exam/[id]/questions. Staff read for monitoring/reports.
+      allow read: if isTeacherOrAbove();
       allow create: if isTeacherOrAbove() &&
         request.resource.data.materializedBy == uid();
       allow update: if isSignedIn() && (

@@ -51,7 +51,6 @@ function startDataSubscriptions(session: AuthSession): Array<() => void> {
     subscribeBlueprints(),
     subscribePackages(),
     subscribeShifts(),
-    subscribeExamForms(),
     isStudent
       ? subscribeAttempts({ studentId: session.userId })
       : subscribeAttempts(),
@@ -63,14 +62,16 @@ function startDataSubscriptions(session: AuthSession): Array<() => void> {
       ? subscribeHomeworkAttempts({ studentId: session.userId })
       : subscribeHomeworkAttempts(),
   ];
-  // Staff-only whole-collection loads. Students skip these:
-  //   • questions — students load only their homework/exam questions on
-  //     demand via useQuestionsStore.ensureQuestions() (the exam runtime
-  //     itself reads frozen snapshots from the exam form, not /questions).
+  // Staff-only whole-collection loads. Students skip these (and the rules
+  // now DENY students reading /questions & /exam_forms):
+  //   • questions & exam_forms — carry answer keys; students get
+  //     answer-stripped questions from /api/exam|homework/[id]/questions
+  //     and full answers only post-submit via /review. Reading them
+  //     directly is blocked server-side.
   //   • teaching — assignments map teachers → classes; no student screen
   //     reads them.
   if (!isStudent) {
-    subs.push(subscribeQuestions(), subscribeTeaching());
+    subs.push(subscribeQuestions(), subscribeExamForms(), subscribeTeaching());
   }
   return subs;
 }
