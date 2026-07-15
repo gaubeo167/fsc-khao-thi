@@ -19,7 +19,7 @@ export const SEED_HOMEWORK: Homework[] = [
     questionIds: ["Q-0002", "Q-0001", "Q-0003", "Q-0004"],
     materialIds: ["MAT-0001"],
     assignedAt: "2026-06-16",
-    dueAt: "2026-06-30",
+    dueAt: "2099-12-31",
     campusId: "campus-cau-giay",
     ownerId: "U-301",
     ownerName: "Phạm Minh",

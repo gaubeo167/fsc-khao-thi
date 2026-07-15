@@ -326,10 +326,16 @@ service cloud.firestore {
       );
       allow create: if isSignedIn() &&
         request.resource.data.studentId == uid();
+      // Students autosave answers/marks while in progress but MUST NOT set
+      // their own correctCount/submittedAt/totalQuestions — those are
+      // written server-side by /api/homework/[id]/submit (Admin SDK).
       allow update: if isSignedIn() && (
+        isTeacherOrAbove() ||
         (resource.data.studentId == uid() &&
-          resource.data.submittedAt == null) ||
-        isTeacherOrAbove()
+          resource.data.submittedAt == null &&
+          request.resource.data.submittedAt == resource.data.submittedAt &&
+          request.resource.data.correctCount == resource.data.correctCount &&
+          request.resource.data.totalQuestions == resource.data.totalQuestions)
       );
       // Hard delete forbidden once attempted — preserve report data.
       allow delete: if isAdmin();

@@ -20,7 +20,9 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useAuthStore } from "@/features/auth/state/auth-store";
 import { RenderedContent } from "@/features/question-bank/components/rendered-content";
+import type { Question } from "@/features/question-bank/data/seed-questions";
 import { useQuestionsStore } from "@/features/question-bank/state/questions-store";
+import { isFirebaseConfigured } from "@/lib/firebase";
 import { QuestionRenderer } from "@/features/shift-exam/components/question-renderer";
 import { useMaterialsStore } from "@/features/learning-materials/state/materials-store";
 import type { LearningMaterial } from "@/features/learning-materials/data/types";
@@ -85,12 +87,41 @@ export default function HomeworkRuntimePage() {
     });
   }
 
-  const questions = useMemo(() => {
+  const localQuestions = useMemo(() => {
     if (!homework) return [];
     return homework.questionIds
       .map((qid) => allQuestions.find((q) => q.id === qid))
       .filter((q): q is NonNullable<typeof q> => !!q);
   }, [homework, allQuestions]);
+
+  // Production students fetch ANSWER-STRIPPED questions from the server
+  // (/api/homework/[id]/questions) instead of reading /questions directly.
+  const useServer = isFirebaseConfigured() && session?.role === "student";
+  const [serverQuestions, setServerQuestions] = useState<Question[] | null>(null);
+  useEffect(() => {
+    if (!useServer || !homework) return;
+    let alive = true;
+    setServerQuestions(null);
+    (async () => {
+      try {
+        const { authHeaders } = await import("@/lib/api-client");
+        const res = await fetch(`/api/homework/${id}/questions`, {
+          method: "POST",
+          headers: { ...(await authHeaders()) },
+        });
+        if (!alive) return;
+        setServerQuestions(res.ok ? (await res.json()).questions ?? [] : []);
+      } catch {
+        if (alive) setServerQuestions([]);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useServer, id, homework?.questionIds.join(",")]);
+
+  const questions = useServer ? serverQuestions ?? [] : localQuestions;
 
   const materials = useMemo(() => {
     if (!homework) return [];
@@ -107,7 +138,9 @@ export default function HomeworkRuntimePage() {
   const [questionsReady, setQuestionsReady] = useState(false);
   useEffect(() => {
     if (!homework) return;
-    if (homework.questionIds.length === 0) {
+    // Production students get questions from the server (above) — skip the
+    // /questions read entirely (it will be locked in a later step).
+    if (useServer || homework.questionIds.length === 0) {
       setQuestionsReady(true);
       return;
     }
@@ -120,7 +153,10 @@ export default function HomeworkRuntimePage() {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [questionIdsKey, ensureQuestions]);
+  }, [questionIdsKey, ensureQuestions, useServer]);
+
+  // Ready = local fetch settled (demo) OR server questions arrived (prod).
+  const questionsLoadReady = useServer ? serverQuestions !== null : questionsReady;
 
   if (!homework) {
     if (!homeworkHydrated) {
@@ -148,7 +184,7 @@ export default function HomeworkRuntimePage() {
   }
   // Wait for on-demand question fetch before any view that needs them
   // (result panel + runtime + the "no questions" gate).
-  if (homework.questionIds.length > 0 && !questionsReady) {
+  if (homework.questionIds.length > 0 && !questionsLoadReady) {
     return (
       <div className="flex items-center justify-center py-20 text-muted-foreground">
         <Loader2 className="mr-2 h-5 w-5 animate-spin" />
@@ -206,10 +242,10 @@ export default function HomeworkRuntimePage() {
   const currentQ = questions[currentIdx]!;
   const answeredCount = Object.keys(myAttempt.answers).length;
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (submitting) return;
     setSubmitting(true);
-    const result = submit(myAttempt!.id, questions);
+    const result = await submit(myAttempt!.id, questions);
     setSubmitting(false);
     if (result?.submittedAt) {
       toast.success(

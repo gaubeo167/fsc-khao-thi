@@ -32,7 +32,13 @@ interface Actions {
   toggleMark(attemptId: string, questionId: string): void;
   /** Grade + submit. Caller passes the questions in the homework so we
    *  can run isCorrect() on each answer. */
-  submit(attemptId: string, questions: Question[]): HomeworkAttempt | null;
+  /**
+   * Finalize a homework attempt. In production (Firebase configured) it is
+   * SERVER-AUTHORITATIVE: POSTs answers to /api/homework/[id]/submit which
+   * grades with the Admin SDK and writes correctCount/submittedAt. Demo
+   * mode grades locally. Async in both cases.
+   */
+  submit(attemptId: string, questions: Question[]): Promise<HomeworkAttempt | null>;
   findById(id: string): HomeworkAttempt | undefined;
   findForStudent(homeworkId: string, studentId: string): HomeworkAttempt | undefined;
   _applySnapshot(rows: HomeworkAttempt[]): void;
@@ -110,10 +116,50 @@ export const useHomeworkAttemptsStore = create<State & Actions>()(
       }
     },
 
-    submit(attemptId, questions) {
+    async submit(attemptId, questions) {
       const att = get().attempts.find((a) => a.id === attemptId);
       if (!att || att.submittedAt != null) return att ?? null;
 
+      // ── Production: server-authoritative grading ────────────────────
+      if (isFirebaseConfigured()) {
+        try {
+          const { authHeaders } = await import("@/lib/api-client");
+          const res = await fetch(`/api/homework/${att.homeworkId}/submit`, {
+            method: "POST",
+            headers: { "content-type": "application/json", ...(await authHeaders()) },
+            body: JSON.stringify({ answers: att.answers }),
+          });
+          if (res.status === 409) {
+            const done = { ...att, submittedAt: att.submittedAt ?? new Date().toISOString() };
+            set({ attempts: get().attempts.map((x) => (x.id === attemptId ? done : x)) });
+            return done;
+          }
+          if (!res.ok) {
+            // eslint-disable-next-line no-console
+            console.error("[homework] server submit failed", res.status);
+            return null;
+          }
+          const data = (await res.json()) as {
+            correctCount: number;
+            totalQuestions: number;
+            submittedAt: string;
+          };
+          const updated: HomeworkAttempt = {
+            ...att,
+            submittedAt: data.submittedAt,
+            correctCount: data.correctCount,
+            totalQuestions: data.totalQuestions,
+          };
+          set({ attempts: get().attempts.map((x) => (x.id === attemptId ? updated : x)) });
+          return updated;
+        } catch (e) {
+          // eslint-disable-next-line no-console
+          console.error("[homework] server submit error", e);
+          return null;
+        }
+      }
+
+      // ── Demo mode: grade locally ────────────────────────────────────
       let correctCount = 0;
       for (const q of questions) {
         const a = att.answers[q.id];
