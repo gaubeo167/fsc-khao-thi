@@ -60,6 +60,9 @@ export async function POST(
   let full: Question[] = [];
   let examFormId: string | null = null;
   let variantId: string | null = null;
+  // Diagnostics returned in the response so a "Bộ đề chưa có câu hỏi" case
+  // can be root-caused from the browser Network tab without server logs.
+  const dbg: Record<string, unknown> = { shiftId, hasPackage: !!shift.packageId };
 
   // Single-field query (no composite index needed); pick the active form
   // in code. A two-`where` query would require a Firestore composite index
@@ -69,29 +72,36 @@ export async function POST(
       .collection("exam_forms")
       .where("shiftId", "==", shiftId)
       .get();
+    dbg.formsMatched = formsSnap.size;
     const doc =
       formsSnap.docs.find((d) => (d.data().lifecycle ?? "active") === "active") ??
       formsSnap.docs[0];
     if (doc) {
       const form = { ...(doc.data() as ExamForm), id: doc.id };
+      dbg.variantCount = form.variants?.length ?? 0;
       const variant = pickVariantForStudent(form, uid);
+      dbg.variantPicked = !!variant;
       if (variant) {
         full = variant.questions as unknown as Question[];
+        dbg.variantQuestionCount = full.length;
         examFormId = form.id;
         variantId = variant.variantId;
       }
     }
   } catch (e) {
+    dbg.formQueryError = (e as Error).message;
     // eslint-disable-next-line no-console
     console.error("[exam/questions] exam_forms query failed", e);
   }
 
   // Legacy fallback: blueprint picked questions.
   if (full.length === 0 && shift.packageId) {
+    dbg.fallbackTried = true;
     const pkgSnap = await db.collection("packages").doc(shift.packageId).get();
     const blueprintId = pkgSnap.exists
       ? (pkgSnap.data()?.blueprintId as string | undefined)
       : undefined;
+    dbg.blueprintId = blueprintId ?? null;
     if (blueprintId) {
       const bpSnap = await db.collection("blueprints").doc(blueprintId).get();
       const topics = (bpSnap.data()?.topics ?? []) as Array<{
@@ -100,8 +110,10 @@ export async function POST(
       const ids = [
         ...new Set(topics.flatMap((t) => t.pickedQuestionIds ?? [])),
       ].slice(0, 200);
+      dbg.pickedIdsCount = ids.length;
       for (let i = 0; i < ids.length; i += 30) {
         const chunk = ids.slice(i, i + 30);
+        if (chunk.length === 0) continue;
         const snap = await db
           .collection("questions")
           .where(FieldPath.documentId(), "in", chunk)
@@ -111,9 +123,11 @@ export async function POST(
           if (q.status === "approved") full.push(q);
         }
       }
+      dbg.fallbackApprovedCount = full.length;
     }
   }
 
   const questions = full.map(stripAnswers);
-  return NextResponse.json({ questions, examFormId, variantId });
+  dbg.finalCount = questions.length;
+  return NextResponse.json({ questions, examFormId, variantId, _debug: dbg });
 }

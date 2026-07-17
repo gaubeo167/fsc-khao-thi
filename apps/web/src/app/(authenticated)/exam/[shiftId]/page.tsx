@@ -121,7 +121,14 @@ export default function ExamPage() {
           headers: { ...(await authHeaders()) },
         });
         if (!alive) return;
-        setServerQuestions(res.ok ? (await res.json()).questions ?? [] : []);
+        const data = res.ok
+          ? await res.json().catch(() => ({}))
+          : { _httpStatus: res.status };
+        if (!data?.questions?.length) {
+          // eslint-disable-next-line no-console
+          console.warn("[exam] /questions trả rỗng — chẩn đoán:", data);
+        }
+        setServerQuestions(data?.questions ?? []);
       } catch {
         if (alive) setServerQuestions([]);
       }
