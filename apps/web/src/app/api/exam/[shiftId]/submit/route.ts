@@ -69,21 +69,27 @@ export async function POST(
   let examFormId: string | null = null;
   let variantId: string | null = null;
 
-  const formsSnap = await db
-    .collection("exam_forms")
-    .where("shiftId", "==", shiftId)
-    .where("lifecycle", "==", "active")
-    .limit(1)
-    .get();
-  if (!formsSnap.empty) {
-    const doc = formsSnap.docs[0]!;
-    const form = { ...(doc.data() as ExamForm), id: doc.id };
-    const variant = pickVariantForStudent(form, uid);
-    if (variant) {
-      questions = variant.questions as unknown as Question[];
-      examFormId = form.id;
-      variantId = variant.variantId;
+  // Single-field query (no composite index needed); pick active in code.
+  try {
+    const formsSnap = await db
+      .collection("exam_forms")
+      .where("shiftId", "==", shiftId)
+      .get();
+    const doc =
+      formsSnap.docs.find((d) => (d.data().lifecycle ?? "active") === "active") ??
+      formsSnap.docs[0];
+    if (doc) {
+      const form = { ...(doc.data() as ExamForm), id: doc.id };
+      const variant = pickVariantForStudent(form, uid);
+      if (variant) {
+        questions = variant.questions as unknown as Question[];
+        examFormId = form.id;
+        variantId = variant.variantId;
+      }
     }
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error("[exam/submit] exam_forms query failed", e);
   }
 
   // Legacy fallback (shift published before snapshots): grade the questions
