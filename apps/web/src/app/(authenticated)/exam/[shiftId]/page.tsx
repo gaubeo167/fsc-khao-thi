@@ -122,14 +122,26 @@ export default function ExamPage() {
           headers: { ...(await authHeaders()) },
         });
         if (!alive) return;
-        const data = res.ok
-          ? await res.json().catch(() => ({}))
-          : { _httpStatus: res.status };
+        const bodyText = await res.text().catch(() => "");
+        let parsed: { questions?: Question[]; _debug?: unknown } | null = null;
+        try {
+          parsed = JSON.parse(bodyText);
+        } catch {
+          parsed = null;
+        }
+        const data = res.ok && parsed ? parsed : null;
         if (!data?.questions?.length) {
           // eslint-disable-next-line no-console
-          console.warn("[exam] /questions trả rỗng — chẩn đoán:", data);
+          console.warn("[exam] /questions trả rỗng — chẩn đoán:", res.status, bodyText.slice(0, 300));
         }
-        setServerDebug(data?._debug ?? { _httpStatus: data?._httpStatus ?? res.status });
+        setServerDebug(
+          data?._debug ?? {
+            _httpStatus: res.status,
+            _url: `/api/exam/${shift.id}/questions`,
+            _contentType: res.headers.get("content-type"),
+            _bodySnippet: bodyText.slice(0, 200),
+          },
+        );
         setServerQuestions(data?.questions ?? []);
       } catch (e) {
         if (alive) {
