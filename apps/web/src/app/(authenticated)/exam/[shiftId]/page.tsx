@@ -109,6 +109,7 @@ export default function ExamPage() {
   // local snapshot/fallback path below.
   const useServer = isFirebaseConfigured() && session?.role === "student";
   const [serverQuestions, setServerQuestions] = useState<Question[] | null>(null);
+  const [serverDebug, setServerDebug] = useState<unknown>(null);
   useEffect(() => {
     if (!useServer || !shift || !session) return;
     let alive = true;
@@ -128,9 +129,13 @@ export default function ExamPage() {
           // eslint-disable-next-line no-console
           console.warn("[exam] /questions trả rỗng — chẩn đoán:", data);
         }
+        setServerDebug(data?._debug ?? { _httpStatus: data?._httpStatus ?? res.status });
         setServerQuestions(data?.questions ?? []);
-      } catch {
-        if (alive) setServerQuestions([]);
+      } catch (e) {
+        if (alive) {
+          setServerDebug({ _fetchError: (e as Error).message });
+          setServerQuestions([]);
+        }
       }
     })();
     return () => {
@@ -280,11 +285,18 @@ export default function ExamPage() {
   }
   if (effectiveQuestions.length === 0) {
     return (
-      <Gate
-        title="Bộ đề chưa có câu hỏi"
-        hint="Bộ đề của ca thi này chưa được gắn câu hỏi đã duyệt. Liên hệ giáo viên / admin để bổ sung."
-        backHref="/my-exams"
-      />
+      <div className="space-y-3">
+        <Gate
+          title="Bộ đề chưa có câu hỏi"
+          hint="Bộ đề của ca thi này chưa được gắn câu hỏi đã duyệt. Liên hệ giáo viên / admin để bổ sung."
+          backHref="/my-exams"
+        />
+        {useServer && serverDebug ? (
+          <pre className="mx-auto max-w-md overflow-x-auto rounded-lg border bg-muted/30 p-3 text-[11px] text-foreground/70">
+            chẩn đoán: {JSON.stringify(serverDebug, null, 2)}
+          </pre>
+        ) : null}
+      </div>
     );
   }
 
