@@ -231,6 +231,7 @@ export default function MonitorPage() {
   const shift = useShiftsStore((s) =>
     s.shifts.find((x) => x.id === shiftId),
   );
+  const shiftsHydrated = useShiftsStore((s) => s.hydrated);
   const setShiftStatus = useShiftsStore((s) => s.setStatus);
   const session = useAuthStore((s) => s.session);
   const activeCampusId = useCampusStore((s) => s.activeCampusId);
@@ -275,7 +276,19 @@ export default function MonitorPage() {
   const [search, setSearch] = useState("");
   const [confirmingStop, setConfirmingStop] = useState(false);
 
-  if (!shift) return notFound();
+  if (!shift) {
+    // Store may still be loading on a fresh navigation/refresh — don't
+    // 404 prematurely (was the cause of "không truy cập được phòng giám
+    // sát" khi mở trực tiếp / F5).
+    if (!shiftsHydrated) {
+      return (
+        <div className="flex items-center justify-center py-20 text-muted-foreground">
+          Đang tải ca thi…
+        </div>
+      );
+    }
+    return notFound();
+  }
   if (campusId && shift.campusId !== campusId) {
     return (
       <div className="rounded-xl border bg-card p-6 text-center text-sm text-muted-foreground">
