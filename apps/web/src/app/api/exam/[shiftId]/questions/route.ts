@@ -111,6 +111,8 @@ export async function POST(
         ...new Set(topics.flatMap((t) => t.pickedQuestionIds ?? [])),
       ].slice(0, 200);
       dbg.pickedIdsCount = ids.length;
+      let approvedCount = 0;
+      const loaded: Question[] = [];
       for (let i = 0; i < ids.length; i += 30) {
         const chunk = ids.slice(i, i + 30);
         if (chunk.length === 0) continue;
@@ -120,10 +122,16 @@ export async function POST(
           .get();
         for (const d of snap.docs) {
           const q = { ...(d.data() as Question), id: d.id };
-          if (q.status === "approved") full.push(q);
+          loaded.push(q);
+          if (q.status === "approved") approvedCount++;
         }
       }
-      dbg.fallbackApprovedCount = full.length;
+      dbg.fallbackApprovedCount = approvedCount;
+      dbg.fallbackLoadedCount = loaded.length;
+      // Serve the questions the teacher selected into the blueprint, even
+      // if some aren't "approved" — the teacher's selection is the intent,
+      // and requiring approval here was silently emptying whole exams.
+      full = loaded;
     }
   }
 
