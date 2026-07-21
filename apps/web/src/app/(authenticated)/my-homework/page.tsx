@@ -66,8 +66,9 @@ export default function MyHomeworkPage() {
       .sort((a, b) => (a.dueAt < b.dueAt ? -1 : 1));
   }, [allHomework, session, myClassIds]);
 
-  // UI filter state.
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  // UI filter state. Default = "chua-nop": ưu tiên bài còn phải làm, ẩn
+  // các bài đã nộp (học sinh lọc lại khi cần xem).
+  const [statusFilter, setStatusFilter] = useState<string>("chua-nop");
   const [subjectFilter, setSubjectFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
 
@@ -102,21 +103,44 @@ export default function MyHomeworkPage() {
     return subjects.filter((s) => ids.has(s.id));
   }, [scope, subjects]);
 
+  // Ưu tiên hiển thị: đang mở (còn hạn) → chưa mở → quá hạn → đã nộp;
+  // trong cùng nhóm, bài mới giao gần đây lên trước.
+  const STATUS_RANK: Record<string, number> = {
+    open: 0,
+    scheduled: 1,
+    missed: 2,
+    submitted: 3,
+  };
+
   const filtered = useMemo(() => {
-    return scope.filter((h) => {
-      if (statusFilter !== "all" && rowStatus(h) !== statusFilter) return false;
-      if (subjectFilter !== "all" && h.subjectId !== subjectFilter) return false;
-      const q = search.trim().toLowerCase();
-      if (q && !`${h.title} ${h.description ?? ""} ${h.ownerName}`.toLowerCase().includes(q)) {
-        return false;
-      }
-      return true;
-    });
+    return scope
+      .filter((h) => {
+        const st = rowStatus(h);
+        if (statusFilter === "chua-nop") {
+          if (st === "submitted") return false; // ẩn bài đã nộp
+        } else if (statusFilter !== "all" && st !== statusFilter) {
+          return false;
+        }
+        if (subjectFilter !== "all" && h.subjectId !== subjectFilter) return false;
+        const q = search.trim().toLowerCase();
+        if (q && !`${h.title} ${h.description ?? ""} ${h.ownerName}`.toLowerCase().includes(q)) {
+          return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        const ra = STATUS_RANK[rowStatus(a)] ?? 9;
+        const rb = STATUS_RANK[rowStatus(b)] ?? 9;
+        if (ra !== rb) return ra - rb;
+        // Mới giao lên trước, rồi tới hạn gần nhất.
+        if (a.assignedAt !== b.assignedAt) return a.assignedAt < b.assignedAt ? 1 : -1;
+        return a.dueAt < b.dueAt ? -1 : 1;
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scope, statusFilter, subjectFilter, search, attempts, session?.userId]);
 
   const dirty =
-    statusFilter !== "all" || subjectFilter !== "all" || search.trim() !== "";
+    statusFilter !== "chua-nop" || subjectFilter !== "all" || search.trim() !== "";
 
   return (
     <>
@@ -169,11 +193,12 @@ export default function MyHomeworkPage() {
           onChange={(e) => setStatusFilter(e.target.value)}
           className="h-9 min-w-[150px]"
         >
-          <option value="all">Trạng thái: Tất cả</option>
+          <option value="chua-nop">Chưa nộp (ưu tiên)</option>
           <option value="open">Đang mở</option>
           <option value="scheduled">Chưa mở</option>
           <option value="submitted">Đã nộp</option>
           <option value="missed">Quá hạn</option>
+          <option value="all">Tất cả</option>
         </Select>
         {mySubjects.length > 1 && (
           <Select
@@ -193,7 +218,7 @@ export default function MyHomeworkPage() {
           <button
             type="button"
             onClick={() => {
-              setStatusFilter("all");
+              setStatusFilter("chua-nop");
               setSubjectFilter("all");
               setSearch("");
             }}
@@ -209,12 +234,18 @@ export default function MyHomeworkPage() {
         <div className="rounded-xl border bg-card p-10 text-center">
           <ClipboardEdit className="mx-auto mb-3 h-10 w-10 text-muted-foreground/50" />
           <p className="text-section-title">
-            {scope.length === 0 ? "Chưa có BTVN nào" : "Không có BTVN phù hợp"}
+            {scope.length === 0
+              ? "Chưa có BTVN nào"
+              : statusFilter === "chua-nop" && subjectFilter === "all" && !search.trim()
+                ? "Bạn đã nộp hết bài rồi 🎉"
+                : "Không có BTVN phù hợp"}
           </p>
           <p className="text-meta mt-1">
             {scope.length === 0
               ? "Giáo viên sẽ giao bài tập về nhà ở đây."
-              : "Thử bỏ bớt bộ lọc hoặc đổi từ khoá tìm kiếm."}
+              : statusFilter === "chua-nop" && subjectFilter === "all" && !search.trim()
+                ? "Chọn bộ lọc “Đã nộp” để xem lại các bài đã làm."
+                : "Thử bỏ bớt bộ lọc hoặc đổi từ khoá tìm kiếm."}
           </p>
         </div>
       ) : (
