@@ -10,7 +10,7 @@ import { NextResponse } from "next/server";
 
 import type { Question } from "@/features/question-bank/data/seed-questions";
 import { verifyCaller } from "@/lib/api-auth";
-import { stripAnswers } from "@/lib/exam/grade";
+import { stripForServe } from "@/lib/exam/matching-opaque";
 import { getAdmin } from "@/lib/firebase-admin";
 
 export async function POST(
@@ -56,7 +56,7 @@ export async function POST(
   const questions = ids
     .map((qid) => byId.get(qid))
     .filter((q): q is Question => !!q)
-    .map(stripAnswers);
+    .map(stripForServe);
 
   return NextResponse.json({ questions });
 }

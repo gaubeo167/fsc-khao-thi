@@ -21,7 +21,7 @@ import {
 } from "@/features/exam-forms/data/types";
 import type { Question } from "@/features/question-bank/data/seed-questions";
 import { verifyCaller } from "@/lib/api-auth";
-import { stripAnswers } from "@/lib/exam/grade";
+import { stripForServe } from "@/lib/exam/matching-opaque";
 import { getAdmin } from "@/lib/firebase-admin";
 
 export async function POST(
@@ -135,7 +135,7 @@ export async function POST(
     }
   }
 
-  const questions = full.map(stripAnswers);
+  const questions = full.map(stripForServe);
   dbg.finalCount = questions.length;
   return NextResponse.json({ questions, examFormId, variantId, _debug: dbg });
 }

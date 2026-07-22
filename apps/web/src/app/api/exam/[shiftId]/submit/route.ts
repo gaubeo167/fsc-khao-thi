@@ -21,6 +21,7 @@ import type { Question } from "@/features/question-bank/data/seed-questions";
 import type { Answer } from "@/features/shift-exam/state/attempts-store";
 import { verifyCaller } from "@/lib/api-auth";
 import { computeAttemptScore } from "@/lib/exam/grade";
+import { restoreServedAnswers } from "@/lib/exam/matching-opaque";
 import { getAdmin } from "@/lib/firebase-admin";
 
 export async function POST(
@@ -107,7 +108,10 @@ export async function POST(
   }
 
   // ── Grade (server-side) ───────────────────────────────────────────────
-  const { score, correctCount, maxScore } = computeAttemptScore(questions, answers);
+  // Translate matching answers (opaque tokens → real ids) so grading works
+  // and the STORED answers carry real ids (review/reports stay unchanged).
+  const gradedAnswers = restoreServedAnswers(questions, answers);
+  const { score, correctCount, maxScore } = computeAttemptScore(questions, gradedAnswers);
 
   // ── Write the attempt authoritatively ────────────────────────────────
   const attemptId = `att-${shiftId}-${uid}`;
@@ -128,7 +132,7 @@ export async function POST(
       questionIds: questions.map((q) => q.id),
       examFormId,
       variantId,
-      answers,
+      answers: gradedAnswers,
       markedForReview: (prev.markedForReview as string[]) ?? [],
       startedAt: (prev.startedAt as string) ?? now,
       submittedAt: now,

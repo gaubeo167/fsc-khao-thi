@@ -15,6 +15,7 @@ import type { Question } from "@/features/question-bank/data/seed-questions";
 import type { Answer } from "@/features/shift-exam/state/attempts-store";
 import { verifyCaller } from "@/lib/api-auth";
 import { gradeQuestion } from "@/lib/exam/grade";
+import { restoreServedAnswers } from "@/lib/exam/matching-opaque";
 import { getAdmin } from "@/lib/firebase-admin";
 
 export async function POST(
@@ -69,9 +70,12 @@ export async function POST(
     .map((qid) => byId.get(qid))
     .filter((q): q is Question => !!q);
 
+  // Translate matching answers (opaque tokens → real ids) before grading;
+  // store the real-id version so review/reports stay unchanged.
+  const gradedAnswers = restoreServedAnswers(questions, answers);
   let correctCount = 0;
   for (const q of questions) {
-    if (gradeQuestion(q, answers[q.id])?.correct) correctCount += 1;
+    if (gradeQuestion(q, gradedAnswers[q.id])?.correct) correctCount += 1;
   }
   const totalQuestions = questions.length;
 
@@ -90,7 +94,7 @@ export async function POST(
       homeworkId: id,
       studentId: uid,
       campusId: campusId ?? null,
-      answers,
+      answers: gradedAnswers,
       markedForReview: (prev.markedForReview as string[]) ?? [],
       startedAt: (prev.startedAt as string) ?? now,
       submittedAt: now,

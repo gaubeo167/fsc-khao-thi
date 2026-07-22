@@ -578,12 +578,21 @@ function MatchingAnswer({
   seed?: string;
 }) {
   // Right column is shown shuffled — left column stays in author's order.
-  // Each left has a select that picks one of the right items by *original
-  // pair id*. We compare against the matching pair id at grade-time.
-  const rightOptions = useMemo(
-    () => stableShuffle(q.pairs, `${seed ?? ""}-right`),
-    [q.pairs, seed],
-  );
+  // Each left has a select that picks one right *by value*:
+  //   • Prod (server-served): `q.rightOptions` carries OPAQUE tokens (the
+  //     real ids are hidden). The chosen token is translated back to a real
+  //     id server-side at submit.
+  //   • Demo/full question: no rightOptions → fall back to shuffling the
+  //     pairs and using the real pair id as the value (graded locally).
+  const rightOptions = useMemo(() => {
+    if (q.rightOptions && q.rightOptions.length > 0) {
+      return q.rightOptions.map((o) => ({ id: o.token, right: o.right }));
+    }
+    return stableShuffle(q.pairs, `${seed ?? ""}-right`).map((p) => ({
+      id: p.id,
+      right: p.right,
+    }));
+  }, [q.rightOptions, q.pairs, seed]);
   const pairings =
     answer && answer.kind === "matching" ? answer.pairings : {};
 

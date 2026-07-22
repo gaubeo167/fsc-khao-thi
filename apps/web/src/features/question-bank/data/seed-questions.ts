@@ -94,6 +94,18 @@ export interface MatchingDistractor {
   id: string;
   right: string;
 }
+/**
+ * Answer-free right-column option served to a student taking the exam.
+ * `token` is an OPAQUE, server-secret-derived handle (HMAC of q.id+realId)
+ * that maps back to the real pair/distractor id only on the server — the
+ * client can't compute it, so the payload no longer reveals which right
+ * matches which left. Populated by the server; absent on authored/demo
+ * questions (which use `pairs[].right` directly).
+ */
+export interface MatchingRightOption {
+  token: string;
+  right: string;
+}
 export interface MatchingQuestion extends BaseQuestion {
   type: "matching";
   pairs: MatchingPair[];
@@ -101,6 +113,9 @@ export interface MatchingQuestion extends BaseQuestion {
    *  back-compat: existing questions without distractors render as
    *  before. */
   distractors?: MatchingDistractor[];
+  /** Server-served, answer-free right options (see MatchingRightOption).
+   *  When present the `pairs[].right` fields are blanked. */
+  rightOptions?: MatchingRightOption[];
 }
 
 export interface OrderingItem {
