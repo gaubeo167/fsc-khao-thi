@@ -803,15 +803,20 @@ function DragDropAnswer({
   // re-renders mid-attempt don't reshuffle the pool.
   type Chip = { chipId: string; content: string };
   const initialPool = useMemo<Chip[]>(() => {
-    const correct = q.zones.map((z, i) => ({
-      chipId: `c-${i}`,
-      content: z.correctContent,
+    // Prod (server-served) exams arrive with a pre-built, answer-free
+    // `pool`; the per-zone `correctContent` is blanked out. Demo/full
+    // questions have no pool, so derive it from zones + distractors.
+    const contents =
+      q.pool && q.pool.length > 0
+        ? q.pool
+        : [
+            ...q.zones.map((z) => z.correctContent),
+            ...q.distractors.map((d) => d.content),
+          ];
+    const list: Chip[] = contents.map((content, i) => ({
+      chipId: `chip-${i}`,
+      content,
     }));
-    const wrong = q.distractors.map((d, i) => ({
-      chipId: `d-${i}`,
-      content: d.content,
-    }));
-    const list: Chip[] = [...correct, ...wrong];
     // Cheap stable shuffle using `seed` so each student sees the same
     // order on retry but different students may see different orders.
     let s = 0;
@@ -823,7 +828,7 @@ function DragDropAnswer({
       [list[i], list[j]] = [list[j]!, list[i]!];
     }
     return list;
-  }, [q.id, q.zones, q.distractors, seed]);
+  }, [q.id, q.zones, q.distractors, q.pool, seed]);
 
   const zoneValues =
     answer && answer.kind === "drag-drop"

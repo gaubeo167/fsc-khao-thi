@@ -131,6 +131,15 @@ export interface DragDropQuestion extends BaseQuestion {
   zones: DragDropZone[];
   /** Extra wrong-answer chips shown in the pool alongside correct answers. */
   distractors: DragDropDistractor[];
+  /**
+   * Display-only chip pool (correct contents + distractors, merged &
+   * shuffled, UNLABELLED). Populated by `stripAnswers` when serving a
+   * student their exam so the client can render draggable chips WITHOUT
+   * receiving the per-zone `correctContent` answer key. Absent on the
+   * authored/full question (demo mode derives the pool from
+   * zones+distractors instead).
+   */
+  pool?: string[];
 }
 
 export interface EssayQuestion extends BaseQuestion {

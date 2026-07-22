@@ -108,17 +108,45 @@ export function gradeQuestion(
 }
 
 /**
+ * Deterministic Fisher–Yates shuffle keyed by a stable string. Same seed
+ * → same order (idempotent across refetch), but the order does NOT match
+ * the authored array — which is exactly what hides a "correct order"
+ * answer. NOT crypto; only needs to be non-obvious to a student reading
+ * the JSON. Grading always uses the ORIGINAL question, so shuffling the
+ * served copy never affects the score.
+ */
+function seededShuffle<T>(arr: readonly T[], seedStr: string): T[] {
+  let s = 0;
+  for (const ch of seedStr) s = (s * 31 + ch.charCodeAt(0)) >>> 0;
+  const out = [...arr];
+  for (let i = out.length - 1; i > 0; i--) {
+    s = (s * 1103515245 + 12345) >>> 0;
+    const j = s % (i + 1);
+    [out[i], out[j]] = [out[j]!, out[i]!];
+  }
+  return out;
+}
+
+/**
  * Return a DISPLAY-SAFE copy of a question with the answer key removed,
  * for serving to a student who is taking (not reviewing) the exam.
  *
- * Fully stripped: mcq-single/multi (isCorrect→false), true-false &
- * multi-tf (correctAnswer→false), short-answer & fill-blank
- * (acceptedAnswers→[]). Essay/ai-generated have no auto key.
+ * Fully stripped:
+ *   • mcq-single/multi (isCorrect→false), true-false & multi-tf
+ *     (correctAnswer→false), short-answer & fill-blank (acceptedAnswers→[]).
+ *   • ordering — items shuffled so the served array no longer encodes the
+ *     correct order (the answer WAS the array order).
+ *   • drag-drop — zone `correctContent` blanked; the pool of chips (correct
+ *     contents + distractors, merged & shuffled, unlabelled) is moved to
+ *     `pool` so the student can still play without seeing which chip maps
+ *     to which zone.
+ * Essay/ai-generated have no auto key.
  *
- * ⚠️ NOT fully hidden yet (answer lives in the STRUCTURE, not a field):
- *   matching (pairs alignment), ordering (item order), drag-drop (zone
- *   content), underline ([u:] markers). These need an opaque-id protocol
- *   redesign before they can be served leak-free — tracked as a follow-up.
+ * ⚠️ STILL structural (tracked follow-up, needs a deeper redesign):
+ *   matching (right bundled with left, ids shared → needs opaque-id remap
+ *   + submit translation) and underline ([u:] markers double as both the
+ *   answer AND the clickable-phrase grouping → needs decoy chunks). These
+ *   pass through unchanged for now.
  */
 export function stripAnswers(q: Question): Question {
   switch (q.type) {
@@ -136,8 +164,24 @@ export function stripAnswers(q: Question): Question {
         ...q,
         subQuestions: q.subQuestions.map((s) => ({ ...s, correctAnswer: false })),
       };
-    // TODO(harden): matching/ordering/drag-drop/underline — answer is
-    // structural; passthrough for now (see warning above).
+    case "ordering":
+      return { ...q, items: seededShuffle(q.items, `ord-${q.id}`) };
+    case "drag-drop": {
+      const pool = seededShuffle(
+        [
+          ...q.zones.map((z) => z.correctContent),
+          ...q.distractors.map((d) => d.content),
+        ],
+        `dd-${q.id}`,
+      );
+      return {
+        ...q,
+        zones: q.zones.map((z) => ({ ...z, correctContent: "" })),
+        distractors: [],
+        pool,
+      };
+    }
+    // TODO(harden): matching & underline still leak (see warning above).
     default:
       return q;
   }
