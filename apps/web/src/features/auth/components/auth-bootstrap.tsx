@@ -54,8 +54,12 @@ function startDataSubscriptions(session: AuthSession): Array<() => void> {
     isStudent
       ? subscribeAttempts({ studentId: session.userId })
       : subscribeAttempts(),
-    subscribeProctorEvents(),
-    subscribeGrading(),
+    isStudent
+      ? subscribeProctorEvents({ studentId: session.userId })
+      : subscribeProctorEvents(),
+    isStudent
+      ? subscribeGrading({ studentId: session.userId })
+      : subscribeGrading(),
     subscribeMaterials(),
     subscribeHomework(),
     isStudent

@@ -1,6 +1,6 @@
 "use client";
 
-import type { Unsubscribe } from "firebase/firestore";
+import { where, type Unsubscribe } from "firebase/firestore";
 import { create } from "zustand";
 
 import { COLLECTIONS } from "@/lib/firestore-collections";
@@ -209,16 +209,39 @@ export const useGradingStore = create<State & Actions>()((set, get) => ({
   },
 }));
 
-export function subscribeGrading(): Unsubscribe {
+/**
+ * Subscribe to grading data.
+ *
+ * Students pass `{ studentId }`: they read ONLY their own essay grades
+ * (to see feedback/points on the result page) and skip
+ * `grading_assignments` entirely (a staff-only "who grades what" table).
+ * Without this scope a student could read every other student's essay
+ * scores + comments — and each teacher's grade write fanned out to all
+ * 1700 online students. Staff (teacher+) call with no args for the full
+ * grading queue.
+ */
+export function subscribeGrading(opts?: { studentId?: string }): Unsubscribe {
+  const isStudent = !!opts?.studentId;
+
+  const unsubG = subscribeCollection<EssayGrade>({
+    collectionName: COLLECTIONS.gradesEssay,
+    constraints: opts?.studentId
+      ? [where("studentId", "==", opts.studentId)]
+      : [],
+    fromDoc: (id, data) => ({ ...(data as EssayGrade), id }),
+    onChange: (rows) => useGradingStore.getState()._applyGrades(rows),
+  });
+
+  if (isStudent) {
+    // Students never see the grader-assignment table.
+    useGradingStore.getState()._applyAssignments([]);
+    return unsubG;
+  }
+
   const unsubA = subscribeCollection<GradingAssignment>({
     collectionName: COLLECTIONS.gradingAssignments,
     fromDoc: (id, data) => ({ ...(data as GradingAssignment), id }),
     onChange: (rows) => useGradingStore.getState()._applyAssignments(rows),
-  });
-  const unsubG = subscribeCollection<EssayGrade>({
-    collectionName: COLLECTIONS.gradesEssay,
-    fromDoc: (id, data) => ({ ...(data as EssayGrade), id }),
-    onChange: (rows) => useGradingStore.getState()._applyGrades(rows),
   });
   return () => {
     unsubA();

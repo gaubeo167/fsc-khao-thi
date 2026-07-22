@@ -1,6 +1,6 @@
 "use client";
 
-import type { Unsubscribe } from "firebase/firestore";
+import { where, type Unsubscribe } from "firebase/firestore";
 import { create } from "zustand";
 
 import { COLLECTIONS } from "@/lib/firestore-collections";
@@ -102,9 +102,23 @@ export const useProctorStore = create<State & Actions>()((set, get) => ({
   },
 }));
 
-export function subscribeProctorEvents(): Unsubscribe {
+/**
+ * Subscribe to proctor events.
+ *
+ * Students pass `{ studentId }`: they read ONLY events addressed to them
+ * (their own warnings). Without this scope a student downloaded every
+ * proctor event of every student, and each warning the proctor sent
+ * fanned out to all 1700 online students. Staff (teacher+) call with no
+ * args so the monitor can see the whole shift's stream.
+ */
+export function subscribeProctorEvents(opts?: {
+  studentId?: string;
+}): Unsubscribe {
   return subscribeCollection<ProctorEvent>({
     collectionName: COLLECTIONS.proctorEvents,
+    constraints: opts?.studentId
+      ? [where("studentId", "==", opts.studentId)]
+      : [],
     fromDoc: (id, data) => ({ ...(data as ProctorEvent), id }),
     onChange: (rows) => {
       useProctorStore.getState()._applySnapshot(rows);

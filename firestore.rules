@@ -134,7 +134,12 @@ service cloud.firestore {
     // them. Both sides need read access so the student's toast and
     // the proctor's queue stay in sync.
     match /proctor_events/{id} {
-      allow read: if isSignedIn();
+      // A student may read ONLY events addressed to them (their own
+      // warnings). Teacher+ read all for the monitor. Previously any
+      // signed-in user could read every proctor event of every student
+      // — a leak, and every warning fanned out to all online students.
+      allow read: if isTeacherOrAbove() ||
+        (isSignedIn() && resource.data.studentId == uid());
       allow create: if isTeacherOrAbove();
       // Acknowledge = the TARGET student updates their own row; teacher
       // can edit anything they sent. (Was `if isSignedIn()` — any user
@@ -244,7 +249,12 @@ service cloud.firestore {
 
     // ───── /grades_essay — manual essay grading by teacher ────────────────
     match /grades_essay/{gradeId} {
-      allow read: if isSignedIn();
+      // A student may read ONLY their own essay grades (feedback + points
+      // on the result page). Teacher+ read all for the grading queue.
+      // Previously any signed-in user could read every student's essay
+      // scores + comments — a data leak, now closed.
+      allow read: if isTeacherOrAbove() ||
+        (isSignedIn() && resource.data.studentId == uid());
       // Grader creates their OWN grade row (can't impersonate another
       // grader). Update/delete stays teacher+ for regrade workflows.
       allow create: if isTeacherOrAbove() &&
@@ -253,8 +263,9 @@ service cloud.firestore {
     }
 
     // ───── /grading_assignments — who grades which shift's essays ─────────
+    // Staff-only "who grades what" table; students have no screen for it.
     match /grading_assignments/{id} {
-      allow read: if isSignedIn();
+      allow read: if isTeacherOrAbove();
       allow create: if isAdmin();
       allow update, delete: if isAdmin();
     }
