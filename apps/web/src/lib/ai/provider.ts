@@ -169,17 +169,29 @@ async function runAnthropic(
 
   try {
     const client = new Anthropic({ apiKey });
+    // Force JSON-only output by prefilling the assistant turn with "{".
+    // Claude then continues the object and won't emit markdown fences or a
+    // prose preamble — the response omits the leading "{", so we re-prepend
+    // it below. Without this the model sometimes wrapped JSON in ```json …
+    // ``` or added a sentence, breaking downstream parsing.
+    const messages: Anthropic.MessageParam[] = [
+      { role: "user", content: blocks },
+    ];
+    if (req.expectJson) {
+      messages.push({ role: "assistant", content: [{ type: "text", text: "{" }] });
+    }
     const message = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
       max_tokens: req.maxTokens ?? 2000,
       system: req.system,
-      messages: [{ role: "user", content: blocks }],
+      messages,
     });
-    const text = message.content
+    let text = message.content
       .filter((b) => b.type === "text")
       .map((b) => (b as { type: "text"; text: string }).text)
       .join("\n")
       .trim();
+    if (req.expectJson && !text.startsWith("{")) text = `{${text}`;
     return { provider: "anthropic", text };
   } catch (err) {
     // Anthropic SDK error has `.status` (HTTP status code). Preserve it

@@ -8,6 +8,7 @@ import {
   AiProviderError,
   type AiContentPart,
 } from "@/lib/ai/provider";
+import { parseTocJson } from "@/lib/ai/toc-parse";
 
 const Body = z.object({
   text: z.string().max(20000).optional(),
@@ -103,7 +104,10 @@ export async function POST(request: Request) {
     const { text: aiText, provider } = await aiComplete({
       system: SYSTEM_PROMPT,
       user: userParts,
-      maxTokens: 4000,
+      // A full 4-level curriculum tree can be large; 4000 tokens truncated
+      // the JSON mid-tree → parse failure. Haiku 4.5 / Gemini Flash both
+      // handle 8k output comfortably.
+      maxTokens: 8000,
       expectJson: true,
     });
 
@@ -137,39 +141,3 @@ export async function POST(request: Request) {
   }
 }
 
-/** Try to parse AI output as a TOC JSON. Tolerates leading/trailing junk. */
-function parseTocJson(raw: string): TocNode[] | null {
-  const startIdx = raw.indexOf("{");
-  const endIdx = raw.lastIndexOf("}");
-  if (startIdx < 0 || endIdx <= startIdx) return null;
-  const candidate = raw.slice(startIdx, endIdx + 1);
-
-  try {
-    const data = JSON.parse(candidate);
-    if (!data || typeof data !== "object" || !Array.isArray(data.tree)) return null;
-    return normalizeNodes(data.tree, 0);
-  } catch {
-    return null;
-  }
-}
-
-interface TocNode {
-  name: string;
-  children?: TocNode[];
-}
-
-function normalizeNodes(arr: unknown, depth: number): TocNode[] {
-  if (!Array.isArray(arr)) return [];
-  if (depth >= 4) return [];
-  const out: TocNode[] = [];
-  for (const item of arr) {
-    if (!item || typeof item !== "object") continue;
-    const node = item as { name?: unknown; children?: unknown };
-    if (typeof node.name !== "string") continue;
-    const name = node.name.trim().slice(0, 200);
-    if (!name) continue;
-    const children = normalizeNodes(node.children, depth + 1);
-    out.push(children.length > 0 ? { name, children } : { name });
-  }
-  return out;
-}
