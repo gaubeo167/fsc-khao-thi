@@ -29,6 +29,12 @@ export interface BaseQuestion {
   archivedBy?: string | null;
   archiveReason?: string | null;
 
+  /** Exam-instance only: the section (mạch/phần) this question sits in,
+   *  stamped by materialize when orderStrategy="by-section". Authored
+   *  bank questions never set these. */
+  sectionId?: string;
+  sectionName?: string;
+
   /** Version chain (see lib/version.ts). `version` is 1-indexed; the
    *  original draft is v1. `versionOfRootId` points at the v1 doc id
    *  so all versions in a chain share a root — undefined on legacy

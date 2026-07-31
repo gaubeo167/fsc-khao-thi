@@ -347,6 +347,13 @@ export function ExamRuntime({
 
         {/* Question */}
         <div className="flex flex-1 flex-col px-6 py-5">
+          {/* Section (mạch/phần) heading — shown only when the exam was
+              materialized with orderStrategy="by-section" + headings on. */}
+          {currentQ.sectionName ? (
+            <p className="mb-2 text-[12px] font-bold uppercase tracking-[0.04em] text-primary-text">
+              {currentQ.sectionName}
+            </p>
+          ) : null}
           <div className="mb-4 flex items-center gap-2">
             <span className="rounded-md bg-primary-soft px-2 py-0.5 text-[12px] font-bold text-primary-text">
               Câu {currentIdx + 1} / {questions.length}

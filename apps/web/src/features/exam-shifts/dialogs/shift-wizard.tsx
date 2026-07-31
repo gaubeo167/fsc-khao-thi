@@ -72,6 +72,7 @@ import type {
 } from "@/features/exams/data/types";
 import { useQuestionsStore } from "@/features/question-bank/state/questions-store";
 import { materializeExamForm } from "@/features/exam-forms/lib/materialize";
+import type { ExamOrderStrategy } from "@/features/exam-forms/data/types";
 import { useExamFormsStore } from "@/features/exam-forms/state/exam-forms-store";
 import { cn } from "@/lib/utils";
 
@@ -146,6 +147,10 @@ interface WizardState {
   assignMode: RoomAssignMode;
   /** Scoring policy for the exam — max total + how points distribute. */
   scoring: ScoringConfig;
+  /** How questions are ordered in each đề (see ExamOrderStrategy). */
+  orderStrategy: ExamOrderStrategy;
+  /** Show mạch/phần headings at runtime (only with "by-section"). */
+  showSectionHeadings: boolean;
   /** What students see on the result page after the shift ends. */
   studentResultVisibility: StudentResultVisibility;
   antiCheat: AntiCheatConfig;
@@ -174,6 +179,11 @@ function emptyState(): WizardState {
     roomCapacity: 30,
     assignMode: "alphabet",
     scoring: { ...DEFAULT_SCORING },
+    // Default = keep the exam's section structure (Phần I/II/III), shuffle
+    // only within each mạch, and show headings. Teachers asked for this so
+    // the paper matches the Bộ GD&ĐT layout instead of mixing types.
+    orderStrategy: "by-section",
+    showSectionHeadings: true,
     studentResultVisibility: DEFAULT_RESULT_VISIBILITY,
     antiCheat: { ...DEFAULT_ANTI_CHEAT },
   };
@@ -199,6 +209,8 @@ interface MaterializeArgs {
   shiftId: string;
   pkgId: string;
   scoring: ScoringConfig;
+  orderStrategy: ExamOrderStrategy;
+  showSectionHeadings: boolean;
   campusId: string | null;
   actorUid: string;
   isEdit: boolean;
@@ -251,6 +263,8 @@ async function materializeAndSave(args: MaterializeArgs): Promise<void> {
     questionPool: pool,
     variantCount: DEFAULT_VARIANT_COUNT,
     scoring: args.scoring,
+    orderStrategy: args.orderStrategy,
+    showSectionHeadings: args.showSectionHeadings,
     actorUid: args.actorUid,
     formId,
   });
@@ -326,6 +340,10 @@ export function ShiftWizard({
             : 30,
         assignMode: "alphabet",
         scoring: editing.scoring ?? { ...DEFAULT_SCORING },
+        // Legacy shifts (before this field) default to the old global
+        // shuffle so re-editing them doesn't silently change behaviour.
+        orderStrategy: editing.orderStrategy ?? "shuffle-all",
+        showSectionHeadings: editing.showSectionHeadings ?? false,
         studentResultVisibility:
           editing.studentResultVisibility ?? DEFAULT_RESULT_VISIBILITY,
         antiCheat: editing.antiCheat,
@@ -581,6 +599,8 @@ export function ShiftWizard({
       lateJoinMinutes: Number(state.lateJoinMinutes) || 0,
       rooms: state.rooms,
       scoring: state.scoring,
+      orderStrategy: state.orderStrategy,
+      showSectionHeadings: state.showSectionHeadings,
       studentResultVisibility: state.studentResultVisibility,
       antiCheat: state.antiCheat,
       campusId,
@@ -609,6 +629,8 @@ export function ShiftWizard({
         mode: "even" as const,
         difficultyWeights: { easy: 1, medium: 1.5, hard: 2 },
       },
+      orderStrategy: payload.orderStrategy,
+      showSectionHeadings: payload.showSectionHeadings,
       campusId: payload.campusId,
       actorUid: session.userId,
       isEdit: Boolean(editing),
@@ -1620,6 +1642,77 @@ function ScoringPanel({
           Đặt tổng điểm tối đa của ca thi và cách phân bổ cho từng câu.
         </p>
       </header>
+
+      {/* Question order strategy — teachers wanted the paper to keep its
+          Phần I/II/III structure instead of mixing every type together.
+          "Trộn toàn bộ" forces headings off (no sections to name). */}
+      <div className="mb-3 rounded-lg border bg-card p-3">
+        <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.06em] text-foreground/65">
+          Thứ tự câu hỏi trong đề
+        </p>
+        <div className="flex flex-wrap gap-1.5">
+          {(
+            [
+              {
+                v: "by-section",
+                label: "Trộn trong từng mạch",
+                hint: "Giữ thứ tự mạch (Phần I, II, III…), chỉ đảo câu trong mỗi mạch",
+              },
+              {
+                v: "shuffle-all",
+                label: "Trộn toàn bộ",
+                hint: "Đảo lẫn mọi câu, không phân phần",
+              },
+            ] as const
+          ).map((opt) => {
+            const active = state.orderStrategy === opt.v;
+            return (
+              <button
+                key={opt.v}
+                type="button"
+                title={opt.hint}
+                onClick={() =>
+                  setState((s) => ({
+                    ...s,
+                    orderStrategy: opt.v,
+                    // Only "by-section" can show headings; other modes
+                    // force them off so the toggle can't linger on.
+                    showSectionHeadings:
+                      opt.v === "by-section" ? s.showSectionHeadings : false,
+                  }))
+                }
+                className={cn(
+                  "rounded-md border px-2.5 py-1 text-[12px] font-semibold transition",
+                  active
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border bg-card hover:bg-accent/30",
+                )}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+        {state.orderStrategy === "by-section" ? (
+          <label className="mt-2 flex items-center gap-2 text-[12.5px] text-foreground/80">
+            <input
+              type="checkbox"
+              checked={state.showSectionHeadings}
+              onChange={(e) =>
+                setState((s) => ({
+                  ...s,
+                  showSectionHeadings: e.target.checked,
+                }))
+              }
+            />
+            Hiển thị tiêu đề mạch (Phần I, Phần II…) trong bài làm
+          </label>
+        ) : (
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            Trộn toàn bộ → không hiển thị tiêu đề phần.
+          </p>
+        )}
+      </div>
 
       {/* Variant picker — when the package has generated đề, the user
           picks each one and sets điểm for it. Câu trùng giữa các đề tự

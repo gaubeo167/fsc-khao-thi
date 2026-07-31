@@ -24,6 +24,7 @@ import type {
 import type {
   ExamForm,
   ExamFormVariant,
+  ExamOrderStrategy,
   QuestionSnapshot,
 } from "../data/types";
 
@@ -48,6 +49,12 @@ interface MaterializeInput {
   formId: string;
   /** ISO timestamp — caller can override for deterministic tests. */
   now?: string;
+  /** Question ordering within each variant (see ExamOrderStrategy).
+   *  Defaults to "shuffle-all" to preserve legacy behaviour. */
+  orderStrategy?: ExamOrderStrategy;
+  /** Show mạch/phần headings at runtime. Only honoured with
+   *  orderStrategy="by-section"; forced off otherwise. */
+  showSectionHeadings?: boolean;
 }
 
 /**
@@ -75,16 +82,28 @@ export function materializeExamForm(input: MaterializeInput): ExamForm {
     throw new Error("variantCount must be ≥ 1");
   }
   const now = input.now ?? new Date().toISOString();
+  const orderStrategy: ExamOrderStrategy = input.orderStrategy ?? "shuffle-all";
+  // Headings only make sense when questions stay grouped by section.
+  const showHeadings =
+    orderStrategy === "by-section" && input.showSectionHeadings !== false;
 
   // Build lookup by id once.
   const byId = new Map(questionPool.map((q) => [q.id, q]));
 
   // Reuse the existing generator to pick question ids per variant —
   // it already handles per-paper uniqueness + difficulty matrix.
-  const drafts = generateExams(blueprint, pkg, byId, variantCount);
+  const drafts = generateExams(blueprint, pkg, byId, variantCount, orderStrategy);
 
   // Materialize: clone each picked Question into a snapshot.
   const variants: ExamFormVariant[] = drafts.map((draft, vIdx) => {
+    // Map each question id → its section (mạch) for this draft, so we can
+    // stamp the heading. Only used when showHeadings is on.
+    const sectionOf = new Map<string, { id: string; name: string }>();
+    for (const sec of draft.sections) {
+      for (const qid of sec.questionIds) {
+        sectionOf.set(qid, { id: sec.topicId, name: sec.name });
+      }
+    }
     const snapshots: QuestionSnapshot[] = [];
     for (const qid of draft.questionIds) {
       const live = byId.get(qid);
@@ -93,7 +112,8 @@ export function materializeExamForm(input: MaterializeInput): ExamForm {
           `materializeExamForm: picked question ${qid} not in pool`,
         );
       }
-      snapshots.push(freezeQuestion(live, now));
+      const section = showHeadings ? sectionOf.get(qid) : undefined;
+      snapshots.push(freezeQuestion(live, now, section));
     }
     const variantId = `${formId}-v${String(vIdx + 1).padStart(3, "0")}`;
     const perQuestion = computePerQuestionScoring(snapshots, scoring);
@@ -114,6 +134,8 @@ export function materializeExamForm(input: MaterializeInput): ExamForm {
     maxScore: scoring.maxScore,
     durationMinutes: pkg.duration || blueprint.duration,
     variants,
+    orderStrategy,
+    showSectionHeadings: showHeadings,
     integrityHash: "", // filled below after canonical hashing
     materializedAt: now,
     materializedBy: actorUid,
@@ -134,7 +156,11 @@ export function materializeExamForm(input: MaterializeInput): ExamForm {
  * Note we deep-clone arrays/objects so later mutation of the live row
  * never bleeds into the snapshot.
  */
-function freezeQuestion(q: Question, snapshottedAt: string): QuestionSnapshot {
+function freezeQuestion(
+  q: Question,
+  snapshottedAt: string,
+  section?: { id: string; name: string },
+): QuestionSnapshot {
   // Structured clone is the safest deep copy; we strip the live `id`
   // off the spread and reuse it as `originalQuestionId`. The snapshot
   // gets its own deterministic id.
@@ -146,6 +172,7 @@ function freezeQuestion(q: Question, snapshottedAt: string): QuestionSnapshot {
     originalQuestionId: q.id,
     sourceVersion: 1,
     snapshottedAt,
+    ...(section ? { sectionId: section.id, sectionName: section.name } : {}),
   } as QuestionSnapshot;
 }
 

@@ -14,6 +14,8 @@
  *     the same campus as the shift.
  */
 
+import type { ExamOrderStrategy } from "@/features/exam-forms/data/types";
+
 export type ShiftStatus =
   | "draft"
   | "scheduled"
@@ -190,6 +192,11 @@ export interface ExamShift {
   /** Optional scoring overlay — defaults to even-distribution on 10 if absent
    *  (back-compat for shifts created before the scoring step existed). */
   scoring?: ScoringConfig;
+
+  /** Question ordering for each đề. Absent → legacy "shuffle-all". */
+  orderStrategy?: ExamOrderStrategy;
+  /** Show mạch/phần headings at runtime (only with "by-section"). */
+  showSectionHeadings?: boolean;
 
   /** How much of their result a student is allowed to see after the shift
    *  ends. Teachers and admins always see everything via /reports. */

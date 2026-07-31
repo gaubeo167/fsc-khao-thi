@@ -45,7 +45,25 @@ export type QuestionSnapshot = Question & {
   sourceVersion: number;
   /** When this snapshot was frozen. */
   snapshottedAt: string;
+  /** Section (mạch kiến thức / phần) this question belongs to within the
+   *  exam. Set only when the form was materialized with
+   *  orderStrategy="by-section" — questions stay grouped by section and
+   *  the runtime shows `sectionName` as a heading. Absent for
+   *  "shuffle-all" (there are no meaningful sections then). */
+  sectionId?: string;
+  sectionName?: string;
 };
+
+/**
+ * How questions are ordered within each variant:
+ *   - "by-section": keep the blueprint's mạch/phần order (1-2-3) and
+ *     shuffle only WITHIN each section → preserves the exam structure
+ *     (Phần I trắc nghiệm, Phần II đúng/sai …) the way teachers author it.
+ *   - "shuffle-all": one global shuffle across every question (legacy) —
+ *     maximal randomness, but sections/headings are meaningless so none
+ *     are shown.
+ */
+export type ExamOrderStrategy = "by-section" | "shuffle-all";
 
 export interface ExamFormVariant {
   /** UUID for this variant within the form. Used by attempts to pin
@@ -88,6 +106,13 @@ export interface ExamForm {
   durationMinutes: number;
 
   variants: ExamFormVariant[];
+
+  /** How questions were ordered within each variant. Defaults to
+   *  "shuffle-all" for legacy forms materialized before this field. */
+  orderStrategy?: ExamOrderStrategy;
+  /** Whether the runtime shows section (mạch/phần) headings. Only ever
+   *  true together with orderStrategy="by-section". */
+  showSectionHeadings?: boolean;
 
   /** SHA-256 hex of `JSON.stringify({maxScore, durationMinutes, variants})`
    *  using a stable key ordering. Any direct DB tamper changes this
