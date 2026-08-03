@@ -12,6 +12,8 @@ import { RenderedContent } from "@/features/question-bank/components/rendered-co
 import { findQuestionType } from "@/features/question-bank/data/question-types";
 import type { Question } from "@/features/question-bank/data/seed-questions";
 import { ViewQuestionDialog } from "@/features/question-bank/dialogs/view-question-dialog";
+import { TOC_LEVELS } from "@/features/subjects/data/seed-toc";
+import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -54,12 +56,63 @@ export function PickQuestionsDialog({
   );
   const [hideLocked, setHideLocked] = useState(true);
   const [previewing, setPreviewing] = useState<Question | null>(null);
+  // Mục lục filter — chọn Chương / Chủ đề / CP để lọc câu hỏi theo mục lục.
+  const [tocFilter, setTocFilter] = useState<string>("");
+
+  const tocNodes = useSubjectsStore((s) => s.tocNodes);
+  // Scope the TOC to the pool's subject+grade (pool is already pre-filtered
+  // to one môn + khối). Build a flat, indented option list + a per-node set
+  // of descendant ids so picking a node also matches its children.
+  const { tocOptions, descOf } = useMemo(() => {
+    const subjectId = pool[0]?.subjectId;
+    const gradeId = pool[0]?.gradeId ?? null;
+    const scoped = tocNodes.filter(
+      (n) => n.subjectId === subjectId && n.gradeId === gradeId,
+    );
+    if (scoped.length === 0) {
+      return { tocOptions: [] as Array<{ id: string; label: string; depth: number; count: number }>, descOf: new Map<string, Set<string>>() };
+    }
+    const childrenOf = new Map<string | null, typeof scoped>();
+    for (const n of scoped) {
+      const l = childrenOf.get(n.parentId) ?? [];
+      l.push(n);
+      childrenOf.set(n.parentId, l);
+    }
+    for (const l of childrenOf.values()) l.sort((a, b) => a.order - b.order);
+
+    const descMap = new Map<string, Set<string>>();
+    const build = (id: string): Set<string> => {
+      const cached = descMap.get(id);
+      if (cached) return cached;
+      const set = new Set<string>([id]);
+      for (const c of childrenOf.get(id) ?? []) for (const d of build(c.id)) set.add(d);
+      descMap.set(id, set);
+      return set;
+    };
+    const countByToc = new Map<string, number>();
+    for (const q of pool) {
+      if (q.tocNodeId) countByToc.set(q.tocNodeId, (countByToc.get(q.tocNodeId) ?? 0) + 1);
+    }
+    const options: Array<{ id: string; label: string; depth: number; count: number }> = [];
+    const walk = (parentId: string | null, depth: number) => {
+      for (const c of childrenOf.get(parentId) ?? []) {
+        let count = 0;
+        for (const nid of build(c.id)) count += countByToc.get(nid) ?? 0;
+        options.push({ id: c.id, label: c.name, depth, count });
+        walk(c.id, depth + 1);
+      }
+    };
+    walk(null, 0);
+    return { tocOptions: options, descOf: descMap };
+  }, [tocNodes, pool]);
 
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
+    const allow = tocFilter ? descOf.get(tocFilter) : null;
     return pool.filter((q) => {
       if (hideLocked && excludedSet.has(q.id)) return false;
       if (difficulty !== "all" && q.difficulty !== difficulty) return false;
+      if (allow && !(q.tocNodeId && allow.has(q.tocNodeId))) return false;
       if (needle) {
         const tagsText = (q.tags ?? []).join(" ");
         const haystack = `${q.id} ${q.content} ${tagsText}`.toLowerCase();
@@ -67,7 +120,13 @@ export function PickQuestionsDialog({
       }
       return true;
     });
-  }, [pool, difficulty, search, hideLocked, excludedSet]);
+  }, [pool, difficulty, search, hideLocked, excludedSet, tocFilter, descOf]);
+
+  function selectAllFiltered() {
+    const next = new Set(selected);
+    for (const q of filtered) if (!excludedSet.has(q.id)) next.add(q.id);
+    setSelected(next);
+  }
 
   const lockedCount = useMemo(
     () => pool.filter((q) => excludedSet.has(q.id)).length,
@@ -142,6 +201,30 @@ export function PickQuestionsDialog({
               <option value="medium">Thông hiểu (TH)</option>
               <option value="hard">Vận dụng cao (VDC)</option>
             </Select>
+            {tocOptions.length > 0 && (
+              <Select
+                value={tocFilter}
+                onChange={(e) => setTocFilter(e.target.value)}
+                className="h-9 min-w-[220px]"
+                title="Lọc câu hỏi theo mục lục (Chương / Chủ đề / CP)"
+              >
+                <option value="">Mục lục: tất cả</option>
+                {tocOptions.map((o) => {
+                  const lvl = TOC_LEVELS[Math.min(o.depth, TOC_LEVELS.length - 1)]!;
+                  return (
+                    <option key={o.id} value={o.id}>
+                      {"— ".repeat(o.depth)}[{lvl.short}] {o.label} ({o.count})
+                    </option>
+                  );
+                })}
+              </Select>
+            )}
+            {tocFilter && filtered.length > 0 && (
+              <Button size="sm" variant="outline" onClick={selectAllFiltered}>
+                <Check className="h-3.5 w-3.5" />
+                Chọn tất cả {filtered.length} câu trong mục này
+              </Button>
+            )}
             {lockedCount > 0 && (
               <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] font-semibold text-amber-700">
                 <input
