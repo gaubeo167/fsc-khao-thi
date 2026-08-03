@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { useAuthStore } from "@/features/auth/state/auth-store";
 import { useCampusStore } from "@/features/campus/state/campus-store";
+import { useGradesStore } from "@/features/grades/state/grades-store";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import { authHeaders } from "@/lib/api-client";
 
@@ -32,7 +33,6 @@ interface Props {
 interface ReviewItem extends ParsedBankQuestion {
   matchedNodeId: string | null;
   matchedNodeName: string | null;
-  matchedGradeId: string | null;
   issues: string[]; // parser warnings + "chuyên đề chưa có trong mục lục"
 }
 
@@ -59,10 +59,12 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
   const session = useAuthStore((s) => s.session);
   const subjects = useSubjectsStore((s) => s.subjects);
   const tocNodes = useSubjectsStore((s) => s.tocNodes);
+  const grades = useGradesStore((s) => s.grades);
   const createQuestion = useQuestionsStore((s) => s.create);
   const activeCampusId = useCampusStore((s) => s.activeCampusId);
 
   const [subjectId, setSubjectId] = useState("");
+  const [gradeId, setGradeId] = useState("");
   const [state, setState] = useState<State>({ kind: "idle" });
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -73,19 +75,17 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
     }
   }, [open]);
 
-  // code → node for the chosen SUBJECT (any grade). The code already
-  // encodes the grade (SI10 = Sinh Khối 10), so we match subject-wide and
-  // take the grade from the matched mục lục node — the teacher only has to
-  // pick the right môn, not guess the khối.
+  // code → node for the chosen Môn + Khối. Each khối has its OWN khung
+  // kiến thức (SI10 ≠ SI11 …), so matching MUST be scoped to the grade.
   const codeIndex = useMemo(() => {
-    const m = new Map<string, { id: string; name: string; gradeId: string | null }>();
+    const m = new Map<string, { id: string; name: string }>();
     for (const n of tocNodes) {
-      if (n.subjectId === subjectId && n.code) {
-        m.set(n.code, { id: n.id, name: n.name, gradeId: n.gradeId });
+      if (n.subjectId === subjectId && n.gradeId === gradeId && n.code) {
+        m.set(n.code, { id: n.id, name: n.name });
       }
     }
     return m;
-  }, [tocNodes, subjectId]);
+  }, [tocNodes, subjectId, gradeId]);
 
   const review: ReviewItem[] = useMemo(() => {
     if (state.kind !== "review") return [];
@@ -94,14 +94,13 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
       const issues = [...q.warnings];
       if (!match) {
         issues.push(
-          `Mã chuyên đề "${q.chuyenDeCode}" chưa có trong mục lục môn đã chọn (import khung kiến thức trước).`,
+          `Mã chuyên đề "${q.chuyenDeCode}" chưa có trong mục lục Môn + Khối đã chọn.`,
         );
       }
       return {
         ...q,
         matchedNodeId: match?.id ?? null,
         matchedNodeName: match?.name ?? null,
-        matchedGradeId: match?.gradeId ?? null,
         issues,
       };
     });
@@ -116,8 +115,8 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
       setState({ kind: "error", message: "Chỉ hỗ trợ file Word .docx." });
       return;
     }
-    if (!subjectId) {
-      setState({ kind: "error", message: "Chọn Môn học trước khi tải đề." });
+    if (!subjectId || !gradeId) {
+      setState({ kind: "error", message: "Chọn Môn học và Khối trước khi tải đề." });
       return;
     }
     setState({ kind: "loading", fileName: file.name });
@@ -160,9 +159,7 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
       const base = {
         content: q.content,
         subjectId,
-        // Khối lấy theo ĐÚNG node mục lục của trường (không suy từ mã).
-        // Chỉ câu đã khớp mục lục mới được import nên luôn có giá trị.
-        gradeId: q.matchedGradeId ?? null,
+        gradeId,
         tocNodeId: q.matchedNodeId,
         difficulty: q.difficulty,
         tags: [] as string[],
@@ -239,22 +236,34 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
         </header>
 
         <div className="space-y-4 px-6 py-5">
-          {/* Subject context — khối tự lấy theo mục lục đã tạo (mã chuyên
-              đề đã gắn khối của trường), không cần chọn thủ công. */}
-          <div className="space-y-1.5">
-            <Label className="text-[13px] font-medium text-foreground/80">Môn học</Label>
-            <Select value={subjectId} onChange={(e) => setSubjectId(e.target.value)}>
-              <option value="">— Chọn môn —</option>
-              {subjects.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </Select>
-            <p className="text-[11.5px] text-muted-foreground">
-              Khối được lấy tự động theo mục lục môn học (khối trường đang lưu),
-              không cần chọn.
-            </p>
+          {/* Môn + Khối — mỗi khối có khung kiến thức riêng nên phải chọn
+              đúng khối chứa mục lục của đề này. */}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label className="text-[13px] font-medium text-foreground/80">Môn học</Label>
+              <Select value={subjectId} onChange={(e) => setSubjectId(e.target.value)}>
+                <option value="">— Chọn môn —</option>
+                {subjects.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-[13px] font-medium text-foreground/80">Khối</Label>
+              <Select value={gradeId} onChange={(e) => setGradeId(e.target.value)}>
+                <option value="">— Chọn khối —</option>
+                {grades.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
+                  </option>
+                ))}
+              </Select>
+              <p className="text-[11px] text-muted-foreground">
+                Chọn đúng khối đã tạo mục lục cho đề này.
+              </p>
+            </div>
           </div>
 
           {!review_ && (
