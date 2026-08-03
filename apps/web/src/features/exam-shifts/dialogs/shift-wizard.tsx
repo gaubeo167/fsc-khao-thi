@@ -2123,18 +2123,64 @@ function PackageList({
   pickPackage: (id: string) => void;
 }) {
   const generated = useGeneratedStore((s) => s.generated);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 8;
+
+  // Ordering: gói đã sinh đề (chọn được) lên trước, rồi MỚI TẠO lên đầu.
+  // Search lọc theo tên gói. All packages here are already approved + scoped.
+  const sorted = useMemo(() => {
+    const isReady = (id: string) => generated.some((g) => g.packageId === id);
+    const q = search.trim().toLowerCase();
+    return packages
+      .filter((p) => (q ? p.name.toLowerCase().includes(q) : true))
+      .sort((a, b) => {
+        const ra = isReady(a.id) ? 0 : 1;
+        const rb = isReady(b.id) ? 0 : 1;
+        if (ra !== rb) return ra - rb; // ready first
+        // newest created first
+        if (a.createdAt !== b.createdAt) return a.createdAt < b.createdAt ? 1 : -1;
+        return a.name.localeCompare(b.name, "vi");
+      });
+  }, [packages, generated, search]);
+
+  const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount - 1);
+  const pageItems = sorted.slice(
+    safePage * PAGE_SIZE,
+    safePage * PAGE_SIZE + PAGE_SIZE,
+  );
+
   return (
     <section>
-      <p
-        className={cn(
-          "mb-2 text-[11px] font-bold uppercase tracking-[0.06em]",
-          highlighted ? "text-emerald-700" : "text-foreground/65",
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <p
+          className={cn(
+            "text-[11px] font-bold uppercase tracking-[0.06em]",
+            highlighted ? "text-emerald-700" : "text-foreground/65",
+          )}
+        >
+          {title}
+        </p>
+        {packages.length > 5 && (
+          <Input
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(0);
+            }}
+            placeholder="Tìm gói đề theo tên…"
+            className="h-8 w-full max-w-[220px] text-[12.5px]"
+          />
         )}
-      >
-        {title}
-      </p>
+      </div>
+      {sorted.length === 0 ? (
+        <p className="rounded-lg border border-dashed bg-muted/20 px-3 py-4 text-center text-[12.5px] text-muted-foreground">
+          Không tìm thấy gói đề nào khớp “{search.trim()}”.
+        </p>
+      ) : null}
       <ul className="space-y-2">
-        {packages.map((p) => {
+        {pageItems.map((p) => {
           const bp = blueprints.find((b) => b.id === p.blueprintId);
           const subj = bp ? subjects.find((s) => s.id === bp.subjectId) : null;
           const gr = bp ? grades.find((g) => g.id === bp.gradeId) : null;
@@ -2228,6 +2274,33 @@ function PackageList({
           );
         })}
       </ul>
+      {pageCount > 1 && (
+        <div className="mt-3 flex items-center justify-between gap-2">
+          <p className="text-[12px] text-muted-foreground">
+            Trang {safePage + 1}/{pageCount} · {sorted.length} gói
+          </p>
+          <div className="flex items-center gap-1.5">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={safePage === 0}
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+            >
+              ← Trước
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={safePage >= pageCount - 1}
+              onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+            >
+              Sau →
+            </Button>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
