@@ -1,8 +1,8 @@
 "use client";
 
 import { zodResolverSafe } from "@/lib/zod-resolver";
-import { Check, FileText, X } from "lucide-react";
-import { useEffect } from "react";
+import { Check, FileText, PlayCircle, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 
@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 
 import { ContentEditor } from "../components/content-editor";
+import { TryItPanel } from "../components/try-it-panel";
 import { TypeSpecificFields } from "../components/forms/type-specific-fields";
 import { findQuestionType, type QuestionType } from "../data/question-types";
 
@@ -148,8 +149,11 @@ export function AiQuestionEditDialog({ open, onOpenChange, initial, onSave }: Pr
     mode: "onBlur",
   });
 
+  const [tryingIt, setTryingIt] = useState(false);
+
   useEffect(() => {
     if (open) form.reset(initial);
+    else setTryingIt(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initial]);
 
@@ -182,6 +186,14 @@ export function AiQuestionEditDialog({ open, onOpenChange, initial, onSave }: Pr
             </p>
           </div>
         </header>
+
+        {tryingIt && (
+          <TryItPanel
+            values={form.getValues()}
+            type={initial.type}
+            onExit={() => setTryingIt(false)}
+          />
+        )}
 
         <div className="space-y-5 px-6 py-5">
           {/* Difficulty */}
@@ -265,10 +277,20 @@ export function AiQuestionEditDialog({ open, onOpenChange, initial, onSave }: Pr
             <X className="h-4 w-4" />
             Hủy
           </Button>
-          <Button type="button" onClick={submit}>
-            <Check className="h-4 w-4" />
-            Lưu thay đổi
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setTryingIt((t) => !t)}
+            >
+              <PlayCircle className="h-4 w-4" />
+              {tryingIt ? "Đóng làm thử" : "Làm thử"}
+            </Button>
+            <Button type="button" onClick={submit}>
+              <Check className="h-4 w-4" />
+              Lưu thay đổi
+            </Button>
+          </div>
         </footer>
       </DialogContent>
     </Dialog>
