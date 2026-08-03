@@ -60,7 +60,14 @@ export async function POST(req: Request) {
     const buffer = Buffer.from(await file.arrayBuffer());
     const { value: html } = await mammoth.convertToHtml(
       { buffer },
-      { styleMap: ["u => u"] }, // preserve underline = đáp án
+      {
+        styleMap: ["u => u"], // preserve underline = đáp án
+        // Inline images as base64 data URIs so câu hỏi có ảnh hiển thị đủ.
+        convertImage: mammoth.images.imgElement(async (image) => {
+          const data = await image.readAsBase64String();
+          return { src: `data:${image.contentType};base64,${data}` };
+        }),
+      },
     );
     marked = htmlToMarkedText(html);
   } catch (err) {

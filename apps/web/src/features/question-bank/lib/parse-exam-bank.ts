@@ -247,6 +247,13 @@ export function htmlToMarkedText(html: string): string {
   // Underline → sentinel markers (before any tag stripping).
   out = out.replace(/<u\b[^>]*>/gi, U_OPEN).replace(/<\/u>/gi, U_CLOSE);
 
+  // Images → markdown `![](data:…)` on their own line so RenderedContent
+  // shows them. (mammoth is asked to inline images as base64 data URIs.)
+  out = out.replace(
+    /<img\b[^>]*?src="([^"]+)"[^>]*?\/?>/gi,
+    (_m, src) => `\n![](${src})\n`,
+  );
+
   // Tabs split 2-per-line options into separate lines.
   out = out.replace(/\t/g, "\n");
 

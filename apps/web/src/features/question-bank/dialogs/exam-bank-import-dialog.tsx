@@ -5,6 +5,8 @@ import {
   Check,
   FileText,
   Loader2,
+  PencilLine,
+  Trash2,
   TriangleAlert,
   Upload,
 } from "lucide-react";
@@ -20,26 +22,32 @@ import { useGradesStore } from "@/features/grades/state/grades-store";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import { authHeaders } from "@/lib/api-client";
 
+import { RenderedContent } from "../components/rendered-content";
 import type { Question, QuestionStatus } from "../data/seed-questions";
 import type { ParsedBankQuestion } from "../lib/parse-exam-bank";
 import { useQuestionsStore } from "../state/questions-store";
+
+import {
+  AiQuestionEditDialog,
+  type AiEditValues,
+} from "./ai-question-edit-dialog";
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-/** A parsed question enriched with its TOC match + all blocking issues. */
-interface ReviewItem extends ParsedBankQuestion {
-  matchedNodeId: string | null;
-  matchedNodeName: string | null;
-  issues: string[]; // parser warnings + "chuyên đề chưa có trong mục lục"
+/** One reviewable question: the editable values + its chuyên-đề code. */
+interface ReviewEntry {
+  edit: AiEditValues;
+  chuyenDeCode: string;
+  rawCode: string;
 }
 
 type State =
   | { kind: "idle" }
   | { kind: "loading"; fileName: string }
-  | { kind: "review"; questions: ParsedBankQuestion[]; fileWarnings: string[] }
+  | { kind: "review"; entries: ReviewEntry[] }
   | { kind: "error"; message: string };
 
 const TYPE_LABEL: Record<string, string> = {
@@ -55,6 +63,55 @@ const DIFF_LABEL: Record<string, string> = {
   hard: "Vận dụng",
 };
 
+let idSeq = 0;
+const nid = (p: string) => `${p}-${(idSeq++).toString(36)}-${Date.now().toString(36)}`;
+
+/** ParsedBankQuestion → editable AiEditValues (same shape as direct entry). */
+function parsedToEditValues(q: ParsedBankQuestion): AiEditValues {
+  const base: AiEditValues = {
+    type: q.qType,
+    content: q.content,
+    difficulty: q.difficulty,
+  };
+  if (q.qType === "mcq-single" || q.qType === "mcq-multi") {
+    base.options = q.options.map((o) => ({
+      id: nid("opt"),
+      content: o.content,
+      isCorrect: o.isCorrect,
+    }));
+  } else if (q.qType === "multi-tf") {
+    base.subQuestions = q.subQuestions.map((s) => ({
+      id: nid("sub"),
+      statement: s.statement,
+      correctAnswer: s.correctAnswer,
+    }));
+  } else if (q.qType === "short-answer") {
+    base.acceptedAnswers = [...q.acceptedAnswers];
+    base.caseSensitive = false;
+  } else if (q.qType === "essay") {
+    base.rubric = [];
+    base.aiAssist = false;
+  }
+  return base;
+}
+
+/** Recompute blocking issues from the CURRENT (possibly edited) values, so
+ *  editing to add a missing answer clears the warning. */
+function computeIssues(v: AiEditValues, matched: boolean): string[] {
+  const out: string[] = [];
+  if (!matched) out.push("Mã chuyên đề chưa có trong mục lục Môn + Khối đã chọn.");
+  if (!v.content?.trim()) out.push("Thiếu nội dung câu hỏi.");
+  if (v.type === "mcq-single" || v.type === "mcq-multi") {
+    if (!v.options || v.options.length < 2) out.push("Cần ít nhất 2 phương án.");
+    else if (!v.options.some((o) => o.isCorrect)) out.push("Chưa chọn đáp án đúng.");
+  } else if (v.type === "multi-tf") {
+    if (!v.subQuestions || v.subQuestions.length === 0) out.push("Thiếu các ý Đúng/Sai.");
+  } else if (v.type === "short-answer") {
+    if (!v.acceptedAnswers || v.acceptedAnswers.length === 0) out.push("Thiếu đáp án (<Key=…>).");
+  }
+  return out;
+}
+
 export function ExamBankImportDialog({ open, onOpenChange }: Props) {
   const session = useAuthStore((s) => s.session);
   const subjects = useSubjectsStore((s) => s.subjects);
@@ -66,17 +123,18 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
   const [subjectId, setSubjectId] = useState("");
   const [gradeId, setGradeId] = useState("");
   const [state, setState] = useState<State>({ kind: "idle" });
+  const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) {
       setState({ kind: "idle" });
+      setEditingIdx(null);
       setSaveError(null);
     }
   }, [open]);
 
-  // code → node for the chosen Môn + Khối. Each khối has its OWN khung
-  // kiến thức (SI10 ≠ SI11 …), so matching MUST be scoped to the grade.
+  // code → { id, name } for the chosen Môn + Khối (mỗi khối có khung riêng).
   const codeIndex = useMemo(() => {
     const m = new Map<string, { id: string; name: string }>();
     for (const n of tocNodes) {
@@ -87,27 +145,22 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
     return m;
   }, [tocNodes, subjectId, gradeId]);
 
-  const review: ReviewItem[] = useMemo(() => {
-    if (state.kind !== "review") return [];
-    return state.questions.map((q) => {
-      const match = codeIndex.get(q.chuyenDeCode) ?? null;
-      const issues = [...q.warnings];
-      if (!match) {
-        issues.push(
-          `Mã chuyên đề "${q.chuyenDeCode}" chưa có trong mục lục Môn + Khối đã chọn.`,
-        );
-      }
-      return {
-        ...q,
-        matchedNodeId: match?.id ?? null,
-        matchedNodeName: match?.name ?? null,
-        issues,
-      };
-    });
-  }, [state, codeIndex]);
-
-  const validItems = review.filter((r) => r.issues.length === 0);
-  const flaggedItems = review.filter((r) => r.issues.length > 0);
+  const entries = state.kind === "review" ? state.entries : [];
+  const enriched = useMemo(
+    () =>
+      entries.map((e) => {
+        const match = codeIndex.get(e.chuyenDeCode) ?? null;
+        return {
+          ...e,
+          matchedNodeId: match?.id ?? null,
+          matchedNodeName: match?.name ?? null,
+          issues: computeIssues(e.edit, !!match),
+        };
+      }),
+    [entries, codeIndex],
+  );
+  const validCount = enriched.filter((e) => e.issues.length === 0).length;
+  const flaggedCount = enriched.length - validCount;
 
   async function handleFile(file: File | undefined) {
     if (!file) return;
@@ -133,10 +186,14 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
         setState({ kind: "error", message: data.message ?? "Lỗi không xác định" });
         return;
       }
+      const parsed = data.questions as ParsedBankQuestion[];
       setState({
         kind: "review",
-        questions: data.questions as ParsedBankQuestion[],
-        fileWarnings: (data.warnings as string[]) ?? [],
+        entries: parsed.map((q) => ({
+          edit: parsedToEditValues(q),
+          chuyenDeCode: q.chuyenDeCode,
+          rawCode: q.rawCode,
+        })),
       });
     } catch (err) {
       setState({
@@ -144,6 +201,24 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
         message: err instanceof Error ? err.message : "Không kết nối được tới server",
       });
     }
+  }
+
+  function updateEntry(idx: number, edit: AiEditValues) {
+    setState((s) =>
+      s.kind === "review"
+        ? {
+            ...s,
+            entries: s.entries.map((e, i) => (i === idx ? { ...e, edit } : e)),
+          }
+        : s,
+    );
+  }
+  function removeEntry(idx: number) {
+    setState((s) =>
+      s.kind === "review"
+        ? { ...s, entries: s.entries.filter((_, i) => i !== idx) }
+        : s,
+    );
   }
 
   function importValid(target: "personal" | "campus") {
@@ -155,13 +230,16 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
       target === "personal" ? null : session.campusId ?? activeCampusId ?? null;
     const status: QuestionStatus = target === "personal" ? "approved" : "pending";
 
-    for (const q of validItems) {
+    for (const e of enriched) {
+      if (e.issues.length > 0) continue;
+      const v = e.edit;
       const base = {
-        content: q.content,
+        content: v.content,
+        explanation: v.explanation && v.explanation.trim() ? v.explanation : undefined,
         subjectId,
         gradeId,
-        tocNodeId: q.matchedNodeId,
-        difficulty: q.difficulty,
+        tocNodeId: e.matchedNodeId,
+        difficulty: v.difficulty,
         tags: [] as string[],
         kho: target,
         campusId: resolvedCampusId,
@@ -172,40 +250,45 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
         rejectionNote: null,
       };
       let toCreate: Omit<Question, "id" | "createdAt" | "updatedAt"> | null = null;
-      const stamp = `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
-      if (q.qType === "mcq-single" || q.qType === "mcq-multi") {
+      if (v.type === "mcq-single" || v.type === "mcq-multi") {
         toCreate = {
           ...base,
-          type: q.qType,
-          options: q.options.map((o, i) => ({
-            id: `opt-${stamp}-${i}`,
+          type: v.type,
+          options: (v.options ?? []).map((o) => ({
+            id: o.id,
             content: o.content,
             isCorrect: o.isCorrect,
           })),
         } as Omit<Question, "id" | "createdAt" | "updatedAt">;
-      } else if (q.qType === "multi-tf") {
+      } else if (v.type === "multi-tf") {
         toCreate = {
           ...base,
           type: "multi-tf",
-          subQuestions: q.subQuestions.map((s, i) => ({
-            id: `sub-${stamp}-${i}`,
+          subQuestions: (v.subQuestions ?? []).map((s) => ({
+            id: s.id,
             statement: s.statement,
             correctAnswer: s.correctAnswer,
           })),
         } as Omit<Question, "id" | "createdAt" | "updatedAt">;
-      } else if (q.qType === "short-answer") {
+      } else if (v.type === "short-answer") {
         toCreate = {
           ...base,
           type: "short-answer",
-          acceptedAnswers: q.acceptedAnswers,
-          caseSensitive: false,
+          acceptedAnswers: v.acceptedAnswers ?? [],
+          caseSensitive: v.caseSensitive ?? false,
         } as Omit<Question, "id" | "createdAt" | "updatedAt">;
-      } else if (q.qType === "essay") {
+      } else if (v.type === "essay") {
         toCreate = {
           ...base,
           type: "essay",
-          rubric: [],
-          aiAssist: false,
+          rubric: (v.rubric ?? []).map((r) => ({
+            id: r.id,
+            label: r.label,
+            points: r.points,
+          })),
+          wordMin: v.wordMin,
+          wordMax: v.wordMax,
+          aiAssist: v.aiAssist ?? false,
         } as Omit<Question, "id" | "createdAt" | "updatedAt">;
       }
       if (toCreate) createQuestion(toCreate);
@@ -213,7 +296,8 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
     onOpenChange(false);
   }
 
-  const review_ = state.kind === "review";
+  const reviewing = state.kind === "review";
+  const editing = editingIdx !== null ? enriched[editingIdx] : null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -228,16 +312,14 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
           <div className="min-w-0 flex-1">
             <h2 className="text-section-title">Upload đề vào ngân hàng câu hỏi</h2>
             <p className="text-meta mt-0.5">
-              Tải file .docx theo mẫu (mã dạng [SI10.02.2.D05.a]). Hệ tự nhận
-              chuyên đề, dạng câu, độ khó, đáp án (gạch chân) → xem lại & duyệt
-              để lưu vào kho theo từng chuyên đề.
+              Tải file .docx theo mẫu (mã [SI10.02.2.D05.a]). Hệ tự nhận chuyên
+              đề, dạng câu, độ khó, đáp án (gạch chân) → xem lại, chỉnh sửa rồi
+              duyệt để lưu vào kho theo từng chuyên đề.
             </p>
           </div>
         </header>
 
         <div className="space-y-4 px-6 py-5">
-          {/* Môn + Khối — mỗi khối có khung kiến thức riêng nên phải chọn
-              đúng khối chứa mục lục của đề này. */}
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label className="text-[13px] font-medium text-foreground/80">Môn học</Label>
@@ -266,7 +348,7 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
             </div>
           </div>
 
-          {!review_ && (
+          {!reviewing && state.kind !== "loading" && (
             <>
               <FormatGuide />
               <label
@@ -317,15 +399,15 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
             </div>
           )}
 
-          {review_ && (
+          {reviewing && (
             <div className="space-y-3">
               <div className="flex flex-wrap items-center gap-2 text-[12px]">
                 <span className="rounded-md bg-emerald-100 px-2 py-0.5 font-semibold text-emerald-700">
-                  {validItems.length} câu hợp lệ
+                  {validCount} câu hợp lệ
                 </span>
-                {flaggedItems.length > 0 && (
+                {flaggedCount > 0 && (
                   <span className="rounded-md bg-amber-100 px-2 py-0.5 font-semibold text-amber-700">
-                    {flaggedItems.length} câu cần sửa (bỏ qua khi import)
+                    {flaggedCount} câu cần sửa (bỏ qua khi import)
                   </span>
                 )}
                 <Button
@@ -339,14 +421,18 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
               </div>
 
               <ul className="space-y-2">
-                {review.map((q, i) => (
-                  <ReviewRow key={`${q.rawCode}-${i}`} q={q} index={i + 1} />
+                {enriched.map((e, i) => (
+                  <ReviewCard
+                    key={`${e.rawCode}-${i}`}
+                    index={i + 1}
+                    entry={e}
+                    onEdit={() => setEditingIdx(i)}
+                    onRemove={() => removeEntry(i)}
+                  />
                 ))}
               </ul>
 
-              {saveError && (
-                <p className="text-[12px] text-destructive-text">{saveError}</p>
-              )}
+              {saveError && <p className="text-[12px] text-destructive-text">{saveError}</p>}
             </div>
           )}
         </div>
@@ -355,21 +441,18 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             Hủy
           </Button>
-          {review_ ? (
+          {reviewing ? (
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"
                 onClick={() => importValid("personal")}
-                disabled={validItems.length === 0}
+                disabled={validCount === 0}
               >
-                Lưu {validItems.length} câu vào kho cá nhân
+                Lưu {validCount} câu vào kho cá nhân
               </Button>
-              <Button
-                onClick={() => importValid("campus")}
-                disabled={validItems.length === 0}
-              >
+              <Button onClick={() => importValid("campus")} disabled={validCount === 0}>
                 <Check className="h-4 w-4" />
-                Gửi duyệt kho campus ({validItems.length})
+                Gửi duyệt kho campus ({validCount})
               </Button>
             </div>
           ) : (
@@ -377,12 +460,41 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
           )}
         </footer>
       </DialogContent>
+
+      {editing && editingIdx !== null && (
+        <AiQuestionEditDialog
+          open
+          onOpenChange={(o) => {
+            if (!o) setEditingIdx(null);
+          }}
+          initial={editing.edit}
+          onSave={(values) => {
+            updateEntry(editingIdx, values);
+            setEditingIdx(null);
+          }}
+        />
+      )}
     </Dialog>
   );
 }
 
-function ReviewRow({ q, index }: { q: ReviewItem; index: number }) {
-  const ok = q.issues.length === 0;
+function ReviewCard({
+  index,
+  entry,
+  onEdit,
+  onRemove,
+}: {
+  index: number;
+  entry: ReviewEntry & {
+    matchedNodeId: string | null;
+    matchedNodeName: string | null;
+    issues: string[];
+  };
+  onEdit: () => void;
+  onRemove: () => void;
+}) {
+  const v = entry.edit;
+  const ok = entry.issues.length === 0;
   return (
     <li
       className={
@@ -393,57 +505,50 @@ function ReviewRow({ q, index }: { q: ReviewItem; index: number }) {
       <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
         <span className="font-mono text-[10px] text-slate-500">#{index}</span>
         <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] text-slate-600">
-          {q.rawCode}
+          {entry.rawCode}
         </span>
         <span className="rounded bg-indigo-100 px-1.5 py-0.5 font-semibold text-indigo-700">
-          {TYPE_LABEL[q.qType] ?? q.qType}
+          {TYPE_LABEL[v.type] ?? v.type}
         </span>
         <span className="rounded bg-sky-100 px-1.5 py-0.5 font-semibold text-sky-700">
-          {DIFF_LABEL[q.difficulty]}
+          {DIFF_LABEL[v.difficulty]}
         </span>
-        {q.matchedNodeName ? (
+        {entry.matchedNodeName ? (
           <span className="rounded bg-emerald-100 px-1.5 py-0.5 font-semibold text-emerald-700">
-            {q.chuyenDeCode} · {q.matchedNodeName}
+            {entry.chuyenDeCode} · {entry.matchedNodeName}
           </span>
         ) : (
           <span className="rounded bg-rose-100 px-1.5 py-0.5 font-semibold text-rose-700">
-            {q.chuyenDeCode} · không khớp mục lục
+            {entry.chuyenDeCode} · không khớp mục lục
           </span>
         )}
+        <div className="ml-auto flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={onEdit}
+            className="rounded-md border bg-card px-2 py-0.5 text-[11px] font-semibold text-primary hover:bg-primary/5"
+          >
+            <PencilLine className="inline h-3 w-3" /> Sửa
+          </button>
+          <button
+            type="button"
+            onClick={onRemove}
+            className="rounded-md border bg-card px-2 py-0.5 text-[11px] font-semibold text-destructive hover:bg-destructive/5"
+          >
+            <Trash2 className="inline h-3 w-3" /> Bỏ qua
+          </button>
+        </div>
       </div>
 
-      <p className="mt-1.5 line-clamp-2 text-[13px] text-foreground/90">{q.content}</p>
+      <div className="mt-2 rounded-md border bg-surface p-2 text-[13px]">
+        <RenderedContent content={v.content} />
+      </div>
 
-      {/* Answer preview */}
-      {(q.qType === "mcq-single" || q.qType === "mcq-multi") && (
-        <p className="mt-1 text-[12px] text-foreground/70">
-          Đáp án:{" "}
-          <span className="font-medium text-emerald-700">
-            {q.options
-              .filter((o) => o.isCorrect)
-              .map((o) => o.content)
-              .join(" | ") || "—"}
-          </span>{" "}
-          <span className="text-muted-foreground">({q.options.length} phương án)</span>
-        </p>
-      )}
-      {q.qType === "multi-tf" && (
-        <p className="mt-1 text-[12px] text-foreground/70">
-          Đúng/Sai:{" "}
-          {q.subQuestions
-            .map((s, i) => `${String.fromCharCode(97 + i)})${s.correctAnswer ? "Đ" : "S"}`)
-            .join(" ")}
-        </p>
-      )}
-      {q.qType === "short-answer" && (
-        <p className="mt-1 text-[12px] text-foreground/70">
-          Đáp án: <span className="font-medium text-emerald-700">{q.acceptedAnswers.join(", ") || "—"}</span>
-        </p>
-      )}
+      <AnswerPreview v={v} />
 
-      {q.issues.length > 0 && (
-        <ul className="mt-1.5 space-y-0.5">
-          {q.issues.map((iss, i) => (
+      {entry.issues.length > 0 && (
+        <ul className="mt-2 space-y-0.5">
+          {entry.issues.map((iss, i) => (
             <li key={i} className="flex items-start gap-1.5 text-[11.5px] text-amber-800">
               <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
               {iss}
@@ -453,6 +558,75 @@ function ReviewRow({ q, index }: { q: ReviewItem; index: number }) {
       )}
     </li>
   );
+}
+
+function AnswerPreview({ v }: { v: AiEditValues }) {
+  if (v.type === "mcq-single" || v.type === "mcq-multi") {
+    return (
+      <ul className="mt-2 space-y-1 text-[12px]">
+        {(v.options ?? []).map((o, i) => (
+          <li
+            key={o.id}
+            className={
+              "flex items-center gap-2 rounded border bg-surface px-2 py-1 " +
+              (o.isCorrect ? "border-emerald-300 bg-emerald-50" : "")
+            }
+          >
+            <span
+              className={
+                "inline-flex h-5 w-5 items-center justify-center rounded text-[10px] font-bold " +
+                (o.isCorrect ? "bg-emerald-500 text-white" : "bg-muted text-foreground/70")
+              }
+            >
+              {String.fromCharCode(65 + i)}
+            </span>
+            <span className="min-w-0 flex-1">
+              <RenderedContent content={o.content} />
+            </span>
+            {o.isCorrect && (
+              <span className="rounded-full bg-emerald-500 px-1.5 py-0.5 text-[9px] font-bold uppercase text-white">
+                Đúng
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+    );
+  }
+  if (v.type === "multi-tf") {
+    return (
+      <ul className="mt-2 space-y-1 text-[12px]">
+        {(v.subQuestions ?? []).map((s, i) => (
+          <li key={s.id} className="flex items-start gap-2">
+            <span
+              className={
+                "mt-0.5 inline-flex h-5 min-w-[2.4rem] items-center justify-center rounded text-[10px] font-bold " +
+                (s.correctAnswer
+                  ? "bg-emerald-100 text-emerald-700"
+                  : "bg-rose-100 text-rose-700")
+              }
+            >
+              {String.fromCharCode(97 + i)}) {s.correctAnswer ? "Đúng" : "Sai"}
+            </span>
+            <span className="min-w-0 flex-1">
+              <RenderedContent content={s.statement} />
+            </span>
+          </li>
+        ))}
+      </ul>
+    );
+  }
+  if (v.type === "short-answer") {
+    return (
+      <p className="mt-2 text-[12px]">
+        Đáp án:{" "}
+        <span className="font-medium text-emerald-700">
+          {(v.acceptedAnswers ?? []).join(", ") || "—"}
+        </span>
+      </p>
+    );
+  }
+  return null;
 }
 
 function FormatGuide() {
@@ -474,9 +648,7 @@ function FormatGuide() {
           • Đáp án đúng: <b>gạch chân</b> (D nhiều gạch chân → chọn nhiều đáp án; F gạch
           chân = Đúng). Trả lời ngắn dùng <code className="rounded bg-muted px-1">&lt;Key=…&gt;</code>.
         </li>
-        <li>
-          • Mã chuyên đề phải khớp mục lục đã tạo (tab “Mục lục môn học”). Sai/thiếu sẽ bị cảnh báo.
-        </li>
+        <li>• Câu có ảnh: chèn ảnh trong Word như bình thường, hệ giữ nguyên ảnh.</li>
       </ul>
       <a
         href="/api/import/exam-bank-template"
