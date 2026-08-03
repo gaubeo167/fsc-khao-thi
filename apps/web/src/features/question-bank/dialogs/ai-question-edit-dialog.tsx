@@ -2,7 +2,7 @@
 
 import { zodResolverSafe } from "@/lib/zod-resolver";
 import { Check, FileText, PlayCircle, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 
@@ -150,21 +150,12 @@ export function AiQuestionEditDialog({ open, onOpenChange, initial, onSave }: Pr
   });
 
   const [tryingIt, setTryingIt] = useState(false);
-  const tryRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (open) form.reset(initial);
     else setTryingIt(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initial]);
-
-  // The "Làm thử" button lives in the footer; the panel renders at the top
-  // of the scrollable dialog, so scroll it into view when opened.
-  useEffect(() => {
-    if (tryingIt) {
-      tryRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  }, [tryingIt]);
 
   function submit() {
     form.handleSubmit((v) => {
@@ -195,18 +186,6 @@ export function AiQuestionEditDialog({ open, onOpenChange, initial, onSave }: Pr
             </p>
           </div>
         </header>
-
-        <div ref={tryRef} className="scroll-mt-2">
-          {tryingIt && (
-            <div className="px-6 pt-4">
-              <TryItPanel
-                values={form.getValues()}
-                type={initial.type}
-                onExit={() => setTryingIt(false)}
-              />
-            </div>
-          )}
-        </div>
 
         <div className="space-y-5 px-6 py-5">
           {/* Difficulty */}
@@ -291,13 +270,9 @@ export function AiQuestionEditDialog({ open, onOpenChange, initial, onSave }: Pr
             Hủy
           </Button>
           <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setTryingIt((t) => !t)}
-            >
+            <Button type="button" variant="outline" onClick={() => setTryingIt(true)}>
               <PlayCircle className="h-4 w-4" />
-              {tryingIt ? "Đóng làm thử" : "Làm thử"}
+              Làm thử
             </Button>
             <Button type="button" onClick={submit}>
               <Check className="h-4 w-4" />
@@ -306,6 +281,22 @@ export function AiQuestionEditDialog({ open, onOpenChange, initial, onSave }: Pr
           </div>
         </footer>
       </DialogContent>
+
+      {/* "Làm thử" as its own popup (không chèn lên phần chỉnh sửa) */}
+      <Dialog open={tryingIt} onOpenChange={setTryingIt}>
+        <DialogContent
+          className="max-w-2xl p-0 max-h-[92vh] overflow-y-auto"
+          srTitle="Làm thử câu hỏi"
+        >
+          <div className="p-4">
+            <TryItPanel
+              values={form.getValues()}
+              type={initial.type}
+              onExit={() => setTryingIt(false)}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }
