@@ -49,7 +49,12 @@ export function TocTagFields({ control, watch }: Props) {
     }
     for (const list of byParent.values()) list.sort((a, b) => a.order - b.order);
 
-    const out: Array<{ id: string; label: string; depth: number }> = [];
+    const out: Array<{
+      id: string;
+      label: string;
+      depth: number;
+      code?: string;
+    }> = [];
     function walk(parentId: string | null, depth: number) {
       const children = byParent.get(parentId) ?? [];
       for (const c of children) {
@@ -57,6 +62,7 @@ export function TocTagFields({ control, watch }: Props) {
           id: c.id,
           label: c.name,
           depth,
+          code: c.code,
         });
         walk(c.id, depth + 1);
       }
@@ -89,7 +95,9 @@ export function TocTagFields({ control, watch }: Props) {
                 const lvl = TOC_LEVELS[Math.min(n.depth, TOC_LEVELS.length - 1)]!;
                 return (
                   <option key={n.id} value={n.id}>
-                    {"—".repeat(n.depth)} {n.depth > 0 ? " " : ""}[{lvl.short}] {n.label}
+                    {"—".repeat(n.depth)} {n.depth > 0 ? " " : ""}[{lvl.short}]{" "}
+                    {n.code ? `${n.code} · ` : ""}
+                    {n.label}
                   </option>
                 );
               })}

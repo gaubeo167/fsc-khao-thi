@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronsDownUp,
   ChevronsUpDown,
+  FileText,
   ListTree,
   PencilLine,
   Plus,
@@ -58,8 +59,16 @@ const TocAiDialog = dynamic(
     ),
   { ssr: false, loading: () => null },
 );
+const FrameworkImportDialog = dynamic(
+  () =>
+    import("@/features/subjects/dialogs/framework-import-dialog").then(
+      (m) => m.FrameworkImportDialog,
+    ),
+  { ssr: false, loading: () => null },
+);
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import { PageHeader } from "@/features/shell/components/page-header";
+import type { FrameworkNode } from "@/lib/toc/parse-framework";
 import { cn } from "@/lib/utils";
 
 export default function SubjectsAdminPage() {
@@ -112,6 +121,7 @@ export default function SubjectsAdminPage() {
   const [deleteSubjectTarget, setDeleteSubjectTarget] = useState<Subject | null>(null);
   const [deleteTocTarget, setDeleteTocTarget] = useState<TocNode | null>(null);
   const [tocAiOpen, setTocAiOpen] = useState(false);
+  const [frameworkOpen, setFrameworkOpen] = useState(false);
 
   const filteredSubjects = useMemo(() => {
     return subjects.filter((s) => {
@@ -195,6 +205,48 @@ export default function SubjectsAdminPage() {
       }
     }
     insertLevel(tree, null, 0);
+  }
+
+  // Codes already present for this subject+grade — used by the framework
+  // import dialog to show mã mới / mã trùng and to merge without dupes.
+  const existingTocCodes = useMemo(() => {
+    const s = new Set<string>();
+    for (const n of tocNodes) {
+      if (n.subjectId === tocSubjectId && n.gradeId === tocGradeId && n.code) {
+        s.add(n.code);
+      }
+    }
+    return s;
+  }, [tocNodes, tocSubjectId, tocGradeId]);
+
+  // Merge an imported framework tree: reuse existing nodes by `code` as
+  // parents (so questions already attached stay intact) and only create
+  // nodes whose code is new.
+  function applyFrameworkTree(tree: FrameworkNode[]) {
+    const idByCode = new Map<string, string>();
+    for (const n of tocNodes) {
+      if (n.subjectId === tocSubjectId && n.gradeId === tocGradeId && n.code) {
+        idByCode.set(n.code, n.id);
+      }
+    }
+    function insert(nodes: FrameworkNode[], parentId: string | null) {
+      for (const node of nodes) {
+        let id = idByCode.get(node.code);
+        if (!id) {
+          const created = createTocNode({
+            subjectId: tocSubjectId,
+            gradeId: tocGradeId,
+            parentId,
+            name: node.name,
+            code: node.code,
+          });
+          id = created.id;
+          idByCode.set(node.code, id);
+        }
+        if (node.children && node.children.length > 0) insert(node.children, id);
+      }
+    }
+    insert(tree, null);
   }
 
   return (
@@ -451,6 +503,17 @@ export default function SubjectsAdminPage() {
                   <Button
                     size="sm"
                     variant="outline"
+                    onClick={() => setFrameworkOpen(true)}
+                    disabled={!tocSubject || !tocGrade}
+                    title="Tải file .docx khung kiến thức chuẩn → tự tạo Chương/Chuyên đề/Chỉ báo kèm mã"
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                    Tải khung kiến thức
+                  </Button>
+
+                  <Button
+                    size="sm"
+                    variant="outline"
                     onClick={() => setTocAiOpen(true)}
                     disabled={!tocSubject || !tocGrade}
                     title="Phân tích text/ảnh → mục lục 4 cấp"
@@ -592,6 +655,15 @@ export default function SubjectsAdminPage() {
         subjectName={tocSubject?.name}
         gradeName={tocGrade?.name}
         onApply={applyAiTree}
+      />
+
+      <FrameworkImportDialog
+        open={frameworkOpen}
+        onOpenChange={setFrameworkOpen}
+        subjectName={tocSubject?.name}
+        gradeName={tocGrade?.name}
+        existingCodes={existingTocCodes}
+        onApply={applyFrameworkTree}
       />
     </>
   );

@@ -6,6 +6,13 @@ export interface TocNode {
   parentId: string | null;
   name: string;
   order: number;
+  /**
+   * Optional standardised code from an imported "khung kiến thức" (e.g.
+   * "SI10.01" chương, "SI10.01.1" chuyên đề, "SI10.01.1.D01" chỉ báo).
+   * Used to dedupe on re-import and to reference outcomes. Absent for
+   * manually-created nodes.
+   */
+  code?: string;
 }
 
 /**

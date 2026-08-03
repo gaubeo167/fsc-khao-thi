@@ -249,6 +249,16 @@ function Branch({
             {level.short}.{siblingIndex + 1}
           </span>
 
+          {/* Standardised code (from an imported khung kiến thức) */}
+          {node.code && (
+            <span
+              className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10.5px] text-slate-600"
+              title="Mã khung kiến thức"
+            >
+              {node.code}
+            </span>
+          )}
+
           {/* Inline editable name */}
           <input
             ref={inputRef}
