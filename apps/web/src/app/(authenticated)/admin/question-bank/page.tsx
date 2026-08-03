@@ -50,6 +50,13 @@ const ImportWordDialog = dynamic(
     ),
   { ssr: false, loading: () => null },
 );
+const ExamBankImportDialog = dynamic(
+  () =>
+    import("@/features/question-bank/dialogs/exam-bank-import-dialog").then(
+      (m) => m.ExamBankImportDialog,
+    ),
+  { ssr: false, loading: () => null },
+);
 const ViewQuestionDialog = dynamic(
   () =>
     import("@/features/question-bank/dialogs/view-question-dialog").then(
@@ -153,6 +160,7 @@ export default function QuestionBankPage() {
   const [khoView, setKhoView] = useState<KhoView>("campus");
   const [editorOpen, setEditorOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [examBankOpen, setExamBankOpen] = useState(false);
   const [editing, setEditing] = useState<Question | null>(null);
   const [viewing, setViewing] = useState<Question | null>(null);
   const [deleting, setDeleting] = useState<Question | null>(null);
@@ -350,6 +358,20 @@ export default function QuestionBankPage() {
             </Button>
             <Button
               size="sm"
+              variant="outline"
+              onClick={() => setExamBankOpen(true)}
+              disabled={!canMutate}
+              title={
+                !canMutate
+                  ? "Chọn 1 campus để upload"
+                  : "Upload đề theo mã (tự nhận chuyên đề/dạng/độ khó, đáp án gạch chân)"
+              }
+            >
+              <FileText className="h-4 w-4" />
+              Upload đề theo mã
+            </Button>
+            <Button
+              size="sm"
               onClick={openCreate}
               disabled={!canMutate}
               title={!canMutate ? "Chọn 1 campus để tạo câu hỏi" : undefined}
@@ -529,6 +551,7 @@ export default function QuestionBankPage() {
         editing={editing}
       />
       <ImportWordDialog open={importOpen} onOpenChange={setImportOpen} />
+      <ExamBankImportDialog open={examBankOpen} onOpenChange={setExamBankOpen} />
       <ViewQuestionDialog question={viewing} onClose={() => setViewing(null)} />
 
       <ConfirmActionDialog

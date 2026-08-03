@@ -137,6 +137,31 @@ export function FrameworkImportDialog({
         </header>
 
         <div className="space-y-4 px-6 py-5">
+          {!result && state.kind !== "loading" && (
+            <div className="rounded-lg border bg-surface-2/60 px-4 py-3 text-[12.5px] leading-relaxed">
+              <p className="mb-1 font-semibold text-foreground/85">Quy ước file mẫu</p>
+              <ul className="space-y-0.5 text-foreground/75">
+                <li>
+                  • Chương: <code className="rounded bg-muted px-1">[SI10.01]: 1. Tên chương</code>.
+                </li>
+                <li>
+                  • Chuyên đề: <code className="rounded bg-muted px-1">1.1. Tên chuyên đề</code>.
+                </li>
+                <li>
+                  • Chỉ báo: dòng mã <code className="rounded bg-muted px-1">[SI10.01.1.D01]</code> rồi
+                  dòng nội dung ngay dưới.
+                </li>
+                <li>• SI10 = Môn + Khối (đổi theo môn của bạn). Mỗi node có mã riêng.</li>
+              </ul>
+              <a
+                href="/api/subjects/framework-template"
+                className="mt-2 inline-flex items-center gap-1 text-[12.5px] font-semibold text-primary underline"
+              >
+                <Upload className="h-3.5 w-3.5 rotate-180" />
+                Tải file mẫu (.docx)
+              </a>
+            </div>
+          )}
           {!result && (
             <label
               htmlFor="framework-file"
