@@ -10,6 +10,7 @@ import { subscribeMaterials } from "@/features/learning-materials/state/material
 import { subscribeHomework } from "@/features/homework/state/homework-store";
 import { subscribeHomeworkAttempts } from "@/features/homework/state/homework-attempts-store";
 import { subscribeBlueprints } from "@/features/exams/state/blueprints-store";
+import { subscribeGenerated } from "@/features/exams/state/generated-store";
 import { subscribePackages } from "@/features/exams/state/packages-store";
 import { subscribeGradesCatalog } from "@/features/grades/state/grades-store";
 import { subscribeGrading } from "@/features/grading/state/grading-store";
@@ -75,7 +76,13 @@ function startDataSubscriptions(session: AuthSession): Array<() => void> {
   //   • teaching — assignments map teachers → classes; no student screen
   //     reads them.
   if (!isStudent) {
-    subs.push(subscribeQuestions(), subscribeExamForms(), subscribeTeaching());
+    subs.push(
+      subscribeQuestions(),
+      subscribeExamForms(),
+      subscribeTeaching(),
+      // "Đã sinh đề" state — staff-only; the runtime uses exam_forms.
+      subscribeGenerated(),
+    );
   }
   return subs;
 }

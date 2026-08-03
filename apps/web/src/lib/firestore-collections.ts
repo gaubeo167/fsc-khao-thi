@@ -38,6 +38,7 @@ export const COLLECTIONS = {
   teachingAssignments: "teaching_assignments",
   proctorEvents: "proctor_events",
   examForms: "exam_forms",
+  generated: "generated_exams",
   auditEvents: "audit_events",
   learningMaterials: "learning_materials",
   homework: "homework",

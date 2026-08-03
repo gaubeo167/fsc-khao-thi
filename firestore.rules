@@ -200,6 +200,16 @@ service cloud.firestore {
       );
     }
 
+    // ───── /generated_exams — pre-generated đề (Đề 001, 002 …) ────────────
+    // Staff-only drafts a teacher creates from a package before making a
+    // shift; the shift wizard gates "đã sinh đề" on these. Students never
+    // read them (the runtime uses frozen exam_forms), and they may carry
+    // question ids so keep them out of student reach.
+    match /generated_exams/{id} {
+      allow read: if isTeacherOrAbove();
+      allow create, update, delete: if isTeacherOrAbove();
+    }
+
     // ───── /shifts — exam shifts (ca thi) ─────────────────────────────────
     // Anyone in the same campus can READ a shift. Per-student eligibility
     // (rooms[].studentIds) is checked in the UI on top of this gate — the
