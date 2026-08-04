@@ -31,6 +31,7 @@ import { useGradesStore } from "@/features/grades/state/grades-store";
 import type { Question } from "@/features/question-bank/data/seed-questions";
 import { useQuestionsStore } from "@/features/question-bank/state/questions-store";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
+import type { TocNode } from "@/features/subjects/data/seed-toc";
 
 import { DifficultyPills } from "../components/difficulty-pills";
 import type { BlueprintTopic, ExamBlueprint } from "../data/types";
@@ -71,6 +72,7 @@ export function BlueprintDialog({ open, onOpenChange, editing }: Props) {
     filterGradesByScope(allGrades, scope),
   );
   const allQuestions = useQuestionsStore((s) => s.questions);
+  const tocNodes = useSubjectsStore((s) => s.tocNodes);
   const createBlueprint = useBlueprintsStore((s) => s.create);
   const updateBlueprint = useBlueprintsStore((s) => s.update);
 
@@ -122,6 +124,23 @@ export function BlueprintDialog({ open, onOpenChange, editing }: Props) {
     () => indexQuestions(eligiblePool),
     [eligiblePool],
   );
+
+  // CP = leaf node của mục lục (không có node con). Dùng để nhóm câu đã bốc
+  // theo CP; câu gắn ở CĐ/Chương (có con) hoặc không gắn mục lục → "ngoài CP".
+  const leafInfo = useMemo(() => {
+    const scoped = tocNodes.filter(
+      (n) => n.subjectId === subjectId && n.gradeId === gradeId,
+    );
+    const parentIds = new Set(
+      scoped.map((n) => n.parentId).filter((p): p is string => !!p),
+    );
+    const byId = new Map(scoped.map((n) => [n.id, n]));
+    return {
+      byId,
+      isLeaf: (id: string | null | undefined) =>
+        !!id && byId.has(id) && !parentIds.has(id),
+    };
+  }, [tocNodes, subjectId, gradeId]);
 
   function addTopic() {
     setTopics([...topics, { id: newTopicId(), name: "", pickedQuestionIds: [] }]);
@@ -376,7 +395,14 @@ export function BlueprintDialog({ open, onOpenChange, editing }: Props) {
                           chọn từ kho nhà trường.
                         </p>
                       ) : (
-                        <DifficultyPills counts={counts} className="mt-2" />
+                        <>
+                          <DifficultyPills counts={counts} className="mt-2" />
+                          <TopicCpBreakdown
+                            topic={t}
+                            poolById={eligiblePoolById}
+                            leafInfo={leafInfo}
+                          />
+                        </>
                       )}
                     </li>
                   );
@@ -437,5 +463,78 @@ export function BlueprintDialog({ open, onOpenChange, editing }: Props) {
         />
       )}
     </>
+  );
+}
+
+/**
+ * Breakdown câu đã bốc theo CP (leaf mục lục). Câu gắn ở CĐ/Chương hoặc
+ * chưa gắn mục lục gộp vào "Ngoài CP".
+ */
+function TopicCpBreakdown({
+  topic,
+  poolById,
+  leafInfo,
+}: {
+  topic: BlueprintTopic;
+  poolById: Map<string, Question>;
+  leafInfo: {
+    byId: Map<string, TocNode>;
+    isLeaf: (id: string | null | undefined) => boolean;
+  };
+}) {
+  const groups = new Map<string, { name: string; code?: string; count: number }>();
+  let outside = 0;
+  for (const qid of topic.pickedQuestionIds) {
+    const q = poolById.get(qid);
+    if (!q) continue;
+    const nodeId = q.tocNodeId ?? null;
+    if (nodeId && leafInfo.isLeaf(nodeId)) {
+      const node = leafInfo.byId.get(nodeId)!;
+      const g = groups.get(nodeId) ?? { name: node.name, code: node.code, count: 0 };
+      g.count += 1;
+      groups.set(nodeId, g);
+    } else {
+      outside += 1;
+    }
+  }
+  const cps = [...groups.values()].sort((a, b) =>
+    (a.code ?? "").localeCompare(b.code ?? ""),
+  );
+  if (cps.length === 0 && outside === 0) return null;
+
+  return (
+    <div className="mt-2 rounded-lg border bg-surface-2/40 px-2.5 py-2">
+      <p className="mb-1 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-foreground/50">
+        Theo chủ điểm (CP)
+      </p>
+      <ul className="space-y-1">
+        {cps.map((c) => (
+          <li key={c.code ?? c.name} className="flex items-center gap-2 text-[12px]">
+            {c.code && (
+              <span className="shrink-0 rounded bg-emerald-50 px-1.5 py-0.5 font-mono text-[10px] text-emerald-700">
+                {c.code}
+              </span>
+            )}
+            <span className="min-w-0 flex-1 truncate text-foreground/80">{c.name}</span>
+            <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold tabular-nums text-emerald-700">
+              {c.count} câu
+            </span>
+          </li>
+        ))}
+        {outside > 0 && (
+          <li className="flex items-center gap-2 text-[12px]">
+            <span className="shrink-0 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+              Ngoài CP
+            </span>
+            <span className="min-w-0 flex-1 text-muted-foreground">
+              Câu chưa gắn chủ điểm cụ thể
+            </span>
+            <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold tabular-nums text-amber-700">
+              {outside} câu
+            </span>
+          </li>
+        )}
+      </ul>
+    </div>
   );
 }
