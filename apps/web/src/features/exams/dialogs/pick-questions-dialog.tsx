@@ -219,10 +219,15 @@ export function PickQuestionsDialog({
                 })}
               </Select>
             )}
-            {tocFilter && filtered.length > 0 && (
-              <Button size="sm" variant="outline" onClick={selectAllFiltered}>
+            {tocFilter && (
+              <Button
+                size="sm"
+                onClick={selectAllFiltered}
+                disabled={filtered.length === 0}
+                title="Thêm toàn bộ câu đã duyệt của mục lục đang chọn vào mạch này"
+              >
                 <Check className="h-3.5 w-3.5" />
-                Chọn tất cả {filtered.length} câu trong mục này
+                Bốc cả mục này ({filtered.length} câu)
               </Button>
             )}
             {lockedCount > 0 && (
