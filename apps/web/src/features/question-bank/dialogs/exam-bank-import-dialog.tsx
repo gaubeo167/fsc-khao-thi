@@ -136,10 +136,10 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
 
   // code → { id, name } for the chosen Môn + Khối (mỗi khối có khung riêng).
   const codeIndex = useMemo(() => {
-    const m = new Map<string, { id: string; name: string }>();
+    const m = new Map<string, { id: string; name: string; code: string }>();
     for (const n of tocNodes) {
       if (n.subjectId === subjectId && n.gradeId === gradeId && n.code) {
-        m.set(n.code, { id: n.id, name: n.name });
+        m.set(n.code, { id: n.id, name: n.name, code: n.code });
       }
     }
     return m;
@@ -149,11 +149,17 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
   const enriched = useMemo(
     () =>
       entries.map((e) => {
-        const match = codeIndex.get(e.chuyenDeCode) ?? null;
+        // Gắn vào node SÂU NHẤT khớp mã: thử CP (mã gồm cả .D05, bỏ độ khó)
+        // trước, không có thì lùi về CĐ. Nhờ vậy câu hỏi nằm ở CP nếu khung
+        // có chỉ báo tương ứng → thống kê & bốc theo CP.
+        const cpCode = e.rawCode.replace(/\.[a-c]$/i, "");
+        const match =
+          codeIndex.get(cpCode) ?? codeIndex.get(e.chuyenDeCode) ?? null;
         return {
           ...e,
           matchedNodeId: match?.id ?? null,
           matchedNodeName: match?.name ?? null,
+          matchedCode: match?.code ?? null,
           issues: computeIssues(e.edit, !!match),
         };
       }),
@@ -488,6 +494,7 @@ function ReviewCard({
   entry: ReviewEntry & {
     matchedNodeId: string | null;
     matchedNodeName: string | null;
+    matchedCode?: string | null;
     issues: string[];
   };
   onEdit: () => void;
@@ -515,7 +522,7 @@ function ReviewCard({
         </span>
         {entry.matchedNodeName ? (
           <span className="rounded bg-emerald-100 px-1.5 py-0.5 font-semibold text-emerald-700">
-            {entry.chuyenDeCode} · {entry.matchedNodeName}
+            {entry.matchedCode ?? entry.chuyenDeCode} · {entry.matchedNodeName}
           </span>
         ) : (
           <span className="rounded bg-rose-100 px-1.5 py-0.5 font-semibold text-rose-700">
