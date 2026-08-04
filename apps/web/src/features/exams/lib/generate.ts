@@ -79,13 +79,34 @@ export function generateExams(
     // Draw the matrix, bucketing by topic so we can preserve sections.
     const drawnByTopic = new Map<string, string[]>();
     for (const row of pkg.matrix) {
-      const pool = pools.get(row.topicId);
-      if (!pool) continue;
-      const drawn = [
-        ...drawN(pool.easy, row.easyCount, taken),
-        ...drawN(pool.medium, row.mediumCount, taken),
-        ...drawN(pool.hard, row.hardCount, taken),
-      ];
+      let drawn: string[] = [];
+      if (row.cpCounts) {
+        // CP mode: draw per chủ điểm (tocNodeId), then the "ngoài CP" bucket.
+        const topic = blueprint.topics.find((t) => t.id === row.topicId);
+        if (!topic) continue;
+        const cpSet = new Set(Object.keys(row.cpCounts));
+        for (const [nodeId, count] of Object.entries(row.cpCounts)) {
+          const cpPool = topic.pickedQuestionIds.filter(
+            (qid) => questionsById.get(qid)?.tocNodeId === nodeId,
+          );
+          drawn.push(...drawN(cpPool, count, taken));
+        }
+        if (row.outsideCount && row.outsideCount > 0) {
+          const outPool = topic.pickedQuestionIds.filter((qid) => {
+            const t = questionsById.get(qid)?.tocNodeId ?? null;
+            return !t || !cpSet.has(t);
+          });
+          drawn.push(...drawN(outPool, row.outsideCount, taken));
+        }
+      } else {
+        const pool = pools.get(row.topicId);
+        if (!pool) continue;
+        drawn = [
+          ...drawN(pool.easy, row.easyCount, taken),
+          ...drawN(pool.medium, row.mediumCount, taken),
+          ...drawN(pool.hard, row.hardCount, taken),
+        ];
+      }
       if (drawn.length === 0) continue;
       const prev = drawnByTopic.get(row.topicId) ?? [];
       drawnByTopic.set(row.topicId, [...prev, ...drawn]);

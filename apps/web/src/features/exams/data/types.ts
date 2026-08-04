@@ -54,6 +54,15 @@ export interface PackageMatrixRow {
   easyCount: number;
   mediumCount: number;
   hardCount: number;
+  /**
+   * Per-CP draw counts (leaf tocNode id → số câu bốc). Present when the
+   * mạch's questions are organised by chủ điểm (CP). When set, the exam
+   * generator draws by CP instead of by difficulty; `outsideCount` covers
+   * questions not attached to any CP. Absent → legacy difficulty matrix.
+   */
+  cpCounts?: Record<string, number>;
+  /** Số câu bốc từ nhóm "Ngoài CP" (câu chưa gắn chủ điểm). */
+  outsideCount?: number;
 }
 
 export type PackageStatus = "draft" | "pending" | "approved" | "rejected";

@@ -11,6 +11,7 @@ import { Select } from "@/components/ui/select";
 import { useAuthStore } from "@/features/auth/state/auth-store";
 import { useCampusStore } from "@/features/campus/state/campus-store";
 import { useQuestionsStore } from "@/features/question-bank/state/questions-store";
+import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import { cn } from "@/lib/utils";
 
 import { DifficultyPills } from "../components/difficulty-pills";
@@ -25,6 +26,7 @@ import {
   indexQuestions,
   validateMatrix,
 } from "../lib/blueprint-stats";
+import { buildLeafInfo, topicCpAvailability } from "../lib/cp-breakdown";
 import { useBlueprintsStore } from "../state/blueprints-store";
 import { usePackagesStore } from "../state/packages-store";
 
@@ -117,6 +119,59 @@ export function PackageDialog({
     [allQuestions],
   );
 
+  // CP availability per mạch — for the per-chủ-điểm draw matrix.
+  const tocNodes = useSubjectsStore((s) => s.tocNodes);
+  const cpByTopic = useMemo(() => {
+    const m = new Map<
+      string,
+      ReturnType<typeof topicCpAvailability>
+    >();
+    if (!resolvedBlueprint) return m;
+    const leaf = buildLeafInfo(
+      tocNodes,
+      resolvedBlueprint.subjectId,
+      resolvedBlueprint.gradeId,
+    );
+    for (const t of resolvedBlueprint.topics) {
+      m.set(t.id, topicCpAvailability(t.pickedQuestionIds, questionsIndex, leaf));
+    }
+    return m;
+  }, [resolvedBlueprint, tocNodes, questionsIndex]);
+
+  // A mạch is drawn by CP when it has at least one CP (leaf) with questions.
+  const topicHasCp = (topicId: string) =>
+    (cpByTopic.get(topicId)?.cps.length ?? 0) > 0;
+
+  function rowSubtotal(row: PackageMatrixRow): number {
+    if (topicHasCp(row.topicId)) {
+      const cps = cpByTopic.get(row.topicId)?.cps ?? [];
+      const cpSum = cps.reduce((s, c) => s + (row.cpCounts?.[c.nodeId] ?? 0), 0);
+      return cpSum + (row.outsideCount ?? 0);
+    }
+    return row.easyCount + row.mediumCount + row.hardCount;
+  }
+
+  const totalRequested = useMemo(
+    () => matrix.reduce((s, r) => s + rowSubtotal(r), 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [matrix, cpByTopic],
+  );
+
+  // Any CP / outside / difficulty count exceeding its available pool?
+  const cpValid = useMemo(() => {
+    for (const r of matrix) {
+      if (!topicHasCp(r.topicId)) continue;
+      const info = cpByTopic.get(r.topicId);
+      if (!info) continue;
+      for (const c of info.cps) {
+        if ((r.cpCounts?.[c.nodeId] ?? 0) > c.available) return false;
+      }
+      if ((r.outsideCount ?? 0) > info.outsideAvailable) return false;
+    }
+    return true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matrix, cpByTopic]);
+
   const blueprintTotals = useMemo(() => {
     if (!resolvedBlueprint) return { easy: 0, medium: 0, hard: 0 };
     return countBlueprintByDifficulty(resolvedBlueprint, questionsIndex);
@@ -143,6 +198,22 @@ export function PackageDialog({
       ),
     );
   }
+  function updateCp(topicId: string, nodeId: string, value: number) {
+    setMatrix((prev) =>
+      prev.map((r) =>
+        r.topicId === topicId
+          ? { ...r, cpCounts: { ...(r.cpCounts ?? {}), [nodeId]: Math.max(0, value) } }
+          : r,
+      ),
+    );
+  }
+  function updateOutside(topicId: string, value: number) {
+    setMatrix((prev) =>
+      prev.map((r) =>
+        r.topicId === topicId ? { ...r, outsideCount: Math.max(0, value) } : r,
+      ),
+    );
+  }
 
   function handleSubmit() {
     setError(null);
@@ -154,13 +225,11 @@ export function PackageDialog({
       setError("Vui lòng nhập tên gói đề.");
       return;
     }
-    if (!validation.ok) {
-      setError(
-        `Ma trận vượt quá số câu có sẵn ở ${validation.exceeded.length} ô. Giảm số lượng cho phù hợp.`,
-      );
+    if (!validation.ok || !cpValid) {
+      setError("Ma trận vượt quá số câu có sẵn. Giảm số lượng cho phù hợp.");
       return;
     }
-    if (validation.totalRequested === 0) {
+    if (totalRequested === 0) {
       setError("Tổng số câu trong ma trận phải lớn hơn 0.");
       return;
     }
@@ -173,6 +242,25 @@ export function PackageDialog({
         ? activeCampusId ?? null
         : session.campusId ?? null;
 
+    // Normalise CP-mode rows so cpCounts lists EVERY CP of the mạch (fill 0
+    // for untouched ones). The generator uses those keys to tell CP vs
+    // "ngoài CP" apart — a missing key would wrongly treat a CP's questions
+    // as outside.
+    const normalizedMatrix: PackageMatrixRow[] = matrix.map((r) => {
+      if (!topicHasCp(r.topicId)) return r;
+      const cps = cpByTopic.get(r.topicId)?.cps ?? [];
+      const cpCounts: Record<string, number> = {};
+      for (const c of cps) cpCounts[c.nodeId] = r.cpCounts?.[c.nodeId] ?? 0;
+      return {
+        topicId: r.topicId,
+        easyCount: 0,
+        mediumCount: 0,
+        hardCount: 0,
+        cpCounts,
+        outsideCount: r.outsideCount ?? 0,
+      };
+    });
+
     // Approval workflow: every package (regardless of creator role) starts
     // as `pending` and needs Admin campus approval before it can be bốc into
     // a ca thi. Any edit to an approved package knocks it back to `pending`
@@ -184,7 +272,7 @@ export function PackageDialog({
         name: name.trim(),
         blueprintId: resolvedBlueprint.id,
         duration: Number(duration) || resolvedBlueprint.duration,
-        matrix,
+        matrix: normalizedMatrix,
         ...(needsReapproval && {
           status: "pending" as const,
           approvedBy: null,
@@ -197,7 +285,7 @@ export function PackageDialog({
         name: name.trim(),
         blueprintId: resolvedBlueprint.id,
         duration: Number(duration) || resolvedBlueprint.duration,
-        matrix,
+        matrix: normalizedMatrix,
         campusId,
         ownerId: session.userId,
         ownerName: session.name ?? "—",
@@ -313,131 +401,118 @@ export function PackageDialog({
                 <span className="text-meta">
                   — Mỗi đề sinh ra sẽ chứa{" "}
                   <span className="font-semibold text-foreground/85">
-                    {validation.totalRequested}
+                    {totalRequested}
                   </span>{" "}
                   câu
                 </span>
               </div>
 
-              <div className="overflow-hidden rounded-xl border bg-card">
-                <table className="w-full border-collapse text-[13px]">
-                  <thead className="bg-surface-2 text-[11px] font-bold uppercase tracking-[0.06em] text-foreground/65">
-                    <tr>
-                      <th className="px-3 py-2 text-left">Mạch kiến thức</th>
-                      <th className="w-[110px] px-2 py-2 text-center text-emerald-700">
-                        NB
-                      </th>
-                      <th className="w-[110px] px-2 py-2 text-center text-amber-700">
-                        TH
-                      </th>
-                      <th className="w-[110px] px-2 py-2 text-center text-rose-700">
-                        VDC
-                      </th>
-                      <th className="w-[90px] px-3 py-2 text-right">Tổng/đề</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {resolvedBlueprint.topics.map((t) => {
-                      const row =
-                        matrix.find((r) => r.topicId === t.id) ?? {
-                          topicId: t.id,
-                          easyCount: 0,
-                          mediumCount: 0,
-                          hardCount: 0,
-                        };
-                      const avail = countTopicByDifficulty(t, questionsIndex);
-                      const subtotal =
-                        row.easyCount + row.mediumCount + row.hardCount;
-                      return (
-                        <tr
-                          key={t.id}
-                          className="border-t even:bg-surface-2/30"
-                        >
-                          <td className="px-3 py-2">
-                            <p className="font-medium text-foreground/85">
-                              {t.name || (
-                                <span className="italic text-muted-foreground">
-                                  (Chưa đặt tên)
+              <ul className="space-y-3">
+                {resolvedBlueprint.topics.map((t) => {
+                  const row = matrix.find((r) => r.topicId === t.id) ?? {
+                    topicId: t.id,
+                    easyCount: 0,
+                    mediumCount: 0,
+                    hardCount: 0,
+                  };
+                  const hasCp = topicHasCp(t.id);
+                  const info = cpByTopic.get(t.id);
+                  const availDiff = countTopicByDifficulty(t, questionsIndex);
+                  const subtotal = rowSubtotal(row);
+                  return (
+                    <li key={t.id} className="rounded-xl border bg-card p-3">
+                      <div className="mb-2 flex flex-wrap items-center gap-2">
+                        <p className="font-medium text-foreground/85">
+                          {t.name || (
+                            <span className="italic text-muted-foreground">
+                              (Chưa đặt tên)
+                            </span>
+                          )}
+                        </p>
+                        <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+                          {hasCp
+                            ? `${(info?.cps.reduce((s, c) => s + c.available, 0) ?? 0) + (info?.outsideAvailable ?? 0)} câu khả dụng`
+                            : `${availDiff.easy + availDiff.medium + availDiff.hard} câu khả dụng`}
+                        </span>
+                        <span className="ml-auto rounded-md bg-primary-soft px-2.5 py-0.5 text-[12px] font-bold tabular-nums text-primary-text">
+                          Bốc {subtotal} câu/đề
+                        </span>
+                      </div>
+
+                      {hasCp && info ? (
+                        <ul className="space-y-1.5">
+                          <li className="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-foreground/50">
+                            Số câu bốc theo chủ điểm (CP)
+                          </li>
+                          {info.cps.map((c) => (
+                            <li
+                              key={c.nodeId}
+                              className="flex items-center gap-2 text-[12.5px]"
+                            >
+                              {c.code && (
+                                <span className="shrink-0 rounded bg-emerald-50 px-1.5 py-0.5 font-mono text-[10px] text-emerald-700">
+                                  {c.code}
                                 </span>
                               )}
-                            </p>
-                            <p className="text-[11px] text-muted-foreground">
-                              {avail.easy + avail.medium + avail.hard} câu khả dụng
-                            </p>
-                          </td>
-                          <td className="px-2 py-2 text-center">
-                            <CountInput
-                              value={row.easyCount}
-                              max={avail.easy}
-                              onChange={(v) =>
-                                updateRow(t.id, "easyCount", v)
-                              }
-                            />
-                          </td>
-                          <td className="px-2 py-2 text-center">
-                            <CountInput
-                              value={row.mediumCount}
-                              max={avail.medium}
-                              onChange={(v) =>
-                                updateRow(t.id, "mediumCount", v)
-                              }
-                            />
-                          </td>
-                          <td className="px-2 py-2 text-center">
-                            <CountInput
-                              value={row.hardCount}
-                              max={avail.hard}
-                              onChange={(v) =>
-                                updateRow(t.id, "hardCount", v)
-                              }
-                            />
-                          </td>
-                          <td className="px-3 py-2 text-right font-bold tabular-nums text-primary">
-                            {subtotal}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                  <tfoot className="bg-surface-2 text-[12px] font-semibold">
-                    <tr className="border-t-2">
-                      <td className="px-3 py-2 text-right">Tổng / đề</td>
-                      <td className="px-2 py-2 text-center text-emerald-700 tabular-nums">
-                        {matrix.reduce((s, r) => s + r.easyCount, 0)}
-                      </td>
-                      <td className="px-2 py-2 text-center text-amber-700 tabular-nums">
-                        {matrix.reduce((s, r) => s + r.mediumCount, 0)}
-                      </td>
-                      <td className="px-2 py-2 text-center text-rose-700 tabular-nums">
-                        {matrix.reduce((s, r) => s + r.hardCount, 0)}
-                      </td>
-                      <td className="px-3 py-2 text-right text-primary tabular-nums">
-                        {validation.totalRequested}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
+                              <span className="min-w-0 flex-1 truncate text-foreground/80">
+                                {c.name}
+                              </span>
+                              <CountInput
+                                value={row.cpCounts?.[c.nodeId] ?? 0}
+                                max={c.available}
+                                onChange={(v) => updateCp(t.id, c.nodeId, v)}
+                              />
+                            </li>
+                          ))}
+                          {info.outsideAvailable > 0 && (
+                            <li className="flex items-center gap-2 text-[12.5px]">
+                              <span className="shrink-0 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                                Ngoài CP
+                              </span>
+                              <span className="min-w-0 flex-1 text-muted-foreground">
+                                Câu chưa gắn chủ điểm cụ thể
+                              </span>
+                              <CountInput
+                                value={row.outsideCount ?? 0}
+                                max={info.outsideAvailable}
+                                onChange={(v) => updateOutside(t.id, v)}
+                              />
+                            </li>
+                          )}
+                        </ul>
+                      ) : (
+                        <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+                          <DiffCell
+                            label="NB"
+                            cls="text-emerald-700"
+                            value={row.easyCount}
+                            max={availDiff.easy}
+                            onChange={(v) => updateRow(t.id, "easyCount", v)}
+                          />
+                          <DiffCell
+                            label="TH"
+                            cls="text-amber-700"
+                            value={row.mediumCount}
+                            max={availDiff.medium}
+                            onChange={(v) => updateRow(t.id, "mediumCount", v)}
+                          />
+                          <DiffCell
+                            label="VDC"
+                            cls="text-rose-700"
+                            value={row.hardCount}
+                            max={availDiff.hard}
+                            onChange={(v) => updateRow(t.id, "hardCount", v)}
+                          />
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
 
-              {!validation.ok && (
+              {(!validation.ok || !cpValid) && (
                 <div className="mt-2.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
-                  <p className="font-semibold">
-                    Số câu yêu cầu vượt quá số có sẵn:
-                  </p>
-                  <ul className="list-inside list-disc">
-                    {validation.exceeded.map((x, i) => (
-                      <li key={i}>
-                        {x.topicName} ·{" "}
-                        {x.difficulty === "easy"
-                          ? "NB"
-                          : x.difficulty === "medium"
-                            ? "TH"
-                            : "VDC"}
-                        : yêu cầu <span className="font-bold">{x.requested}</span> /
-                        có <span className="font-bold">{x.available}</span>
-                      </li>
-                    ))}
-                  </ul>
+                  Có ô yêu cầu vượt quá số câu có sẵn — giảm số lượng cho phù hợp.
                 </div>
               )}
             </section>
@@ -508,6 +583,29 @@ function CountInput({
       <span className="text-[11px] text-muted-foreground tabular-nums">
         / {max}
       </span>
+    </div>
+  );
+}
+
+function DiffCell({
+  label,
+  cls,
+  value,
+  max,
+  onChange,
+}: {
+  label: string;
+  cls: string;
+  value: number;
+  max: number;
+  onChange(v: number): void;
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className={cn("text-[11px] font-bold uppercase tracking-[0.06em]", cls)}>
+        {label}
+      </span>
+      <CountInput value={value} max={max} onChange={onChange} />
     </div>
   );
 }
