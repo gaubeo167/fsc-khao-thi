@@ -22,6 +22,23 @@ export const runtime = "nodejs";
 const MAX_BYTES = 12_000_000; // 12MB
 
 export async function POST(req: Request) {
+  try {
+    return await handle(req);
+  } catch (err) {
+    // Guarantee a JSON body — an unhandled throw would return an empty
+    // response and the client would see "Unexpected end of JSON input".
+    return NextResponse.json(
+      {
+        error: "server_error",
+        message: "Lỗi máy chủ khi đọc đề.",
+        detail: err instanceof Error ? err.message : String(err),
+      },
+      { status: 500 },
+    );
+  }
+}
+
+async function handle(req: Request) {
   const gate = await verifyCaller(req, { staffOnly: true });
   if ("error" in gate) return gate.error;
 

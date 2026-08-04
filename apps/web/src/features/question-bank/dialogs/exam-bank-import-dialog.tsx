@@ -187,12 +187,30 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
         headers: { ...(await authHeaders()) },
         body: fd,
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setState({ kind: "error", message: data.message ?? "Lỗi không xác định" });
+      // Read defensively: a crashed/oversized function can return an empty
+      // or non-JSON body, which res.json() turns into the unhelpful
+      // "Unexpected end of JSON input".
+      const raw = await res.text();
+      let data: { questions?: ParsedBankQuestion[]; message?: string } = {};
+      try {
+        data = raw ? JSON.parse(raw) : {};
+      } catch {
+        setState({
+          kind: "error",
+          message: `Server trả về dữ liệu không hợp lệ (mã ${res.status}). ${
+            raw ? raw.slice(0, 200) : "Body rỗng — có thể file quá lớn/nhiều ảnh."
+          }`,
+        });
         return;
       }
-      const parsed = data.questions as ParsedBankQuestion[];
+      if (!res.ok) {
+        setState({
+          kind: "error",
+          message: data.message ?? `Lỗi máy chủ (mã ${res.status}).`,
+        });
+        return;
+      }
+      const parsed = (data.questions ?? []) as ParsedBankQuestion[];
       setState({
         kind: "review",
         entries: parsed.map((q) => ({
