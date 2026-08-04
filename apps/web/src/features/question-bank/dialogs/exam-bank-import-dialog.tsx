@@ -191,7 +191,7 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
       // or non-JSON body, which res.json() turns into the unhelpful
       // "Unexpected end of JSON input".
       const raw = await res.text();
-      let data: { questions?: ParsedBankQuestion[]; message?: string } = {};
+      let data: { questions?: ParsedBankQuestion[]; message?: string; detail?: string } = {};
       try {
         data = raw ? JSON.parse(raw) : {};
       } catch {
@@ -206,7 +206,9 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
       if (!res.ok) {
         setState({
           kind: "error",
-          message: data.message ?? `Lỗi máy chủ (mã ${res.status}).`,
+          message: `${data.message ?? `Lỗi máy chủ (mã ${res.status}).`}${
+            data.detail ? ` — Chi tiết: ${data.detail}` : ""
+          }`,
         });
         return;
       }
