@@ -157,18 +157,32 @@ export async function POST(req: Request) {
     );
   }
 
-  let authUser: import("firebase-admin/auth").UserRecord;
+  let authUser: import("firebase-admin/auth").UserRecord | null = null;
+  // 1) Look up by email (staff + most students).
   try {
     authUser = await admin.auth.getUserByEmail(targetEmail);
   } catch {
-    // Create the auth user if it doesn't exist yet (legacy profiles).
+    authUser = null;
+  }
+  // 2) Not found by email → look up by UID. The Auth account can exist with
+  //    a DIFFERENT email than the /users mirror (e.g. username changed), so
+  //    blindly creating with the same uid failed with "uid already exists".
+  if (!authUser) {
     try {
-      authUser = await admin.auth.createUser({
+      authUser = await admin.auth.getUser(targetUserId);
+    } catch {
+      authUser = null;
+    }
+  }
+  // 3) Still nothing → create the Auth account (legacy profiles).
+  if (!authUser) {
+    try {
+      const created = await admin.auth.createUser({
         uid: targetUserId,
         email: targetEmail,
         password: newPassword,
       });
-      return NextResponse.json({ ok: true, created: true, uid: authUser.uid });
+      return NextResponse.json({ ok: true, created: true, uid: created.uid });
     } catch (createErr) {
       return NextResponse.json(
         { error: `Could not create Auth user: ${(createErr as Error).message}` },
@@ -177,6 +191,7 @@ export async function POST(req: Request) {
     }
   }
 
+  // Update the existing account's password.
   try {
     await admin.auth.updateUser(authUser.uid, { password: newPassword });
   } catch (err) {
