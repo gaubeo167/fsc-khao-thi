@@ -247,6 +247,7 @@ async function materializeAndSave(args: MaterializeArgs): Promise<void> {
     (q) =>
       pickedSet.has(q.id) &&
       q.status === "approved" &&
+      !q.archivedAt &&
       (args.campusId ? q.campusId === args.campusId : true),
   );
   if (pool.length === 0) {

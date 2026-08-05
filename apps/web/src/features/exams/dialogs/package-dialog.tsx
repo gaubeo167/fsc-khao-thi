@@ -115,7 +115,7 @@ export function PackageDialog({
   }, [resolvedBlueprint]);
 
   const questionsIndex = useMemo(
-    () => indexQuestions(allQuestions),
+    () => indexQuestions(allQuestions.filter((q) => !q.archivedAt)),
     [allQuestions],
   );
 

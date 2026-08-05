@@ -112,6 +112,7 @@ export function BlueprintDialog({ open, onOpenChange, editing }: Props) {
     return allQuestions.filter((q) => {
       if (q.kho !== "campus") return false;
       if (q.status !== "approved") return false;
+      if (q.archivedAt) return false;
       if (q.type === "ai-generated") return false;
       if (campusScope && q.campusId !== campusScope) return false;
       if (subjectId && q.subjectId !== subjectId) return false;

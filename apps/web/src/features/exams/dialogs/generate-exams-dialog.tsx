@@ -44,7 +44,10 @@ export function GenerateExamsDialog({ package_, onClose, onGenerated }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const questionsIndex = useMemo(
-    () => indexQuestions(allQuestions),
+    // Exclude soft-deleted (archived) questions — a blueprint created before
+    // a question was deleted still lists its id, and drawing it back in gave
+    // duplicate content (archived + its still-live copy) in one đề.
+    () => indexQuestions(allQuestions.filter((q) => !q.archivedAt)),
     [allQuestions],
   );
 

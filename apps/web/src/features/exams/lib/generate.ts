@@ -71,11 +71,21 @@ export function generateExams(
     pools.set(topic.id, buckets);
   }
 
+  // Normalised content per question — used to avoid two questions with the
+  // SAME content landing in one đề (the bank may hold content-duplicates
+  // created by importing/seeding the same file more than once).
+  const normContent = (s?: string) =>
+    (s ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+  const contentOf = (id: string) => normContent(questionsById.get(id)?.content);
+
   const exams: DraftExam[] = [];
   for (let i = 0; i < n; i++) {
     // Track ids already placed in this paper so we never duplicate within
     // one exam, even if the same id is reachable through multiple topics.
     const taken = new Set<string>();
+    // Track content too, so content-duplicates (different ids) don't both
+    // appear in the same đề.
+    const takenContent = new Set<string>();
     // Draw the matrix, bucketing by topic so we can preserve sections.
     const drawnByTopic = new Map<string, string[]>();
     for (const row of pkg.matrix) {
@@ -89,22 +99,24 @@ export function generateExams(
           const cpPool = topic.pickedQuestionIds.filter(
             (qid) => questionsById.get(qid)?.tocNodeId === nodeId,
           );
-          drawn.push(...drawN(cpPool, count, taken));
+          drawn.push(...drawN(cpPool, count, taken, takenContent, contentOf));
         }
         if (row.outsideCount && row.outsideCount > 0) {
           const outPool = topic.pickedQuestionIds.filter((qid) => {
-            const t = questionsById.get(qid)?.tocNodeId ?? null;
+            const q = questionsById.get(qid);
+            if (!q) return false; // archived / deleted — not in the pool
+            const t = q.tocNodeId ?? null;
             return !t || !cpSet.has(t);
           });
-          drawn.push(...drawN(outPool, row.outsideCount, taken));
+          drawn.push(...drawN(outPool, row.outsideCount, taken, takenContent, contentOf));
         }
       } else {
         const pool = pools.get(row.topicId);
         if (!pool) continue;
         drawn = [
-          ...drawN(pool.easy, row.easyCount, taken),
-          ...drawN(pool.medium, row.mediumCount, taken),
-          ...drawN(pool.hard, row.hardCount, taken),
+          ...drawN(pool.easy, row.easyCount, taken, takenContent, contentOf),
+          ...drawN(pool.medium, row.mediumCount, taken, takenContent, contentOf),
+          ...drawN(pool.hard, row.hardCount, taken, takenContent, contentOf),
         ];
       }
       if (drawn.length === 0) continue;
@@ -138,12 +150,27 @@ export function generateExams(
  * already in `taken`. Mutates `taken` with whatever it returns so subsequent
  * calls within the same exam stay unique.
  */
-function drawN(pool: string[], count: number, taken: Set<string>): string[] {
+function drawN(
+  pool: string[],
+  count: number,
+  taken: Set<string>,
+  takenContent: Set<string>,
+  contentOf: (id: string) => string,
+): string[] {
   if (count <= 0) return [];
-  const eligible = pool.filter((id) => !taken.has(id));
-  const shuffled = shuffle(eligible);
-  const picked = shuffled.slice(0, Math.min(count, shuffled.length));
-  for (const id of picked) taken.add(id);
+  const shuffled = shuffle(pool.filter((id) => !taken.has(id)));
+  const picked: string[] = [];
+  // Pick one at a time, skipping ids whose content is already taken (either
+  // in a previous drawN or earlier in THIS call) so content-duplicates never
+  // both land in one đề.
+  for (const id of shuffled) {
+    if (picked.length >= count) break;
+    const c = contentOf(id);
+    if (takenContent.has(c)) continue;
+    picked.push(id);
+    taken.add(id);
+    takenContent.add(c);
+  }
   return picked;
 }
 
