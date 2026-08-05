@@ -56,6 +56,13 @@ service cloud.firestore {
         role() == "superadmin"
       );
     }
+    // Roles allowed to DUYỆT (approve) câu hỏi / gói đề / học liệu — matches
+    // the approvals UI (canApprove). TBM (subject-lead) approves within their
+    // campus; isAdmin already covers campus-admin / academic-director /
+    // superadmin. (Was just isAdmin() → TBM got permission-denied on approve.)
+    function isApprover() {
+      return isAdmin() || (isSignedIn() && role() == "subject-lead");
+    }
     function inSameCampus(cid) {
       return isSuperadmin() || callerCampusId() == cid;
     }
@@ -170,7 +177,7 @@ service cloud.firestore {
         (request.resource.data.kho == "personal" ||
           request.resource.data.status == "pending");
       allow update: if isSignedIn() && (
-        (isAdmin() && inSameCampus(resource.data.campusId)) ||
+        (isApprover() && inSameCampus(resource.data.campusId)) ||
         (resource.data.ownerId == uid() &&
           (resource.data.kho == "personal" || resource.data.status == "pending") &&
           request.resource.data.status == resource.data.status)
@@ -195,8 +202,9 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isTeacherOrAbove() &&
         request.resource.data.ownerId == uid();
+      // Approver (incl. TBM) can duyệt; owner can edit their own.
       allow update, delete: if isSignedIn() && (
-        isAdmin() || resource.data.ownerId == uid()
+        isApprover() || resource.data.ownerId == uid()
       );
     }
 
@@ -321,7 +329,7 @@ service cloud.firestore {
         (request.resource.data.kho == "personal" ||
           request.resource.data.status == "pending");
       allow update: if isSignedIn() && (
-        (isAdmin() && inSameCampus(resource.data.campusId)) ||
+        (isApprover() && inSameCampus(resource.data.campusId)) ||
         (resource.data.ownerId == uid() &&
           (resource.data.kho == "personal" || resource.data.status == "pending"))
       );
