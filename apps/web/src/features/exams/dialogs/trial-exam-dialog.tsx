@@ -335,20 +335,22 @@ export function TrialExamDialog({ exam, onClose, onDelete }: Props) {
 
           {/* Main area — flex column so nav always anchors to the bottom and
               the question/answer area doesn't shrink-to-fit short questions. */}
-          <main className="flex min-h-0 flex-col overflow-y-auto px-6 py-5">
+          <main className="flex min-h-0 flex-col overflow-hidden px-6 py-5">
             {!current ? (
               <p className="rounded-lg border bg-card p-10 text-center text-muted-foreground">
                 Đề thi không có câu hỏi hợp lệ.
               </p>
             ) : submitted && grade ? (
-              <ResultsView
-                exam={exam}
-                questions={questions}
-                grade={grade}
-                autoSubmitted={autoSubmitted}
-                onClose={onClose}
-                onRetry={() => setStage("intro")}
-              />
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                <ResultsView
+                  exam={exam}
+                  questions={questions}
+                  grade={grade}
+                  autoSubmitted={autoSubmitted}
+                  onClose={onClose}
+                  onRetry={() => setStage("intro")}
+                />
+              </div>
             ) : (
               <>
                 {/* Question header */}
@@ -367,10 +369,10 @@ export function TrialExamDialog({ exam, onClose, onDelete }: Props) {
                   </span>
                 </div>
 
-                {/* Question + answer area is held in a flex-1 wrapper so the
-                    nav row below stays pinned to the bottom and the area
-                    doesn't visually shrink when the question is short. */}
-                <div className="flex flex-1 flex-col gap-4 min-h-[420px]">
+                {/* Question + answer = the ONLY scrollable area, so the nav
+                    row below stays pinned to the bottom of the column and can
+                    never overlap the content (kể cả câu Đúng/Sai nhiều ý). */}
+                <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
                   {/* Hide `[u:phrase]` and `[zone:N]` markers from the
                       question header for types that consume them in
                       their own interactive area below — otherwise the
