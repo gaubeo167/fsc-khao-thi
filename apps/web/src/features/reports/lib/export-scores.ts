@@ -3,8 +3,11 @@
  *
  * Reuses the already-computed `ShiftReport` — the SAME numbers the report
  * page renders — so the spreadsheet can never drift from the on-screen
- * table. `xlsx` (SheetJS) is dynamic-imported on click so its weight stays
- * out of the report page's initial bundle.
+ * table. Uses `xlsx-js-style` (a style-capable SheetJS build) so the file
+ * ships with real formatting: navy title bar, green info band, a blue
+ * filterable header, cell borders, zebra rows and grade-band colour coding.
+ * The library is dynamic-imported on click so its weight stays out of the
+ * report page's initial bundle.
  *
  * Produces a 3-sheet workbook:
  *   1. "Bảng điểm"    — one row per eligible student (submitted first,
@@ -12,12 +15,14 @@
  *   2. "Tổng quan"    — KPIs + xếp-loại distribution.
  *   3. "Theo câu hỏi" — per-question correctness (hardest first).
  */
+import type { WorkSheet } from "xlsx";
+
 import type { SeedUser } from "@/features/auth/data/seed-users";
 import type { ExamShift } from "@/features/exam-shifts/data/types";
 import { DEFAULT_SCORING } from "@/features/exam-shifts/data/types";
 import { formatScore } from "@/features/exam-shifts/lib/scoring";
 
-import type { ShiftReport } from "./compute-stats";
+import type { GradeBand, ShiftReport } from "./compute-stats";
 
 export interface ExportShiftScoresArgs {
   report: ShiftReport;
@@ -29,6 +34,49 @@ export interface ExportShiftScoresArgs {
   subjectName: string;
   gradeCode: string | null;
 }
+
+// ───────────────────────────── palette (ARGB-less RGB hex) ──────────────
+const NAVY = "1F3864"; // title bar
+const GREEN_BAND = "E2EFDA"; // info band fill
+const GREEN_TEXT = "375623"; // info band text
+const HEADER_BLUE = "2F5597"; // column-header fill
+const WHITE = "FFFFFF";
+const ZEBRA = "EEF3FB"; // alternate data row
+const GRID = "BFBFBF"; // cell border
+const ABSENT_FILL = "F2F2F2";
+const ABSENT_TEXT = "808080";
+const DATA_TEXT = "222222";
+
+const BAND_STYLE: Record<GradeBand, { fill: string; text: string }> = {
+  Giỏi: { fill: "C6EFCE", text: "006100" },
+  Khá: { fill: "BDD7EE", text: "1F4E79" },
+  "Trung bình": { fill: "FFEB9C", text: "9C6500" },
+  "Chưa đạt": { fill: "FFC7CE", text: "9C0006" },
+};
+
+// ───────────────────────────── style helpers ───────────────────────────
+interface XlsxStyle {
+  fill?: { patternType: "solid"; fgColor: { rgb: string } };
+  font?: { bold?: boolean; italic?: boolean; color?: { rgb: string }; sz?: number };
+  alignment?: {
+    horizontal?: "left" | "center" | "right";
+    vertical?: "top" | "center" | "bottom";
+    wrapText?: boolean;
+  };
+  border?: Record<
+    "top" | "bottom" | "left" | "right",
+    { style: string; color: { rgb: string } }
+  >;
+}
+interface StyledCell {
+  v?: unknown;
+  t?: string;
+  z?: string;
+  s?: XlsxStyle;
+}
+
+const thin = { style: "thin", color: { rgb: GRID } };
+const ALL_BORDERS = { top: thin, bottom: thin, left: thin, right: thin };
 
 function vnDateTime(iso: string | null | undefined): string {
   if (!iso) return "";
@@ -56,9 +104,9 @@ function stampNow(): string {
  *  short line of plain text in a cell (never a giant base64 blob). */
 function plainText(raw: string): string {
   return (raw ?? "")
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, " [hình] ") // ![alt](data:… | url)
-    .replace(/<[^>]+>/g, " ") // html tags
-    .replace(/\[u:([^\]\n]+)\]/g, "$1") // underline markers → text
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, " [hình] ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\[u:([^\]\n]+)\]/g, "$1")
     .replace(/&nbsp;/gi, " ")
     .replace(/&amp;/gi, "&")
     .replace(/\s+/g, " ")
@@ -88,18 +136,33 @@ export async function exportShiftScoresXlsx(
 ): Promise<void> {
   const { report, shift, users, eligibleStudents, subjectName, gradeCode } =
     args;
-  const XLSX = await import("xlsx");
+  // Style-capable SheetJS build. Cast to the plain `xlsx` types (identical
+  // API) so utils stay strongly typed; cell `.s` styling is applied through
+  // the local StyledCell shape below.
+  const XLSX = (await import("xlsx-js-style")) as unknown as typeof import("xlsx");
+  const { encode_cell } = XLSX.utils;
 
   const scoring = shift.scoring ?? DEFAULT_SCORING;
   const maxScore = scoring.maxScore;
   const userById = new Map(users.map((u) => [u.id, u]));
+
+  const setStyle = (
+    ws: WorkSheet,
+    ref: string,
+    s: XlsxStyle,
+    z?: string,
+  ) => {
+    const cell = ws[ref] as StyledCell | undefined;
+    if (!cell) return;
+    cell.s = { ...(cell.s ?? {}), ...s };
+    if (z) cell.z = z;
+  };
 
   // Submitted rows — sorted like the UI (score % desc).
   const submitted = [...report.perStudent].sort(
     (a, b) => b.percent - a.percent,
   );
   const submittedIds = new Set(submitted.map((r) => r.attempt.studentId));
-  // Absent = eligible students who never submitted an attempt.
   const absent = eligibleStudents.filter((u) => !submittedIds.has(u.id));
 
   // ─────────────────────────── Sheet 1: Bảng điểm ────────────────────────
@@ -121,33 +184,42 @@ export async function exportShiftScoresXlsx(
     "Nộp lúc",
     "Trạng thái",
   ];
+  const NCOL = HEAD.length;
+  const COL_TOTAL = 6;
+  const COL_BAND = 8;
+  const LEFT_COLS = new Set([1, 2, 15]); // Họ tên, Mã HS, Trạng thái
+  const NUMFMT: Record<number, string> = {
+    4: "0.00",
+    5: "0.00",
+    6: "0.00",
+    7: '0"%"',
+  };
+  // aoa row layout: 0 title · 1 meta1 · 2 meta2 · 3 header · 4+ data
+  const HEADER_ROW = 3;
 
   const aoa: (string | number)[][] = [];
-  aoa.push([`BẢNG ĐIỂM — ${shift.name}`]);
+  aoa.push([`BẢNG ĐIỂM — ${shift.name.toUpperCase()}`]);
   aoa.push([
     `Môn: ${subjectName}` +
-      (gradeCode ? ` · Khối: ${gradeCode}` : "") +
-      ` · Mã ca: ${shift.id}` +
-      ` · ${vnDateTime(shift.startAt)} → ${vnDateTime(shift.endAt)}` +
-      ` · Thang điểm: ${formatScore(maxScore)}`,
+      (gradeCode ? ` • Khối: ${gradeCode}` : "") +
+      ` • Mã ca: ${shift.id}` +
+      ` • ${vnDateTime(shift.startAt)} → ${vnDateTime(shift.endAt)}` +
+      ` • Thang điểm: ${formatScore(maxScore)}`,
   ]);
   aoa.push([
     `Đã nộp: ${report.totals.submitted}/${report.totals.eligible}` +
-      ` · Điểm TB: ${formatScore(report.totals.avgRaw)}` +
-      ` · Tỉ lệ đạt: ${report.totals.passRate}%` +
+      ` • Điểm trung bình: ${formatScore(report.totals.avgRaw)}` +
+      ` • Tỉ lệ đạt: ${report.totals.passRate}%` +
       (report.totals.pendingEssayCount > 0
-        ? ` · ⚠ ${report.totals.pendingEssayCount} câu tự luận chưa chấm (điểm tạm tính)`
+        ? ` • ⚠ ${report.totals.pendingEssayCount} câu tự luận chưa chấm (điểm tạm tính)`
         : ""),
   ]);
-  aoa.push([]); // spacer row
   aoa.push(HEAD);
 
-  let stt = 0;
   for (const r of submitted) {
     const u = userById.get(r.attempt.studentId);
-    stt++;
     aoa.push([
-      stt,
+      aoa.length - HEADER_ROW, // STT
       u?.name ?? r.attempt.studentId,
       u?.studentCode ?? u?.username ?? "",
       u?.className ?? "",
@@ -168,51 +240,125 @@ export async function exportShiftScoresXlsx(
     ]);
   }
   for (const u of absent) {
-    stt++;
     aoa.push([
-      stt,
+      aoa.length - HEADER_ROW,
       u.name,
       u.studentCode ?? u.username ?? "",
       u.className ?? "",
-      "", // Điểm TN
-      "", // Điểm tự luận
-      "", // Tổng điểm
-      "", // %
-      "", // Xếp loại
-      "", // Số câu đúng
-      "", // Tổng câu TN
-      "", // Câu chờ chấm
-      "", // Vi phạm
-      "", // Thời gian
-      "", // Nộp lúc
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
       "Vắng",
     ]);
   }
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
+  const dataCount = submitted.length + absent.length;
+
   ws["!cols"] = [
-    { wch: 5 }, // STT
-    { wch: 26 }, // Họ tên
-    { wch: 14 }, // Mã HS
-    { wch: 10 }, // Lớp
-    { wch: 9 }, // Điểm TN
-    { wch: 12 }, // Điểm tự luận
-    { wch: 14 }, // Tổng điểm
-    { wch: 7 }, // %
-    { wch: 11 }, // Xếp loại
-    { wch: 11 }, // Số câu đúng
-    { wch: 11 }, // Tổng câu TN
-    { wch: 12 }, // Câu chờ chấm
-    { wch: 8 }, // Vi phạm
-    { wch: 15 }, // Thời gian
-    { wch: 18 }, // Nộp lúc
-    { wch: 28 }, // Trạng thái
+    { wch: 5 },
+    { wch: 26 },
+    { wch: 14 },
+    { wch: 8 },
+    { wch: 9 },
+    { wch: 12 },
+    { wch: 14 },
+    { wch: 7 },
+    { wch: 12 },
+    { wch: 11 },
+    { wch: 11 },
+    { wch: 12 },
+    { wch: 8 },
+    { wch: 15 },
+    { wch: 18 },
+    { wch: 30 },
   ];
   ws["!merges"] = [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: HEAD.length - 1 } },
-    { s: { r: 1, c: 0 }, e: { r: 1, c: HEAD.length - 1 } },
-    { s: { r: 2, c: 0 }, e: { r: 2, c: HEAD.length - 1 } },
+    { s: { r: 0, c: 0 }, e: { r: 0, c: NCOL - 1 } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: NCOL - 1 } },
+    { s: { r: 2, c: 0 }, e: { r: 2, c: NCOL - 1 } },
   ];
+  ws["!rows"] = [
+    { hpt: 28 },
+    { hpt: 18 },
+    { hpt: 18 },
+    { hpt: 30 },
+    ...Array.from({ length: dataCount }, () => ({ hpt: 18 })),
+  ];
+  // AutoFilter over the header + data (dropdown arrows on the header row).
+  ws["!autofilter"] = {
+    ref: `${encode_cell({ r: HEADER_ROW, c: 0 })}:${encode_cell({
+      r: HEADER_ROW + dataCount,
+      c: NCOL - 1,
+    })}`,
+  };
+
+  // Title.
+  setStyle(ws, "A1", {
+    fill: { patternType: "solid", fgColor: { rgb: NAVY } },
+    font: { bold: true, color: { rgb: WHITE }, sz: 14 },
+    alignment: { horizontal: "center", vertical: "center" },
+  });
+  // Info band (2 rows).
+  setStyle(ws, "A2", {
+    fill: { patternType: "solid", fgColor: { rgb: GREEN_BAND } },
+    font: { color: { rgb: NAVY }, sz: 10 },
+    alignment: { horizontal: "center", vertical: "center" },
+  });
+  setStyle(ws, "A3", {
+    fill: { patternType: "solid", fgColor: { rgb: GREEN_BAND } },
+    font: { bold: true, color: { rgb: GREEN_TEXT }, sz: 10 },
+    alignment: { horizontal: "center", vertical: "center" },
+  });
+  // Column header.
+  for (let c = 0; c < NCOL; c++) {
+    setStyle(ws, encode_cell({ r: HEADER_ROW, c }), {
+      fill: { patternType: "solid", fgColor: { rgb: HEADER_BLUE } },
+      font: { bold: true, color: { rgb: WHITE }, sz: 10 },
+      alignment: { horizontal: "center", vertical: "center", wrapText: true },
+      border: ALL_BORDERS,
+    });
+  }
+  // Data cells.
+  for (let d = 0; d < dataCount; d++) {
+    const rowIdx = HEADER_ROW + 1 + d;
+    const isAbsent = d >= submitted.length;
+    const zebra = d % 2 === 1;
+    for (let c = 0; c < NCOL; c++) {
+      let fillRgb = isAbsent ? ABSENT_FILL : zebra ? ZEBRA : WHITE;
+      let fontColor = isAbsent ? ABSENT_TEXT : DATA_TEXT;
+      let bold = false;
+      if (!isAbsent && c === COL_BAND) {
+        const band = BAND_STYLE[submitted[d]!.band];
+        fillRgb = band.fill;
+        fontColor = band.text;
+        bold = true;
+      }
+      if (c === COL_TOTAL && !isAbsent) bold = true;
+      setStyle(
+        ws,
+        encode_cell({ r: rowIdx, c }),
+        {
+          fill: { patternType: "solid", fgColor: { rgb: fillRgb } },
+          font: { sz: 10, bold, italic: isAbsent, color: { rgb: fontColor } },
+          alignment: {
+            horizontal: LEFT_COLS.has(c) ? "left" : "center",
+            vertical: "center",
+          },
+          border: ALL_BORDERS,
+        },
+        isAbsent ? undefined : NUMFMT[c],
+      );
+    }
+  }
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, safeSheetName("Bảng điểm"));
@@ -246,6 +392,44 @@ export async function exportShiftScoresXlsx(
   const ws2 = XLSX.utils.aoa_to_sheet(overview);
   ws2["!cols"] = [{ wch: 24 }, { wch: 32 }, { wch: 8 }];
   ws2["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 2 } }];
+  // Title bar.
+  setStyle(ws2, "A1", {
+    fill: { patternType: "solid", fgColor: { rgb: NAVY } },
+    font: { bold: true, color: { rgb: WHITE }, sz: 13 },
+    alignment: { horizontal: "center", vertical: "center" },
+  });
+  ws2["!rows"] = [{ hpt: 24 }];
+  // Bold the label column + the distribution sub-header.
+  for (let r = 1; r <= 16; r++) {
+    setStyle(ws2, encode_cell({ r, c: 0 }), {
+      font: { bold: true, sz: 10, color: { rgb: DATA_TEXT } },
+    });
+  }
+  const distHeaderRow = 18;
+  for (let c = 0; c < 3; c++) {
+    setStyle(ws2, encode_cell({ r: distHeaderRow, c }), {
+      fill: { patternType: "solid", fgColor: { rgb: HEADER_BLUE } },
+      font: { bold: true, color: { rgb: WHITE }, sz: 10 },
+      alignment: { horizontal: c === 0 ? "left" : "center" },
+      border: ALL_BORDERS,
+    });
+  }
+  report.distribution.forEach((d, i) => {
+    const r = distHeaderRow + 1 + i;
+    const band = BAND_STYLE[d.band];
+    setStyle(ws2, encode_cell({ r, c: 0 }), {
+      fill: { patternType: "solid", fgColor: { rgb: band.fill } },
+      font: { bold: true, color: { rgb: band.text }, sz: 10 },
+      border: ALL_BORDERS,
+    });
+    for (let c = 1; c < 3; c++) {
+      setStyle(ws2, encode_cell({ r, c }), {
+        alignment: { horizontal: "center" },
+        border: ALL_BORDERS,
+        font: { sz: 10, color: { rgb: DATA_TEXT } },
+      });
+    }
+  });
   XLSX.utils.book_append_sheet(wb, ws2, "Tổng quan");
 
   // ─────────────────────────── Sheet 3: Theo câu hỏi ─────────────────────
@@ -289,6 +473,40 @@ export async function exportShiftScoresXlsx(
     { wch: 9 },
     { wch: 8 },
   ];
+  ws3["!rows"] = [{ hpt: 26 }];
+  ws3["!autofilter"] = {
+    ref: `${encode_cell({ r: 0, c: 0 })}:${encode_cell({
+      r: qRows.length,
+      c: qHead.length - 1,
+    })}`,
+  };
+  for (let c = 0; c < qHead.length; c++) {
+    setStyle(ws3, encode_cell({ r: 0, c }), {
+      fill: { patternType: "solid", fgColor: { rgb: HEADER_BLUE } },
+      font: { bold: true, color: { rgb: WHITE }, sz: 10 },
+      alignment: { horizontal: "center", vertical: "center", wrapText: true },
+      border: ALL_BORDERS,
+    });
+  }
+  for (let d = 0; d < qRows.length; d++) {
+    const r = d + 1;
+    const zebra = d % 2 === 1;
+    for (let c = 0; c < qHead.length; c++) {
+      setStyle(ws3, encode_cell({ r, c }), {
+        fill: {
+          patternType: "solid",
+          fgColor: { rgb: zebra ? ZEBRA : WHITE },
+        },
+        font: { sz: 10, color: { rgb: DATA_TEXT } },
+        alignment: {
+          horizontal: c === 1 ? "left" : "center",
+          vertical: "center",
+          wrapText: c === 1,
+        },
+        border: ALL_BORDERS,
+      });
+    }
+  }
   XLSX.utils.book_append_sheet(wb, ws3, "Theo câu hỏi");
 
   const fname =

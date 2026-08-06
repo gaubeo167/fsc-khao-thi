@@ -276,10 +276,13 @@ export default function ReportDetailPage() {
         <button
           type="button"
           onClick={handleExportExcel}
-          disabled={exporting || report.perStudent.length === 0}
+          disabled={
+            exporting ||
+            (report.perStudent.length === 0 && eligibleStudents.length === 0)
+          }
           title={
-            report.perStudent.length === 0
-              ? "Chưa có bài nộp để xuất"
+            report.perStudent.length === 0 && eligibleStudents.length === 0
+              ? "Chưa có dữ liệu để xuất"
               : "Xuất bảng điểm ra Excel (.xlsx)"
           }
           className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-[12.5px] font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
