@@ -267,6 +267,16 @@ service cloud.firestore {
 
     // ───── /grades_essay — manual essay grading by teacher ────────────────
     match /grades_essay/{gradeId} {
+      // Grading deadline: an assignment may carry a cutoff which the client
+      // denormalises onto every grade doc as `gradingDeadlineMs` (epoch ms)
+      // at write time. Past the cutoff the grader can no longer
+      // create / edit / delete — enforced here WITHOUT a cross-document read
+      // (would add +1 read per write on the grading path). Absent / null =
+      // no time limit (the normal case).
+      function gradeDeadlineOpen(data) {
+        return data.get('gradingDeadlineMs', null) == null
+          || request.time.toMillis() < data.get('gradingDeadlineMs', null);
+      }
       // A student may read ONLY their own essay grades (feedback + points
       // on the result page). Teacher+ read all for the grading queue.
       // Previously any signed-in user could read every student's essay
@@ -274,10 +284,14 @@ service cloud.firestore {
       allow read: if isTeacherOrAbove() ||
         (isSignedIn() && resource.data.studentId == uid());
       // Grader creates their OWN grade row (can't impersonate another
-      // grader). Update/delete stays teacher+ for regrade workflows.
-      allow create: if isTeacherOrAbove() &&
-        request.resource.data.graderId == uid();
-      allow update, delete: if isTeacherOrAbove();
+      // grader) and only before the grading deadline.
+      allow create: if isTeacherOrAbove()
+        && request.resource.data.graderId == uid()
+        && gradeDeadlineOpen(request.resource.data);
+      // Admin can always regrade (fix scores / re-open after the fact).
+      // Any other grader may edit/delete only before the stamped deadline.
+      allow update, delete: if isAdmin()
+        || (isTeacherOrAbove() && gradeDeadlineOpen(resource.data));
     }
 
     // ───── /grading_assignments — who grades which shift's essays ─────────

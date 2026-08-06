@@ -6,6 +6,8 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardEdit,
+  Clock,
+  Lock,
   Save,
   Trash2,
 } from "lucide-react";
@@ -45,6 +47,10 @@ export default function GradingWorkspacePage() {
   const packages = usePackagesStore((s) => s.packages);
   const blueprints = useBlueprintsStore((s) => s.blueprints);
   const isAssigned = useGradingStore((s) => s.isAssigned);
+  const isPastGradingDeadline = useGradingStore((s) => s.isPastGradingDeadline);
+  const deadlineForShiftGrader = useGradingStore(
+    (s) => s.deadlineForShiftGrader,
+  );
   const allGrades = useGradingStore((s) => s.grades);
   const saveGrade = useGradingStore((s) => s.saveGrade);
   const deleteGrade = useGradingStore((s) => s.deleteGrade);
@@ -125,6 +131,11 @@ export default function GradingWorkspacePage() {
     );
   }
 
+  // Grading-deadline state (clock-derived — recomputed each render like
+  // effectiveShiftStatus). Once past, all edit/delete controls lock.
+  const gradingDeadline = deadlineForShiftGrader(shift.id, session.userId);
+  const pastGradingDeadline = isPastGradingDeadline(shift.id, session.userId);
+
   const currentQ = essayQuestions[activeIdx]!;
   const currentAnswer = attempt.answers[currentQ.id];
   const studentText =
@@ -200,6 +211,33 @@ export default function GradingWorkspacePage() {
           </div>
         </div>
       </div>
+
+      {/* Grading-deadline banner */}
+      {gradingDeadline &&
+        (pastGradingDeadline ? (
+          <div className="flex items-start gap-2 rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-[12.5px] text-rose-800">
+            <Lock className="mt-0.5 h-4 w-4 shrink-0" />
+            <div>
+              <p className="font-semibold">Đã quá hạn chấm — đã khoá</p>
+              <p className="mt-0.5">
+                Thời hạn chấm ({fmtDeadline(gradingDeadline)}) đã kết thúc. Bạn
+                không thể lưu, sửa hoặc xoá điểm nữa. Liên hệ admin / TBM nếu
+                cần gia hạn.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-[12px] text-amber-800">
+            <Clock className="h-4 w-4 shrink-0" />
+            <span>
+              Hạn chấm:{" "}
+              <span className="font-semibold">
+                {fmtDeadline(gradingDeadline)}
+              </span>{" "}
+              — sau thời điểm này sẽ không thể sửa / xoá điểm.
+            </span>
+          </div>
+        ))}
 
       {/* Question navigator (compact) */}
       <ul className="flex flex-wrap items-center gap-1.5 rounded-xl border bg-card px-3 py-2.5">
@@ -279,8 +317,9 @@ export default function GradingWorkspacePage() {
           existingComment={myGrade?.comment ?? ""}
           studentEmpty={!studentText.trim()}
           alreadyGraded={!!myGrade}
+          locked={pastGradingDeadline}
           onSave={(rubricScores, comment) => {
-            if (!session) return;
+            if (!session || pastGradingDeadline) return;
             const maxPoints = computeMaxPoints(currentQ);
             saveGrade({
               attemptId: attempt.id,
@@ -295,6 +334,7 @@ export default function GradingWorkspacePage() {
             });
           }}
           onDelete={() => {
+            if (pastGradingDeadline) return;
             deleteGrade(attempt.id, currentQ.id);
           }}
         />
@@ -331,6 +371,16 @@ export default function GradingWorkspacePage() {
   );
 }
 
+function fmtDeadline(iso: string): string {
+  return new Date(iso).toLocaleString("vi-VN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
+
 function computeMaxPoints(q: Question): number {
   if (q.type === "essay") {
     return (q as EssayQuestion).rubric.reduce((a, c) => a + c.points, 0);
@@ -345,6 +395,7 @@ function RubricEditor({
   existingComment,
   studentEmpty,
   alreadyGraded,
+  locked = false,
   onSave,
   onDelete,
 }: {
@@ -353,6 +404,8 @@ function RubricEditor({
   existingComment: string;
   studentEmpty: boolean;
   alreadyGraded: boolean;
+  /** When true the grading deadline has passed — all inputs read-only. */
+  locked?: boolean;
   onSave(scores: Record<string, number>, comment: string): void;
   onDelete(): void;
 }) {
@@ -439,9 +492,11 @@ function RubricEditor({
                     value={Number.isFinite(v) ? String(v) : ""}
                     onChange={(e) => update(c.id, e.target.value)}
                     placeholder="0"
+                    disabled={locked}
                     className={cn(
                       "h-8 w-24 text-center",
                       tooHigh && "border-rose-300 ring-1 ring-rose-200",
+                      locked && "cursor-not-allowed opacity-60",
                     )}
                   />
                   <div className="flex-1">
@@ -485,17 +540,28 @@ function RubricEditor({
             value={comment}
             onChange={(e) => setComment(e.target.value)}
             rows={4}
+            disabled={locked}
             placeholder="Nhận xét chung, gợi ý cải thiện…"
-            className="mt-1 w-full rounded-md border bg-card px-3 py-2 text-[12.5px] leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary/40"
+            className={cn(
+              "mt-1 w-full rounded-md border bg-card px-3 py-2 text-[12.5px] leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary/40",
+              locked && "cursor-not-allowed opacity-60",
+            )}
           />
         </div>
 
+        {locked && (
+          <p className="flex items-center gap-1.5 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-[11.5px] font-semibold text-rose-700">
+            <Lock className="h-3.5 w-3.5 shrink-0" />
+            Đã quá hạn chấm — điểm đã bị khoá, không thể lưu / sửa / xoá.
+          </p>
+        )}
         <div className="flex items-center justify-between gap-2 pt-1">
           {alreadyGraded ? (
             <Button
               size="sm"
               variant="outline"
               onClick={onDelete}
+              disabled={locked}
               className="gap-1.5 text-destructive"
             >
               <Trash2 className="h-3.5 w-3.5" />
@@ -507,6 +573,7 @@ function RubricEditor({
           <Button
             size="sm"
             onClick={() => onSave(scores, comment.trim())}
+            disabled={locked}
             className="gap-1.5"
           >
             <Save className="h-3.5 w-3.5" />

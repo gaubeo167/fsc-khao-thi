@@ -1,6 +1,6 @@
 "use client";
 
-import { Pencil, Search, Trash2, UserCheck, X } from "lucide-react";
+import { Clock, Pencil, Search, Trash2, UserCheck, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -38,6 +38,9 @@ export function AssignGradersDialog({
 
   const [search, setSearch] = useState("");
   const [note, setNote] = useState("");
+  // datetime-local value (local time, no timezone) — converted to an ISO
+  // string when the assignment is created. Empty = no deadline.
+  const [deadline, setDeadline] = useState("");
 
   // Eligible graders: teachers / subject-leads / campus-admins in the
   // same campus as the shift. Subject-lead and teacher are the typical
@@ -81,9 +84,20 @@ export function AssignGradersDialog({
       assignedBy: session.userId,
       assignedByName: session.name ?? "Admin",
       note: note.trim() || null,
+      // datetime-local is local wall-clock; toISOString() normalises to UTC.
+      deadline: deadline ? new Date(deadline).toISOString() : null,
     });
     setNote("");
+    setDeadline("");
   }
+
+  const fmtDeadline = (iso: string) =>
+    new Date(iso).toLocaleString("vi-VN", {
+      hour: "2-digit",
+      minute: "2-digit",
+      day: "2-digit",
+      month: "2-digit",
+    });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -141,6 +155,21 @@ export function AssignGradersDialog({
                             "{a.note}"
                           </p>
                         )}
+                        {a.deadline && (
+                          <p
+                            className={cn(
+                              "mt-0.5 inline-flex items-center gap-1 rounded px-1 text-[10px] font-semibold",
+                              new Date(a.deadline).getTime() < Date.now()
+                                ? "bg-rose-50 text-rose-700"
+                                : "bg-amber-50 text-amber-800",
+                            )}
+                          >
+                            <Clock className="h-2.5 w-2.5" />
+                            Hạn: {fmtDeadline(a.deadline)}
+                            {new Date(a.deadline).getTime() < Date.now() &&
+                              " · đã hết hạn"}
+                          </p>
+                        )}
                       </div>
                       <button
                         type="button"
@@ -165,6 +194,21 @@ export function AssignGradersDialog({
                 placeholder="vd: Chấm xong trước thứ 6"
                 className="mt-1 h-8 text-[12px]"
               />
+            </div>
+            <div className="mt-3">
+              <label className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-[0.06em] text-foreground/65">
+                <Clock className="h-3 w-3" /> Thời hạn chấm (tuỳ chọn)
+              </label>
+              <Input
+                type="datetime-local"
+                value={deadline}
+                onChange={(e) => setDeadline(e.target.value)}
+                className="mt-1 h-8 text-[12px]"
+              />
+              <p className="mt-1 text-[10.5px] text-muted-foreground">
+                Sau thời hạn này, người chấm không thể lưu / sửa / xoá điểm.
+                Đặt <span className="font-semibold">trước</span> khi bấm “Gán”.
+              </p>
             </div>
           </section>
 

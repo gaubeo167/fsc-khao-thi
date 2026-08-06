@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   ClipboardEdit,
   Clock,
+  Lock,
   Search,
   Shield,
   Sparkles,
@@ -71,12 +72,17 @@ export default function GradingQueuePage() {
       submittedAt: string;
       essayCount: number;
       gradedCount: number;
+      deadline: string | null;
     }> = [];
     for (const shift of shifts) {
       if (!myShiftIds.has(shift.id)) continue;
       const pkg = packages.find((p) => p.id === shift.packageId);
       const bp = pkg ? blueprints.find((b) => b.id === pkg.blueprintId) : null;
       if (!bp) continue;
+      const shiftDeadline =
+        assignments.find(
+          (a) => a.shiftId === shift.id && a.graderId === session.userId,
+        )?.deadline ?? null;
       const pickedIds = new Set(bp.topics.flatMap((t) => t.pickedQuestionIds));
       const manualQs = allQuestions.filter(
         (q) => pickedIds.has(q.id) && isManualGradingType(q.type),
@@ -104,6 +110,7 @@ export default function GradingQueuePage() {
           submittedAt: att.submittedAt!,
           essayCount: essayIdsInAttempt.length,
           gradedCount: graded,
+          deadline: shiftDeadline,
         });
       }
     }
@@ -130,6 +137,7 @@ export default function GradingQueuePage() {
     pendingAttempts: number;
     essayTotal: number;
     gradedTotal: number;
+    deadline: string | null;
     items: typeof rows;
   };
   const groups: ShiftGroup[] = useMemo(() => {
@@ -156,6 +164,7 @@ export default function GradingQueuePage() {
           pendingAttempts: r.gradedCount < r.essayCount ? 1 : 0,
           essayTotal: r.essayCount,
           gradedTotal: r.gradedCount,
+          deadline: r.deadline,
           items: [r],
         });
       }
@@ -383,6 +392,24 @@ export default function GradingQueuePage() {
                       <p className="truncate text-[13.5px] font-semibold">
                         {g.shiftName}
                       </p>
+                      {g.deadline &&
+                        (new Date(g.deadline).getTime() < Date.now() ? (
+                          <span className="inline-flex items-center gap-1 rounded bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700">
+                            <Lock className="h-2.5 w-2.5" />
+                            Đã quá hạn chấm
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
+                            <Clock className="h-2.5 w-2.5" />
+                            Hạn:{" "}
+                            {new Date(g.deadline).toLocaleString("vi-VN", {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              day: "2-digit",
+                              month: "2-digit",
+                            })}
+                          </span>
+                        ))}
                     </div>
                     <p className="mt-0.5 text-[11.5px] text-muted-foreground">
                       <span className="font-semibold">
