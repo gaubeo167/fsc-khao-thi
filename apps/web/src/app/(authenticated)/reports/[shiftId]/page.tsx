@@ -4,7 +4,9 @@ import {
   ArrowLeft,
   CheckCircle2,
   Eye,
+  FileSpreadsheet,
   Hourglass,
+  Loader2,
   ShieldAlert,
   Sparkles,
   Trophy,
@@ -117,9 +119,34 @@ export default function ReportDetailPage() {
     [report],
   );
 
+  // Full eligible-student roster (submitted + absent) — mirrors the
+  // eligibility count logic inside `report` above, but returns the actual
+  // user records so the Excel export can list absentees, not just count.
+  const eligibleStudents = useMemo(() => {
+    if (!shift) return [];
+    const explicit = new Set(shift.rooms.flatMap((r) => r.studentIds ?? []));
+    if (explicit.size > 0) {
+      return users.filter((u) => explicit.has(u.id));
+    }
+    const codes = new Set(
+      allClasses
+        .filter((c) => shift.classIds.includes(c.id))
+        .map((c) => c.code),
+    );
+    return users.filter(
+      (u) =>
+        u.role === "student" &&
+        u.status === "active" &&
+        u.campusId === shift.campusId &&
+        u.className != null &&
+        codes.has(u.className),
+    );
+  }, [shift, users, allClasses]);
+
   // Which question the teacher clicked the eye icon on — drives the
   // review dialog showing full content, options, correct answer, etc.
   const [reviewing, setReviewing] = useState<Question | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   // Wait for the shifts mirror to hydrate before deciding "not found".
   // Without this guard, the first render (when shifts == []) would
@@ -176,6 +203,33 @@ export default function ReportDetailPage() {
   const grade = grades.find((g) => g.id === shift.gradeId);
   const scoring = shift.scoring ?? DEFAULT_SCORING;
 
+  async function handleExportExcel() {
+    if (!report || !shift || exporting) return;
+    setExporting(true);
+    try {
+      // Dynamic-imported so xlsx stays out of the initial page bundle.
+      const { exportShiftScoresXlsx } = await import(
+        "@/features/reports/lib/export-scores"
+      );
+      await exportShiftScoresXlsx({
+        report,
+        shift,
+        users,
+        eligibleStudents,
+        subjectName: subject?.name ?? "—",
+        gradeCode: grade?.code ?? null,
+      });
+    } catch (err) {
+      console.error("Xuất Excel thất bại:", err);
+      alert(
+        "Không xuất được file Excel. Vui lòng thử lại.\n" +
+          (err instanceof Error ? err.message : String(err)),
+      );
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <div className="space-y-5">
       {/* Header */}
@@ -219,6 +273,24 @@ export default function ReportDetailPage() {
             </b>
           </p>
         </div>
+        <button
+          type="button"
+          onClick={handleExportExcel}
+          disabled={exporting || report.perStudent.length === 0}
+          title={
+            report.perStudent.length === 0
+              ? "Chưa có bài nộp để xuất"
+              : "Xuất bảng điểm ra Excel (.xlsx)"
+          }
+          className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-[12.5px] font-semibold text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {exporting ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <FileSpreadsheet className="h-4 w-4" />
+          )}
+          {exporting ? "Đang xuất…" : "Xuất Excel"}
+        </button>
       </div>
 
       {/* AI insights — surface at the very top so teacher reads them first */}

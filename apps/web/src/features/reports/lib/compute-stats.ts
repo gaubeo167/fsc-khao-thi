@@ -111,6 +111,12 @@ export interface PerStudentRow {
   attempt: StudentAttempt;
   /** Combined raw score (under shift scoring, e.g. 7.5). */
   raw: number;
+  /** Points earned from auto-graded questions (weighted). `autoEarned +
+   *  essayEarned === raw` within rounding — split out so the Excel export
+   *  can show a TN-vs-tự-luận breakdown without recomputing. */
+  autoEarned: number;
+  /** Points earned from graded essay/ai-generated questions (weighted). */
+  essayEarned: number;
   /** Same on 0-100 scale. */
   percent: number;
   band: GradeBand;
@@ -204,6 +210,8 @@ export function buildShiftReport({
     const examMax = Object.values(perQ).reduce((a, n) => a + n, 0);
 
     let earned = 0;
+    let autoEarned = 0;
+    let essayEarned = 0;
     let correctCount = 0;
     let autoMax = 0;
     let pending = 0;
@@ -217,6 +225,7 @@ export function buildShiftReport({
         if (g) {
           const ratio = g.maxPoints > 0 ? g.totalPoints / g.maxPoints : 0;
           earned += ratio * qWeight;
+          essayEarned += ratio * qWeight;
         } else {
           pending++;
         }
@@ -226,6 +235,7 @@ export function buildShiftReport({
       if (ans && isAnswerCorrect(q, ans)) {
         correctCount++;
         earned += qWeight;
+        autoEarned += qWeight;
       }
     }
     const percent =
@@ -242,6 +252,8 @@ export function buildShiftReport({
     perStudent.push({
       attempt: att,
       raw,
+      autoEarned: Math.round(autoEarned * 100) / 100,
+      essayEarned: Math.round(essayEarned * 100) / 100,
       percent,
       band: bandForScore(percent),
       durationMin,
