@@ -72,17 +72,15 @@ export default function GradingQueuePage() {
       submittedAt: string;
       essayCount: number;
       gradedCount: number;
-      deadline: string | null;
+      deadline: number | null;
     }> = [];
     for (const shift of shifts) {
       if (!myShiftIds.has(shift.id)) continue;
       const pkg = packages.find((p) => p.id === shift.packageId);
       const bp = pkg ? blueprints.find((b) => b.id === pkg.blueprintId) : null;
       if (!bp) continue;
-      const shiftDeadline =
-        assignments.find(
-          (a) => a.shiftId === shift.id && a.graderId === session.userId,
-        )?.deadline ?? null;
+      // Per-shift grading deadline (epoch ms), shared by all graders.
+      const shiftDeadline = shift.gradingDeadlineMs ?? null;
       const pickedIds = new Set(bp.topics.flatMap((t) => t.pickedQuestionIds));
       const manualQs = allQuestions.filter(
         (q) => pickedIds.has(q.id) && isManualGradingType(q.type),
@@ -137,7 +135,7 @@ export default function GradingQueuePage() {
     pendingAttempts: number;
     essayTotal: number;
     gradedTotal: number;
-    deadline: string | null;
+    deadline: number | null;
     items: typeof rows;
   };
   const groups: ShiftGroup[] = useMemo(() => {

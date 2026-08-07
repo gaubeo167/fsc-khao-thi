@@ -267,15 +267,17 @@ service cloud.firestore {
 
     // ───── /grades_essay — manual essay grading by teacher ────────────────
     match /grades_essay/{gradeId} {
-      // Grading deadline: an assignment may carry a cutoff which the client
-      // denormalises onto every grade doc as `gradingDeadlineMs` (epoch ms)
-      // at write time. Past the cutoff the grader can no longer
-      // create / edit / delete — enforced here WITHOUT a cross-document read
-      // (would add +1 read per write on the grading path). Absent / null =
-      // no time limit (the normal case).
-      function gradeDeadlineOpen(data) {
-        return data.get('gradingDeadlineMs', null) == null
-          || request.time.toMillis() < data.get('gradingDeadlineMs', null);
+      // Grading deadline is a PER-SHIFT value (shifts/{shiftId}.gradingDeadlineMs,
+      // epoch ms) shared by every assigned grader. We read it here with one
+      // get() so the check always reflects the CURRENT deadline — an admin
+      // extending it immediately re-opens grading (no stale stamped value).
+      // Identical get() paths are de-duplicated within a request, and grading
+      // writes are low-volume (teachers only), so the read cost is negligible.
+      // Absent / null = no time limit (the normal case).
+      function shiftGradingOpen(shiftId) {
+        let ms = get(/databases/$(database)/documents/shifts/$(shiftId))
+          .data.get('gradingDeadlineMs', null);
+        return ms == null || request.time.toMillis() < ms;
       }
       // A student may read ONLY their own essay grades (feedback + points
       // on the result page). Teacher+ read all for the grading queue.
@@ -284,14 +286,14 @@ service cloud.firestore {
       allow read: if isTeacherOrAbove() ||
         (isSignedIn() && resource.data.studentId == uid());
       // Grader creates their OWN grade row (can't impersonate another
-      // grader) and only before the grading deadline.
+      // grader) and only before the shift's grading deadline.
       allow create: if isTeacherOrAbove()
         && request.resource.data.graderId == uid()
-        && gradeDeadlineOpen(request.resource.data);
+        && shiftGradingOpen(request.resource.data.shiftId);
       // Admin can always regrade (fix scores / re-open after the fact).
-      // Any other grader may edit/delete only before the stamped deadline.
+      // Any other grader may edit/delete only before the shift's deadline.
       allow update, delete: if isAdmin()
-        || (isTeacherOrAbove() && gradeDeadlineOpen(resource.data));
+        || (isTeacherOrAbove() && shiftGradingOpen(resource.data.shiftId));
     }
 
     // ───── /grading_assignments — who grades which shift's essays ─────────

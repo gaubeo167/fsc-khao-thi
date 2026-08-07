@@ -37,13 +37,6 @@ export interface GradingAssignment {
   campusId?: string | null;
   /** Optional free-text note for the grader. */
   note?: string | null;
-  /**
-   * Optional grading deadline (ISO string). After this moment the grader
-   * may no longer create / edit / delete grades for this shift. Null or
-   * absent = no time limit. Only an admin (who creates the assignment)
-   * can set or change it.
-   */
-  deadline?: string | null;
 }
 
 export interface EssayGrade {
@@ -65,14 +58,6 @@ export interface EssayGrade {
   /** Teacher's written feedback for the student. */
   comment: string;
   gradedAt: string;
-  /**
-   * Denormalised grading deadline (epoch milliseconds) copied from the
-   * grader's assignment at write time. Lets Firestore security rules
-   * enforce the cutoff by comparing with `request.time` WITHOUT a
-   * cross-document read on the hot grading path. Null / absent = no
-   * deadline (unlimited — the normal case).
-   */
-  gradingDeadlineMs?: number | null;
 }
 
 interface State {
@@ -88,10 +73,6 @@ interface Actions {
   unassignGrader(id: string): void;
   gradersForShift(shiftId: string): GradingAssignment[];
   isAssigned(shiftId: string, graderId: string): boolean;
-  /** ISO deadline for this grader on this shift, or null if none set. */
-  deadlineForShiftGrader(shiftId: string, graderId: string): string | null;
-  /** True once the grader's deadline for this shift has elapsed. */
-  isPastGradingDeadline(shiftId: string, graderId: string): boolean;
 
   saveGrade(
     input: Omit<EssayGrade, "id" | "gradedAt" | "totalPoints"> & {
@@ -150,31 +131,10 @@ export const useGradingStore = create<State & Actions>()((set, get) => ({
     );
   },
 
-  deadlineForShiftGrader(shiftId, graderId) {
-    const a = get().assignments.find(
-      (x) => x.shiftId === shiftId && x.graderId === graderId,
-    );
-    return a?.deadline ?? null;
-  },
-
-  isPastGradingDeadline(shiftId, graderId) {
-    const dl = get().deadlineForShiftGrader(shiftId, graderId);
-    return !!dl && new Date(dl).getTime() < Date.now();
-  },
-
   saveGrade(input) {
-    // Grading-deadline guard (defence-in-depth; Firestore rules enforce
-    // the same cutoff server-side). Throws so the UI can surface it.
-    if (get().isPastGradingDeadline(input.shiftId, input.graderId)) {
-      throw new Error("Đã quá hạn chấm — không thể lưu / sửa điểm.");
-    }
-    const deadline = get().deadlineForShiftGrader(
-      input.shiftId,
-      input.graderId,
-    );
-    // Denormalise the deadline (epoch ms) onto the grade doc so security
-    // rules can compare with request.time without a cross-doc read.
-    const gradingDeadlineMs = deadline ? new Date(deadline).getTime() : null;
+    // The grading-deadline cutoff is a per-shift value (shift.gradingDeadlineMs)
+    // enforced by the grading page (UI lock) + firestore.rules (cross-doc read
+    // of the shift). The store just persists the grade.
     const existing = get().grades.find(
       (g) =>
         g.attemptId === input.attemptId && g.questionId === input.questionId,
@@ -191,7 +151,6 @@ export const useGradingStore = create<State & Actions>()((set, get) => ({
         id: existing.id,
         totalPoints,
         gradedAt: now,
-        gradingDeadlineMs,
       };
       set({
         grades: get().grades.map((g) => (g.id === existing.id ? next : g)),
@@ -208,7 +167,6 @@ export const useGradingStore = create<State & Actions>()((set, get) => ({
       id: input.id ?? newId("eg"),
       totalPoints,
       gradedAt: now,
-      gradingDeadlineMs,
     };
     set({ grades: [fresh, ...get().grades] });
     writeDoc(
@@ -223,13 +181,6 @@ export const useGradingStore = create<State & Actions>()((set, get) => ({
     const target = get().grades.find(
       (g) => g.attemptId === attemptId && g.questionId === questionId,
     );
-    // Deadline guard — a past-deadline grade can no longer be removed.
-    if (
-      target &&
-      get().isPastGradingDeadline(target.shiftId, target.graderId)
-    ) {
-      throw new Error("Đã quá hạn chấm — không thể xoá điểm.");
-    }
     set({
       grades: get().grades.filter(
         (g) => !(g.attemptId === attemptId && g.questionId === questionId),

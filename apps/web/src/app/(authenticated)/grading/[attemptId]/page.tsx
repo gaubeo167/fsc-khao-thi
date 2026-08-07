@@ -47,10 +47,6 @@ export default function GradingWorkspacePage() {
   const packages = usePackagesStore((s) => s.packages);
   const blueprints = useBlueprintsStore((s) => s.blueprints);
   const isAssigned = useGradingStore((s) => s.isAssigned);
-  const isPastGradingDeadline = useGradingStore((s) => s.isPastGradingDeadline);
-  const deadlineForShiftGrader = useGradingStore(
-    (s) => s.deadlineForShiftGrader,
-  );
   const allGrades = useGradingStore((s) => s.grades);
   const saveGrade = useGradingStore((s) => s.saveGrade);
   const deleteGrade = useGradingStore((s) => s.deleteGrade);
@@ -131,10 +127,12 @@ export default function GradingWorkspacePage() {
     );
   }
 
-  // Grading-deadline state (clock-derived — recomputed each render like
-  // effectiveShiftStatus). Once past, all edit/delete controls lock.
-  const gradingDeadline = deadlineForShiftGrader(shift.id, session.userId);
-  const pastGradingDeadline = isPastGradingDeadline(shift.id, session.userId);
+  // Grading-deadline state — a per-shift cutoff (shift.gradingDeadlineMs),
+  // clock-derived each render like effectiveShiftStatus. Once past, all
+  // edit/delete controls lock. Server-enforced in firestore.rules too.
+  const gradingDeadlineMs = shift.gradingDeadlineMs ?? null;
+  const pastGradingDeadline =
+    gradingDeadlineMs != null && gradingDeadlineMs < Date.now();
 
   const currentQ = essayQuestions[activeIdx]!;
   const currentAnswer = attempt.answers[currentQ.id];
@@ -213,16 +211,16 @@ export default function GradingWorkspacePage() {
       </div>
 
       {/* Grading-deadline banner */}
-      {gradingDeadline &&
+      {gradingDeadlineMs != null &&
         (pastGradingDeadline ? (
           <div className="flex items-start gap-2 rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-[12.5px] text-rose-800">
             <Lock className="mt-0.5 h-4 w-4 shrink-0" />
             <div>
               <p className="font-semibold">Đã quá hạn chấm — đã khoá</p>
               <p className="mt-0.5">
-                Thời hạn chấm ({fmtDeadline(gradingDeadline)}) đã kết thúc. Bạn
-                không thể lưu, sửa hoặc xoá điểm nữa. Liên hệ admin / TBM nếu
-                cần gia hạn.
+                Thời hạn chấm ({fmtDeadline(gradingDeadlineMs)}) đã kết thúc.
+                Bạn không thể lưu, sửa hoặc xoá điểm nữa. Liên hệ admin / TBM
+                nếu cần gia hạn.
               </p>
             </div>
           </div>
@@ -232,7 +230,7 @@ export default function GradingWorkspacePage() {
             <span>
               Hạn chấm:{" "}
               <span className="font-semibold">
-                {fmtDeadline(gradingDeadline)}
+                {fmtDeadline(gradingDeadlineMs)}
               </span>{" "}
               — sau thời điểm này sẽ không thể sửa / xoá điểm.
             </span>
@@ -371,8 +369,8 @@ export default function GradingWorkspacePage() {
   );
 }
 
-function fmtDeadline(iso: string): string {
-  return new Date(iso).toLocaleString("vi-VN", {
+function fmtDeadline(ms: number): string {
+  return new Date(ms).toLocaleString("vi-VN", {
     hour: "2-digit",
     minute: "2-digit",
     day: "2-digit",

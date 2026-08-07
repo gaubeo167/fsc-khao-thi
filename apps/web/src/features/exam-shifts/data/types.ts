@@ -202,6 +202,13 @@ export interface ExamShift {
    *  ends. Teachers and admins always see everything via /reports. */
   studentResultVisibility?: StudentResultVisibility;
 
+  /** Grading deadline for THIS shift's essays (epoch ms). Applies to every
+   *  assigned grader — after it passes, graders can no longer create / edit
+   *  / delete essay grades (enforced client-side + in firestore.rules via a
+   *  cross-doc read of this field). Null / absent = no time limit. Admin can
+   *  extend it any time to re-open grading. */
+  gradingDeadlineMs?: number | null;
+
   // Step 5 — Cấu hình
   antiCheat: AntiCheatConfig;
 

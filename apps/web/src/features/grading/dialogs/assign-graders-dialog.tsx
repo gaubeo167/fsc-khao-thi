@@ -1,7 +1,6 @@
 "use client";
-
-import { Clock, Pencil, Search, Trash2, UserCheck, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Clock, Pencil, Save, Search, Trash2, UserCheck, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -13,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { useUsersStore } from "@/features/admin/users/users-store";
 import { useAuthStore } from "@/features/auth/state/auth-store";
 import type { ExamShift } from "@/features/exam-shifts/data/types";
+import { useShiftsStore } from "@/features/exam-shifts/state/shifts-store";
 import { useGradingStore } from "@/features/grading/state/grading-store";
 import { cn } from "@/lib/utils";
 
@@ -22,6 +22,27 @@ interface Props {
   shift: ExamShift;
   /** Count of essay/ai-generated questions in the shift — shown for context. */
   manualQuestionCount: number;
+}
+
+/** epoch ms → datetime-local input value (`YYYY-MM-DDTHH:mm`, local time). */
+function msToLocalInput(ms: number | null | undefined): string {
+  if (ms == null) return "";
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return "";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(
+    d.getHours(),
+  )}:${p(d.getMinutes())}`;
+}
+
+function fmtDeadline(ms: number): string {
+  return new Date(ms).toLocaleString("vi-VN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
 }
 
 export function AssignGradersDialog({
@@ -35,12 +56,28 @@ export function AssignGradersDialog({
   const assignments = useGradingStore((s) => s.assignments);
   const assignGrader = useGradingStore((s) => s.assignGrader);
   const unassignGrader = useGradingStore((s) => s.unassignGrader);
+  const updateShift = useShiftsStore((s) => s.update);
+  // Live shift so the deadline display refreshes right after a save.
+  const liveShift = useShiftsStore(
+    (s) => s.shifts.find((x) => x.id === shift.id),
+  );
+  const currentDeadlineMs = (liveShift ?? shift).gradingDeadlineMs ?? null;
 
   const [search, setSearch] = useState("");
   const [note, setNote] = useState("");
-  // datetime-local value (local time, no timezone) — converted to an ISO
-  // string when the assignment is created. Empty = no deadline.
-  const [deadline, setDeadline] = useState("");
+  // datetime-local value for the shift-wide grading deadline. Synced from
+  // the stored value whenever the dialog (re)opens.
+  const [deadlineInput, setDeadlineInput] = useState(
+    msToLocalInput(currentDeadlineMs),
+  );
+  useEffect(() => {
+    if (open) setDeadlineInput(msToLocalInput(currentDeadlineMs));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, shift.id]);
+
+  const savedInput = msToLocalInput(currentDeadlineMs);
+  const deadlineDirty = deadlineInput !== savedInput;
+  const deadlinePast = currentDeadlineMs != null && currentDeadlineMs < Date.now();
 
   // Eligible graders: teachers / subject-leads / campus-admins in the
   // same campus as the shift. Subject-lead and teacher are the typical
@@ -84,20 +121,21 @@ export function AssignGradersDialog({
       assignedBy: session.userId,
       assignedByName: session.name ?? "Admin",
       note: note.trim() || null,
-      // datetime-local is local wall-clock; toISOString() normalises to UTC.
-      deadline: deadline ? new Date(deadline).toISOString() : null,
     });
     setNote("");
-    setDeadline("");
   }
 
-  const fmtDeadline = (iso: string) =>
-    new Date(iso).toLocaleString("vi-VN", {
-      hour: "2-digit",
-      minute: "2-digit",
-      day: "2-digit",
-      month: "2-digit",
+  function handleSaveDeadline() {
+    const ms = deadlineInput ? new Date(deadlineInput).getTime() : null;
+    updateShift(shift.id, {
+      gradingDeadlineMs: ms != null && Number.isFinite(ms) ? ms : null,
     });
+  }
+
+  function handleClearDeadline() {
+    setDeadlineInput("");
+    updateShift(shift.id, { gradingDeadlineMs: null });
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -119,6 +157,55 @@ export function AssignGradersDialog({
             </p>
           </div>
         </header>
+
+        {/* Shift-wide grading deadline — one value for the whole ca thi. */}
+        <div className="border-b bg-amber-50/40 px-5 py-3.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-[0.06em] text-foreground/70">
+              <Clock className="h-4 w-4 text-amber-700" />
+              Thời hạn chấm (cho cả ca thi)
+            </span>
+            {currentDeadlineMs != null ? (
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11.5px] font-semibold",
+                  deadlinePast
+                    ? "bg-rose-100 text-rose-700"
+                    : "bg-amber-100 text-amber-800",
+                )}
+              >
+                {deadlinePast ? "Đã hết hạn" : "Hạn"}: {fmtDeadline(currentDeadlineMs)}
+              </span>
+            ) : (
+              <span className="text-[11.5px] italic text-muted-foreground">
+                Chưa đặt hạn — người chấm chấm không giới hạn thời gian.
+              </span>
+            )}
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Input
+              type="datetime-local"
+              value={deadlineInput}
+              onChange={(e) => setDeadlineInput(e.target.value)}
+              className="h-9 max-w-[240px] text-[12.5px]"
+            />
+            <Button size="sm" onClick={handleSaveDeadline} disabled={!deadlineDirty}>
+              <Save className="h-3.5 w-3.5" />
+              {currentDeadlineMs != null ? "Cập nhật hạn" : "Lưu hạn"}
+            </Button>
+            {currentDeadlineMs != null && (
+              <Button size="sm" variant="outline" onClick={handleClearDeadline}>
+                <X className="h-3.5 w-3.5" />
+                Gỡ hạn
+              </Button>
+            )}
+          </div>
+          <p className="mt-1.5 text-[11px] text-muted-foreground">
+            Áp dụng cho <span className="font-semibold">tất cả</span> người chấm
+            của ca thi này. Sau thời hạn, người chấm không thể lưu / sửa / xoá
+            điểm (admin vẫn sửa được để gia hạn).
+          </p>
+        </div>
 
         <div className="grid gap-4 px-5 py-4 sm:grid-cols-2">
           {/* Currently assigned */}
@@ -155,21 +242,6 @@ export function AssignGradersDialog({
                             "{a.note}"
                           </p>
                         )}
-                        {a.deadline && (
-                          <p
-                            className={cn(
-                              "mt-0.5 inline-flex items-center gap-1 rounded px-1 text-[10px] font-semibold",
-                              new Date(a.deadline).getTime() < Date.now()
-                                ? "bg-rose-50 text-rose-700"
-                                : "bg-amber-50 text-amber-800",
-                            )}
-                          >
-                            <Clock className="h-2.5 w-2.5" />
-                            Hạn: {fmtDeadline(a.deadline)}
-                            {new Date(a.deadline).getTime() < Date.now() &&
-                              " · đã hết hạn"}
-                          </p>
-                        )}
                       </div>
                       <button
                         type="button"
@@ -194,21 +266,6 @@ export function AssignGradersDialog({
                 placeholder="vd: Chấm xong trước thứ 6"
                 className="mt-1 h-8 text-[12px]"
               />
-            </div>
-            <div className="mt-3">
-              <label className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-[0.06em] text-foreground/65">
-                <Clock className="h-3 w-3" /> Thời hạn chấm (tuỳ chọn)
-              </label>
-              <Input
-                type="datetime-local"
-                value={deadline}
-                onChange={(e) => setDeadline(e.target.value)}
-                className="mt-1 h-8 text-[12px]"
-              />
-              <p className="mt-1 text-[10.5px] text-muted-foreground">
-                Sau thời hạn này, người chấm không thể lưu / sửa / xoá điểm.
-                Đặt <span className="font-semibold">trước</span> khi bấm “Gán”.
-              </p>
             </div>
           </section>
 
