@@ -1,5 +1,5 @@
 "use client";
-import { Clock, Pencil, Save, Search, Trash2, UserCheck, X } from "lucide-react";
+import { Clock, Plus, Save, Search, Trash2, UserCheck, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -70,14 +70,43 @@ export function AssignGradersDialog({
   const [deadlineInput, setDeadlineInput] = useState(
     msToLocalInput(currentDeadlineMs),
   );
+
+  const shiftAssignments = useMemo(
+    () => assignments.filter((a) => a.shiftId === shift.id),
+    [assignments, shift.id],
+  );
+  const currentIds = useMemo(
+    () => new Set(shiftAssignments.map((a) => a.graderId)),
+    [shiftAssignments],
+  );
+
+  // Staged selection — the assignment list is NOT written until "Lưu phân
+  // công". Seeded from the currently-assigned graders each time the dialog
+  // opens so removing = deselect, adding = select, then one save applies
+  // the diff.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   useEffect(() => {
-    if (open) setDeadlineInput(msToLocalInput(currentDeadlineMs));
+    if (open) {
+      setSelectedIds(new Set(shiftAssignments.map((a) => a.graderId)));
+      setDeadlineInput(msToLocalInput(currentDeadlineMs));
+      setNote("");
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, shift.id]);
 
   const savedInput = msToLocalInput(currentDeadlineMs);
   const deadlineDirty = deadlineInput !== savedInput;
   const deadlinePast = currentDeadlineMs != null && currentDeadlineMs < Date.now();
+
+  const toAdd = useMemo(
+    () => [...selectedIds].filter((id) => !currentIds.has(id)),
+    [selectedIds, currentIds],
+  );
+  const toRemove = useMemo(
+    () => [...currentIds].filter((id) => !selectedIds.has(id)),
+    [selectedIds, currentIds],
+  );
+  const assignmentsDirty = toAdd.length > 0 || toRemove.length > 0;
 
   // Eligible graders: teachers / subject-leads / campus-admins in the
   // same campus as the shift. Subject-lead and teacher are the typical
@@ -93,16 +122,10 @@ export function AssignGradersDialog({
     );
   }, [users, shift.campusId]);
 
-  const shiftAssignments = useMemo(
-    () => assignments.filter((a) => a.shiftId === shift.id),
-    [assignments, shift.id],
-  );
-  const assignedIds = new Set(shiftAssignments.map((a) => a.graderId));
-
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return eligible.filter((u) => {
-      if (assignedIds.has(u.id)) return false;
+      if (selectedIds.has(u.id)) return false;
       if (!q) return true;
       return (
         u.name.toLowerCase().includes(q) ||
@@ -110,18 +133,36 @@ export function AssignGradersDialog({
         (u.subject ?? "").toLowerCase().includes(q)
       );
     });
-  }, [eligible, search, assignedIds]);
+  }, [eligible, search, selectedIds]);
 
-  function handleAdd(graderId: string, graderName: string) {
-    if (!session) return;
-    assignGrader({
-      shiftId: shift.id,
-      graderId,
-      graderName,
-      assignedBy: session.userId,
-      assignedByName: session.name ?? "Admin",
-      note: note.trim() || null,
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
     });
+  }
+
+  function handleSaveAssignments() {
+    if (!session || !assignmentsDirty) return;
+    // Apply removals first, then additions.
+    for (const id of toRemove) {
+      const a = shiftAssignments.find((x) => x.graderId === id);
+      if (a) unassignGrader(a.id);
+    }
+    for (const id of toAdd) {
+      const u = users.find((x) => x.id === id);
+      if (!u) continue;
+      assignGrader({
+        shiftId: shift.id,
+        graderId: id,
+        graderName: u.name,
+        assignedBy: session.userId,
+        assignedByName: session.name ?? "Admin",
+        note: note.trim() || null,
+      });
+    }
     setNote("");
   }
 
@@ -137,8 +178,20 @@ export function AssignGradersDialog({
     updateShift(shift.id, { gradingDeadlineMs: null });
   }
 
+  function requestClose() {
+    if (
+      assignmentsDirty &&
+      !window.confirm(
+        "Có thay đổi phân công chưa lưu. Đóng và bỏ các thay đổi này?",
+      )
+    ) {
+      return;
+    }
+    onOpenChange(false);
+  }
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(o) => (o ? onOpenChange(true) : requestClose())}>
       <DialogContent className="max-w-2xl p-0">
         <header className="flex items-start gap-3 border-b px-5 py-4">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-700">
@@ -208,36 +261,47 @@ export function AssignGradersDialog({
         </div>
 
         <div className="grid gap-4 px-5 py-4 sm:grid-cols-2">
-          {/* Currently assigned */}
+          {/* Selected graders (staged — not written until save) */}
           <section>
             <h3 className="mb-2 text-[12px] font-bold uppercase tracking-[0.06em] text-foreground/65">
-              Người chấm hiện tại ({shiftAssignments.length})
+              Người chấm ({selectedIds.size})
             </h3>
-            {shiftAssignments.length === 0 ? (
+            {selectedIds.size === 0 ? (
               <p className="rounded-md border border-dashed bg-muted/20 px-3 py-2 text-[12px] text-muted-foreground">
-                Chưa gán ai. Chọn giáo viên ở cột bên phải để bắt đầu.
+                Chưa chọn ai. Chọn giáo viên ở cột bên phải rồi bấm “Lưu phân
+                công”.
               </p>
             ) : (
               <ul className="space-y-1.5">
-                {shiftAssignments.map((a) => {
-                  const u = users.find((x) => x.id === a.graderId);
+                {[...selectedIds].map((id) => {
+                  const u = users.find((x) => x.id === id);
+                  const a = shiftAssignments.find((x) => x.graderId === id);
+                  const isNew = !currentIds.has(id);
                   return (
                     <li
-                      key={a.id}
-                      className="flex items-center gap-2 rounded-lg border bg-card px-3 py-2"
+                      key={id}
+                      className={cn(
+                        "flex items-center gap-2 rounded-lg border bg-card px-3 py-2",
+                        isNew && "border-emerald-300 bg-emerald-50/40",
+                      )}
                     >
                       <span className="flex h-7 w-7 items-center justify-center rounded-full bg-violet-100 text-[11px] font-bold text-violet-800">
-                        {a.graderName.charAt(0)}
+                        {(u?.name ?? "?").charAt(0)}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-[12.5px] font-semibold">
-                          {a.graderName}
+                        <p className="flex items-center gap-1.5 truncate text-[12.5px] font-semibold">
+                          {u?.name ?? id}
+                          {isNew && (
+                            <span className="rounded bg-emerald-100 px-1 text-[9.5px] font-bold uppercase text-emerald-700">
+                              mới
+                            </span>
+                          )}
                         </p>
                         <p className="truncate text-[10.5px] text-muted-foreground">
                           {u?.role ?? "—"}
                           {u?.subject ? ` · ${u.subject}` : ""}
                         </p>
-                        {a.note && (
+                        {a?.note && (
                           <p className="mt-0.5 truncate text-[10.5px] italic text-muted-foreground">
                             "{a.note}"
                           </p>
@@ -245,8 +309,8 @@ export function AssignGradersDialog({
                       </div>
                       <button
                         type="button"
-                        onClick={() => unassignGrader(a.id)}
-                        title="Gỡ phân công"
+                        onClick={() => toggleSelect(id)}
+                        title="Bỏ chọn"
                         className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -256,9 +320,17 @@ export function AssignGradersDialog({
                 })}
               </ul>
             )}
+            {assignmentsDirty && (
+              <p className="mt-2 rounded-md bg-amber-50 px-2 py-1 text-[10.5px] font-semibold text-amber-800">
+                {toAdd.length > 0 && `+${toAdd.length} thêm`}
+                {toAdd.length > 0 && toRemove.length > 0 && " · "}
+                {toRemove.length > 0 && `−${toRemove.length} gỡ`} — bấm “Lưu
+                phân công” để áp dụng.
+              </p>
+            )}
             <div className="mt-3">
               <label className="text-[11px] font-bold uppercase tracking-[0.06em] text-foreground/65">
-                Ghi chú cho người chấm (tuỳ chọn)
+                Ghi chú cho người chấm (áp dụng cho người mới thêm)
               </label>
               <Input
                 value={note}
@@ -287,7 +359,7 @@ export function AssignGradersDialog({
               <p className="rounded-md border border-dashed bg-muted/20 px-3 py-2 text-[12px] text-muted-foreground">
                 {eligible.length === 0
                   ? "Campus chưa có giáo viên / TBM nào."
-                  : "Không tìm thấy giáo viên khớp."}
+                  : "Không còn giáo viên khớp (đã chọn hết hoặc không tìm thấy)."}
               </p>
             ) : (
               <ul className="max-h-[300px] space-y-1 overflow-y-auto">
@@ -308,11 +380,11 @@ export function AssignGradersDialog({
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => handleAdd(u.id, u.name)}
+                      onClick={() => toggleSelect(u.id)}
                       className="gap-1"
                     >
-                      <Pencil className="h-3 w-3" />
-                      Gán
+                      <Plus className="h-3 w-3" />
+                      Chọn
                     </Button>
                   </li>
                 ))}
@@ -321,11 +393,30 @@ export function AssignGradersDialog({
           </section>
         </div>
 
-        <footer className="flex justify-end border-t bg-[var(--color-surface-2)] px-5 py-3">
-          <Button size="sm" onClick={() => onOpenChange(false)}>
-            <X className="h-3.5 w-3.5" />
-            Đóng
-          </Button>
+        <footer className="flex items-center justify-between gap-2 border-t bg-[var(--color-surface-2)] px-5 py-3">
+          <span className="text-[11px] text-muted-foreground">
+            {assignmentsDirty ? (
+              <span className="font-semibold text-amber-700">
+                • Có thay đổi chưa lưu
+              </span>
+            ) : (
+              "Phân công đã đồng bộ"
+            )}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={requestClose}>
+              <X className="h-3.5 w-3.5" />
+              Đóng
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleSaveAssignments}
+              disabled={!assignmentsDirty}
+            >
+              <Save className="h-3.5 w-3.5" />
+              Lưu phân công
+            </Button>
+          </div>
         </footer>
       </DialogContent>
     </Dialog>
