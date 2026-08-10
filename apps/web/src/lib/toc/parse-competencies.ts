@@ -93,6 +93,30 @@ export function inferBloomLevel(title: string): BloomLevel {
   return best?.level ?? 1;
 }
 
+// In the FSC khung template the leading letter of each YCCĐ IS its cognitive
+// level: a. = Nhận biết (1), b. = Thông hiểu (2), c. = Vận dụng (3). Accept a
+// single leading letter followed by "." or ")" + a space. This is the primary,
+// deterministic signal; the verb heuristic is only a fallback.
+const LETTER_MARKER_RE = /^\s*([a-dA-D])\s*[.)]\s+/;
+const LETTER_TO_BLOOM: Record<string, BloomLevel> = { a: 1, b: 2, c: 3, d: 3 };
+
+/** Bloom level from the leading a./b./c. marker, or null if absent. */
+export function bloomFromLetter(title: string): BloomLevel | null {
+  const m = LETTER_MARKER_RE.exec(title ?? "");
+  if (!m) return null;
+  return LETTER_TO_BLOOM[m[1]!.toLowerCase()] ?? null;
+}
+
+/** Strip the leading a./b./c. marker — it's Bloom metadata, not content. */
+export function stripLetterMarker(title: string): string {
+  return (title ?? "").replace(LETTER_MARKER_RE, "").trim();
+}
+
+/** Bloom for an outcome: letter marker first, else verb heuristic. */
+export function outcomeBloomLevel(title: string): BloomLevel {
+  return bloomFromLetter(title) ?? inferBloomLevel(title);
+}
+
 /** Annotate an already-parsed framework tree (from parse-framework or the
  *  /api/subjects/parse-framework route) with competency `kind` per depth and
  *  an inferred `bloomLevel` on each outcome leaf. */
@@ -104,9 +128,10 @@ export function frameworkTreeToCompetencies(
     depth === 0 ? "chapter" : depth === 1 ? "topic" : "outcome";
   return nodes.map((n) => ({
     code: n.code,
-    title: n.name,
+    // For a YCCĐ, drop the leading a./b./c. marker — it becomes the Bloom tag.
+    title: kind === "outcome" ? stripLetterMarker(n.name) : n.name,
     kind,
-    bloomLevel: kind === "outcome" ? inferBloomLevel(n.name) : undefined,
+    bloomLevel: kind === "outcome" ? outcomeBloomLevel(n.name) : undefined,
     children:
       n.children && n.children.length > 0
         ? frameworkTreeToCompetencies(n.children, depth + 1)
