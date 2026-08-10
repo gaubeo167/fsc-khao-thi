@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+/** Bloom cognitive level (1=Nhận biết, 2=Thông hiểu, 3=Vận dụng). */
+const BloomLevelSchema = z.union([z.literal(1), z.literal(2), z.literal(3)]);
+
 // Limits are deliberately generous to accommodate embedded images
 // (data URL ~50-300KB each) and rich-text markup. The hard cap matters at
 // localStorage time, not in the editor.
@@ -16,12 +19,18 @@ const BaseFields = z.object({
   tags: z.array(z.string()).default([]),
   kho: z.enum(["personal", "campus"]),
   campusId: z.string().nullable().default(null),
+  // Khung YCCĐ (additive, optional) — question-level competency tag(s) +
+  // Bloom, separate from mục lục `tocNodeId` / độ khó `difficulty`.
+  competencyIds: z.array(z.string()).optional().default([]),
+  bloomLevel: BloomLevelSchema.optional(),
 });
 
 const McqOptionSchema = z.object({
   id: z.string(),
   content: z.string().trim().min(1, "Phương án không được trống").max(1_000_000),
   isCorrect: z.boolean(),
+  // YCCĐ của riêng phương án (mcq-multi) — optional.
+  competencyId: z.string().nullable().optional(),
 });
 
 export const McqSingleSchema = BaseFields.extend({
@@ -55,6 +64,10 @@ const MultiTfSubSchema = z.object({
   id: z.string(),
   statement: z.string().trim().min(1, "Câu phụ không được trống").max(2_000_000),
   correctAnswer: z.boolean(),
+  // YCCĐ + Bloom + trọng số của riêng từng ý (a/b/c/d) — additive, optional.
+  competencyId: z.string().nullable().optional(),
+  bloomLevel: BloomLevelSchema.optional(),
+  weight: z.number().min(0).max(1).optional(),
 });
 
 export const MultiTfSchema = BaseFields.extend({

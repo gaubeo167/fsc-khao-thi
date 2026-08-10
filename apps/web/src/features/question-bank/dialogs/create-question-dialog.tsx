@@ -35,6 +35,8 @@ import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 
 import { ContentEditor } from "../components/content-editor";
 import { KhoSelector } from "../components/forms/kho-selector";
+import { QuestionCompetencyField } from "@/features/competencies/components/question-competency-field";
+
 import { TocTagFields } from "../components/forms/toc-tag-fields";
 import { TypeSpecificFields } from "../components/forms/type-specific-fields";
 import { RenderedContent } from "../components/rendered-content";
@@ -531,6 +533,12 @@ export function QuestionForm({
         <KhoSelector control={form.control} />
 
         <TocTagFields control={form.control} watch={form.watch} />
+
+        <QuestionCompetencyField
+          control={form.control}
+          watch={form.watch}
+          setValue={form.setValue}
+        />
 
         <input type="hidden" {...form.register("campusId")} />
       </section>
@@ -1080,6 +1088,7 @@ function defaultsForType(type: QuestionType, _campusId: string | null): any {
     difficulty: "medium" as const,
     tags: [] as string[],
     tocNodeId: null as string | null,
+    competencyIds: [] as string[],
     kho: "personal" as const,
     campusId: null as string | null,
   };
@@ -1167,6 +1176,8 @@ function defaultsFromExisting(q: Question): any {
     difficulty: q.difficulty,
     tags: q.tags ?? [],
     tocNodeId: q.tocNodeId ?? null,
+    competencyIds: q.competencyIds ?? [],
+    bloomLevel: q.bloomLevel,
     kho: q.kho,
     campusId: q.campusId,
   };

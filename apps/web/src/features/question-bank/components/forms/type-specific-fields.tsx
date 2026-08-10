@@ -21,6 +21,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Label } from "@/components/ui/label";
+import { CompetencyPicker } from "@/features/competencies/components/competency-picker";
+import { useCompetenciesStore } from "@/features/competencies/state/competencies-store";
 import { cn } from "@/lib/utils";
 
 import type { QuestionType } from "../../data/question-types";
@@ -911,6 +913,10 @@ function MultiTfFields({
 }) {
   const { fields, append, remove } = useFieldArray({ control, name: "subQuestions" });
   const topError = (errors.subQuestions as any)?.message as string | undefined;
+  // Per-ý YCCĐ — the core case for multi-tf (each ý can hit a different
+  // outcome). Filtered by the question's subject + grade.
+  const subjectId = useWatch({ control, name: "subjectId" }) as string;
+  const gradeId = useWatch({ control, name: "gradeId" }) as string;
 
   return (
     <div className="space-y-3">
@@ -933,6 +939,8 @@ function MultiTfFields({
             idx={idx}
             control={control}
             setValue={setValue}
+            subjectId={subjectId}
+            gradeId={gradeId}
             canRemove={fields.length > 2}
             onRemove={() => remove(idx)}
             error={(errors.subQuestions as any)?.[idx]?.statement?.message}
@@ -950,6 +958,7 @@ function MultiTfFields({
               id: `sub-${Date.now()}-${fields.length}`,
               statement: "",
               correctAnswer: true,
+              competencyId: null,
             } as never,
           )
         }
@@ -967,6 +976,8 @@ function SubQuestionRow({
   idx,
   control,
   setValue,
+  subjectId,
+  gradeId,
   canRemove,
   onRemove,
   error,
@@ -974,6 +985,8 @@ function SubQuestionRow({
   idx: number;
   control: Control<any>;
   setValue: UseFormSetValue<any>;
+  subjectId: string;
+  gradeId: string;
   canRemove: boolean;
   onRemove: () => void;
   error?: string;
@@ -1008,6 +1021,31 @@ function SubQuestionRow({
                   )}
                 />
                 {error && <p className="text-[12px] text-destructive">{error}</p>}
+                <Controller
+                  control={control}
+                  name={`subQuestions.${idx}.competencyId`}
+                  render={({ field: cField }) => (
+                    <CompetencyPicker
+                      subjectId={subjectId}
+                      gradeId={gradeId}
+                      value={cField.value ?? null}
+                      compact
+                      placeholder={`Gắn YCCĐ cho ý ${idx + 1}…`}
+                      onChange={(id) => {
+                        cField.onChange(id);
+                        // Denormalise the outcome's Bloom onto the ý.
+                        const c = id
+                          ? useCompetenciesStore.getState().competencyById(id)
+                          : undefined;
+                        setValue(
+                          `subQuestions.${idx}.bloomLevel`,
+                          c?.bloomLevel ?? undefined,
+                          { shouldDirty: true },
+                        );
+                      }}
+                    />
+                  )}
+                />
               </div>
 
               <div className="flex shrink-0 flex-col gap-1.5">

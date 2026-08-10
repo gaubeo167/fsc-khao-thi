@@ -15,6 +15,7 @@ import { useState } from "react";
 import {
   Controller,
   useFieldArray,
+  useWatch,
   type Control,
   type UseFormSetValue,
 } from "react-hook-form";
@@ -22,6 +23,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Label } from "@/components/ui/label";
+import { CompetencyPicker } from "@/features/competencies/components/competency-picker";
 import { cn } from "@/lib/utils";
 
 import { AiAssistDialog } from "../ai-assist-dialog";
@@ -47,6 +49,10 @@ export function McqOptionsField({ control, setValue, mode, error }: Props) {
     name: "options",
   });
   const [aiTarget, setAiTarget] = useState<number | null>(null);
+  // Per-option YCCĐ only for mcq-multi (each đáp án may hit a different
+  // outcome). Filtered by the question's subject + grade.
+  const subjectId = useWatch({ control, name: "subjectId" }) as string;
+  const gradeId = useWatch({ control, name: "gradeId" }) as string;
 
   function setCorrectSingle(index: number) {
     fields.forEach((_, i) =>
@@ -75,6 +81,8 @@ export function McqOptionsField({ control, setValue, mode, error }: Props) {
             idx={idx}
             mode={mode}
             control={control}
+            subjectId={subjectId}
+            gradeId={gradeId}
             canRemove={fields.length > 2}
             onSetCorrectSingle={() => setCorrectSingle(idx)}
             onRemove={() => remove(idx)}
@@ -95,6 +103,7 @@ export function McqOptionsField({ control, setValue, mode, error }: Props) {
               id: `opt-${Date.now()}-${fields.length}`,
               content: "",
               isCorrect: false,
+              competencyId: null,
             } as never)
           }
         >
@@ -130,6 +139,8 @@ interface OptionRowProps {
   idx: number;
   mode: "single" | "multi";
   control: Control<any>;
+  subjectId: string;
+  gradeId: string;
   canRemove: boolean;
   onSetCorrectSingle: () => void;
   onRemove: () => void;
@@ -140,6 +151,8 @@ function OptionRow({
   idx,
   mode,
   control,
+  subjectId,
+  gradeId,
   canRemove,
   onSetCorrectSingle,
   onRemove,
@@ -192,7 +205,7 @@ function OptionRow({
                   {String.fromCharCode(65 + idx)}
                 </span>
 
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 flex-1 space-y-1.5">
                   <Controller
                     control={control}
                     name={`options.${idx}.content`}
@@ -209,6 +222,22 @@ function OptionRow({
                       />
                     )}
                   />
+                  {mode === "multi" && (
+                    <Controller
+                      control={control}
+                      name={`options.${idx}.competencyId`}
+                      render={({ field: cField }) => (
+                        <CompetencyPicker
+                          subjectId={subjectId}
+                          gradeId={gradeId}
+                          value={cField.value ?? null}
+                          onChange={cField.onChange}
+                          compact
+                          placeholder="Gắn YCCĐ cho phương án này…"
+                        />
+                      )}
+                    />
+                  )}
                 </div>
 
                 {canRemove && (
