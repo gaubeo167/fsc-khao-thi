@@ -35,6 +35,7 @@ export const COLLECTIONS = {
   gradesEssay: "grades_essay",
   gradingAssignments: "grading_assignments",
   tocNodes: "toc_nodes",
+  competencies: "competencies",
   teachingAssignments: "teaching_assignments",
   proctorEvents: "proctor_events",
   examForms: "exam_forms",

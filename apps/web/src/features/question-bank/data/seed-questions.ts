@@ -1,3 +1,5 @@
+import type { BloomLevel } from "@/features/competencies/data/types";
+
 import type { QuestionType } from "./question-types";
 
 export type Difficulty = "easy" | "medium" | "hard";
@@ -11,7 +13,17 @@ export interface BaseQuestion {
   explanation?: string;
   subjectId: string;
   gradeId: string | null;
+  /** Mục lục (kho lưu / bốc đề theo CP) — unchanged, still the storage tag. */
   tocNodeId?: string | null;
+  /**
+   * Khung YCCĐ (competency framework) — a SEPARATE dimension from `tocNodeId`.
+   * Question-level competency link(s). For multi-tf, per-ý tags live on each
+   * `MultiTfSub` instead. Optional & additive — legacy rows have neither.
+   */
+  competencyIds?: string[];
+  /** Bloom cognitive level of the question (Biết/Hiểu/Vận dụng) — parallel
+   *  to `difficulty`, NOT a replacement. Only for single-outcome types. */
+  bloomLevel?: BloomLevel;
   difficulty: Difficulty;
   tags: string[];
 
@@ -50,6 +62,9 @@ export interface McqOption {
   id: string;
   content: string;
   isCorrect: boolean;
+  /** Khung YCCĐ — competency this single option assesses (mcq-multi may
+   *  spread options across different outcomes). Optional & additive. */
+  competencyId?: string | null;
 }
 
 export interface McqSingleQuestion extends BaseQuestion {
@@ -71,6 +86,14 @@ export interface MultiTfSub {
   id: string;
   statement: string;
   correctAnswer: boolean;
+  /** Khung YCCĐ — competency this individual ý (a/b/c/d) assesses. The core
+   *  reason YCCĐ is separate from mục lục: each ý can target a different
+   *  outcome. Optional & additive. */
+  competencyId?: string | null;
+  /** Bloom level of this ý (Biết/Hiểu/Vận dụng). */
+  bloomLevel?: BloomLevel;
+  /** Per-ý weight for weighted Đúng–Sai scoring (0..1). Optional. */
+  weight?: number;
 }
 export interface MultiTfQuestion extends BaseQuestion {
   type: "multi-tf";

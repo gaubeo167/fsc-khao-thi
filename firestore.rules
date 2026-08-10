@@ -130,6 +130,14 @@ service cloud.firestore {
       allow create, update, delete: if isTeacherOrAbove();
     }
 
+    // Khung năng lực / YCCĐ (yêu cầu cần đạt) — a curriculum-outcome tree,
+    // separate from toc_nodes. Same access shape: any signed-in user may
+    // read (to tag / display), teacher+ authors it.
+    match /competencies/{competencyId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isTeacherOrAbove();
+    }
+
     // ───── /teaching_assignments — teacher↔class↔subject mapping ──────────
     match /teaching_assignments/{id} {
       allow read: if isSignedIn();

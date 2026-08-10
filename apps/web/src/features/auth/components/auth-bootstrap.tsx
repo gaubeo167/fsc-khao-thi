@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 
 import { subscribeUsers } from "@/features/admin/users/users-store";
 import { subscribeCampuses } from "@/features/campus/state/campuses-store";
+import { subscribeCompetencies } from "@/features/competencies/state/competencies-store";
 import { subscribeExamForms } from "@/features/exam-forms/state/exam-forms-store";
 import { subscribeShifts } from "@/features/exam-shifts/state/shifts-store";
 import { subscribeMaterials } from "@/features/learning-materials/state/materials-store";
@@ -82,6 +83,9 @@ function startDataSubscriptions(session: AuthSession): Array<() => void> {
       subscribeTeaching(),
       // "Đã sinh đề" state — staff-only; the runtime uses exam_forms.
       subscribeGenerated(),
+      // Khung YCCĐ (competency framework) — staff author + tag; students
+      // never read the whole tree (exam payloads carry the labels they need).
+      subscribeCompetencies(),
     );
   }
   return subs;
