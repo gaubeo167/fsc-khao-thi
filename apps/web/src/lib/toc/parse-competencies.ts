@@ -93,9 +93,12 @@ export function inferBloomLevel(title: string): BloomLevel {
   return best?.level ?? 1;
 }
 
-function annotate(
+/** Annotate an already-parsed framework tree (from parse-framework or the
+ *  /api/subjects/parse-framework route) with competency `kind` per depth and
+ *  an inferred `bloomLevel` on each outcome leaf. */
+export function frameworkTreeToCompetencies(
   nodes: FrameworkNode[],
-  depth: number,
+  depth = 0,
 ): CompetencyImportNode[] {
   const kind: CompetencyKind =
     depth === 0 ? "chapter" : depth === 1 ? "topic" : "outcome";
@@ -106,7 +109,7 @@ function annotate(
     bloomLevel: kind === "outcome" ? inferBloomLevel(n.name) : undefined,
     children:
       n.children && n.children.length > 0
-        ? annotate(n.children, depth + 1)
+        ? frameworkTreeToCompetencies(n.children, depth + 1)
         : undefined,
   }));
 }
@@ -116,5 +119,5 @@ export function parseFrameworkToCompetencies(raw: string): {
   counts: { chapters: number; topics: number; indicators: number };
 } {
   const { tree, counts } = parseFrameworkText(raw);
-  return { tree: annotate(tree, 0), counts };
+  return { tree: frameworkTreeToCompetencies(tree, 0), counts };
 }

@@ -10,6 +10,7 @@ import {
   PencilLine,
   Plus,
   Sparkles,
+  Target,
   Trash2,
 } from "lucide-react";
 import dynamic from "next/dynamic";
@@ -35,6 +36,7 @@ import { useCampusGate } from "@/features/campus/hooks/use-campus-gate";
 import { useCampusStore } from "@/features/campus/state/campus-store";
 import { useCampusesStore } from "@/features/campus/state/campuses-store";
 import { useGradesStore } from "@/features/grades/state/grades-store";
+import { CompetencyManager } from "@/features/competencies/components/competency-manager";
 import { TocTree } from "@/features/subjects/components/toc-tree";
 import type { Subject } from "@/features/subjects/data/seed-subjects";
 import {
@@ -103,7 +105,7 @@ export default function SubjectsAdminPage() {
     [operatingCampus],
   );
 
-  const [tab, setTab] = useState<"list" | "toc">("list");
+  const [tab, setTab] = useState<"list" | "toc" | "competency">("list");
 
   // Subject list filters
   const [search, setSearch] = useState("");
@@ -272,12 +274,18 @@ export default function SubjectsAdminPage() {
 
       <CampusGateBanner />
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as "list" | "toc")}>
+      <Tabs
+        value={tab}
+        onValueChange={(v) => setTab(v as "list" | "toc" | "competency")}
+      >
         <div className="mb-3">
           <TabsList>
             <TabsTrigger value="list">Danh sách môn học</TabsTrigger>
             <TabsTrigger value="toc">
               <ListTree className="h-3.5 w-3.5" /> Mục lục môn học
+            </TabsTrigger>
+            <TabsTrigger value="competency">
+              <Target className="h-3.5 w-3.5" /> Khung YCCĐ
             </TabsTrigger>
           </TabsList>
         </div>
@@ -596,6 +604,92 @@ export default function SubjectsAdminPage() {
                   </span>
                 ))}
               </p>
+            </section>
+          </div>
+        </TabsContent>
+
+        {/* TAB 3: Khung năng lực / YCCĐ — separate from mục lục. */}
+        <TabsContent value="competency">
+          <div className="grid gap-3 lg:grid-cols-[280px_minmax(0,1fr)]">
+            <aside className="rounded-xl border bg-card p-2.5">
+              <p className="text-eyebrow mb-2 px-1.5">Chọn môn học</p>
+              <ul className="space-y-0.5">
+                {filteredSubjects.length === 0 && (
+                  <li className="px-2 py-3 text-[12px] text-muted-foreground">
+                    Chưa có môn học nào trong campus này.
+                  </li>
+                )}
+                {filteredSubjects.map((s) => {
+                  const active = s.id === tocSubjectId;
+                  return (
+                    <li key={s.id}>
+                      <button
+                        type="button"
+                        onClick={() => setTocSubjectId(s.id)}
+                        className={cn(
+                          "flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-[13px] font-medium transition-colors",
+                          active
+                            ? "bg-primary/8 text-primary"
+                            : "text-foreground/75 hover:bg-accent hover:text-foreground",
+                        )}
+                      >
+                        <SubjectIcon color={s.color} size="sm" />
+                        <span className="truncate">{s.name}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </aside>
+
+            <section className="rounded-xl border bg-card p-4">
+              <header className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  {tocSubject ? <SubjectIcon color={tocSubject.color} /> : null}
+                  <div className="min-w-0">
+                    <p className="text-card-title truncate">
+                      {tocSubject?.name ?? "—"}{" "}
+                      <span className="text-foreground/50">·</span>{" "}
+                      {tocGrade?.name ?? "—"}
+                    </p>
+                    <p className="text-meta">
+                      Khung Yêu cầu cần đạt (YCCĐ) — dùng để gắn năng lực cho
+                      câu hỏi / từng ý. Tách khỏi mục lục.
+                    </p>
+                  </div>
+                </div>
+                <label className="inline-flex items-center gap-1.5">
+                  <span className="text-meta">Khối</span>
+                  <Select
+                    value={tocGradeId}
+                    onChange={(e) => setTocGradeId(e.target.value)}
+                    className="h-9 min-w-[110px]"
+                  >
+                    {grades
+                      .filter((g) =>
+                        scopedGradeIds ? scopedGradeIds.has(g.id) : true,
+                      )
+                      .map((g) => (
+                        <option key={g.id} value={g.id}>
+                          {g.name}
+                        </option>
+                      ))}
+                  </Select>
+                </label>
+              </header>
+
+              {tocSubject && tocGrade ? (
+                <CompetencyManager
+                  subjectId={tocSubjectId}
+                  gradeId={tocGradeId}
+                  subjectName={tocSubject.name}
+                  gradeName={tocGrade.name}
+                />
+              ) : (
+                <p className="py-8 text-center text-[12px] text-muted-foreground">
+                  Chọn môn học và khối để quản lý khung YCCĐ.
+                </p>
+              )}
             </section>
           </div>
         </TabsContent>
