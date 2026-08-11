@@ -23,6 +23,7 @@ import { useBlueprintsStore } from "@/features/exams/state/blueprints-store";
 import { usePackagesStore } from "@/features/exams/state/packages-store";
 import { useGeneratedStore } from "@/features/exams/state/generated-store";
 import { RenderedContent } from "@/features/question-bank/components/rendered-content";
+import type { Question } from "@/features/question-bank/data/seed-questions";
 import { cn } from "@/lib/utils";
 
 import {
@@ -137,6 +138,10 @@ export function YccdWizard() {
   );
   const topicsOf = (chId: string) =>
     comps.filter((c) => c.kind === "topic" && c.parentId === chId).sort((a, b) => a.order - b.order);
+  const outcomesOf = (topicId: string) =>
+    comps
+      .filter((c) => c.kind === "outcome" && c.parentId === topicId)
+      .sort((a, b) => (a.code ?? "").localeCompare(b.code ?? ""));
 
   const rawPool = useMemo(
     () =>
@@ -224,6 +229,29 @@ export function YccdWizard() {
     () => buildYccdInventory(pool, enabledParts, resolvers, excludeIds),
     [pool, enabledParts, resolvers, excludeIds],
   );
+
+  // Questions grouped by their resolved competency (outcome or topic-level),
+  // id-sorted so "keep first N" is deterministic. Used by step ② khung đề.
+  const poolByComp = useMemo(() => {
+    const m: Record<string, Question[]> = {};
+    for (const q of pool) {
+      const c = q.competencyIds?.[0];
+      if (c) (m[c] ??= []).push(q);
+    }
+    for (const k of Object.keys(m)) m[k]!.sort((a, b) => a.id.localeCompare(b.id));
+    return m;
+  }, [pool]);
+
+  // Set how many of a YCCĐ's questions go into the frame (keep first N by id).
+  function setFrameCount(questions: Question[], n: number) {
+    setExcludeIds((prev) => {
+      const next = new Set(prev);
+      questions.forEach((qq, i) => (i < n ? next.delete(qq.id) : next.add(qq.id)));
+      return next;
+    });
+    setDrafts([]);
+    setSavedPkgId(null);
+  }
 
   // Auto-clamp any cell that now exceeds inventory (e.g. after un-ticking).
   useEffect(() => {
@@ -517,11 +545,7 @@ export function YccdWizard() {
               <StepScope
                 chapters={chapters}
                 topicsOf={topicsOf}
-                outcomesOf={(tid) =>
-                  comps
-                    .filter((c) => c.kind === "outcome" && c.parentId === tid)
-                    .sort((a, b) => (a.code ?? "").localeCompare(b.code ?? ""))
-                }
+                outcomesOf={outcomesOf}
                 selectedTopics={selectedTopics}
                 onToggle={toggleTopic}
                 collapsed={collapsedCh}
@@ -549,16 +573,21 @@ export function YccdWizard() {
             {step === 2 && (
               <StepFrame
                 rows={rows}
-                pool={pool}
-                resolvers={resolvers}
+                chapters={chapters}
+                topicsOf={topicsOf}
+                outcomesOf={outcomesOf}
+                poolByComp={poolByComp}
                 excludeIds={excludeIds}
                 onToggleExclude={(id) =>
                   setExcludeIds((prev) => {
                     const n = new Set(prev);
                     n.has(id) ? n.delete(id) : n.add(id);
+                    setDrafts([]);
+                    setSavedPkgId(null);
                     return n;
                   })
                 }
+                onSetFrameCount={setFrameCount}
               />
             )}
             {step === 3 && (
@@ -853,75 +882,203 @@ function StepScope({
 }
 
 // ─────────────────────────── Step 2: khung đề (exclude) ─────────────────
+const QTYPE_LABEL: Record<string, string> = {
+  "mcq-single": "TN 1 đáp án",
+  "mcq-multi": "TN nhiều đáp án",
+  "true-false": "Đúng/Sai",
+  "multi-tf": "Đúng–Sai nhiều ý",
+  "short-answer": "Trả lời ngắn",
+  essay: "Tự luận",
+  "ai-generated": "Tự luận (AI)",
+  "fill-blank": "Điền khuyết",
+  matching: "Nối",
+  ordering: "Sắp xếp",
+  "drag-drop": "Kéo thả",
+  underline: "Gạch chân",
+};
+
 function StepFrame({
   rows,
-  pool,
-  resolvers,
+  outcomesOf,
+  poolByComp,
   excludeIds,
   onToggleExclude,
+  onSetFrameCount,
 }: {
   rows: MatrixRow[];
-  pool: import("@/features/question-bank/data/seed-questions").Question[];
-  resolvers: YccdResolvers;
+  chapters: Competency[];
+  topicsOf: (id: string) => Competency[];
+  outcomesOf: (id: string) => Competency[];
+  poolByComp: Record<string, Question[]>;
   excludeIds: Set<string>;
   onToggleExclude: (id: string) => void;
+  onSetFrameCount: (questions: Question[], n: number) => void;
 }) {
-  const topicIds = new Set(rows.map((r) => r.topicId));
-  // Questions whose primary outcome's topic is a selected row.
-  const inScope = useMemo(
-    () =>
-      pool.filter((q) => {
-        const oc =
-          q.competencyIds?.[0] ??
-          (q.type === "multi-tf"
-            ? q.subQuestions?.find((s) => s.competencyId)?.competencyId
-            : undefined);
-        const topicId = oc ? resolvers.topicOf[oc] : undefined;
-        return topicId ? topicIds.has(topicId) : false;
-      }),
-    [pool, resolvers, rows],
-  );
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [viewFull, setViewFull] = useState<Set<string>>(new Set());
+  const toggle = (set: Set<string>, setFn: (s: Set<string>) => void, id: string) => {
+    const n = new Set(set);
+    n.has(id) ? n.delete(id) : n.add(id);
+    setFn(n);
+  };
+  const keptCount = (qs: Question[]) => qs.filter((q) => !excludeIds.has(q.id)).length;
+
+  const totalAvail = rows.reduce((s, r) => {
+    let c = (poolByComp[r.topicId] ?? []).length;
+    for (const o of outcomesOf(r.topicId)) c += (poolByComp[o.id] ?? []).length;
+    return s + c;
+  }, 0);
+  const totalKept = rows.reduce((s, r) => {
+    let c = keptCount(poolByComp[r.topicId] ?? []);
+    for (const o of outcomesOf(r.topicId)) c += keptCount(poolByComp[o.id] ?? []);
+    return s + c;
+  }, 0);
 
   return (
     <div className="space-y-2">
       <p className="text-[12.5px] text-muted-foreground">
-        Bỏ tích các câu <span className="font-semibold">không</span> muốn đưa
-        vào khung. Còn lại{" "}
-        <span className="font-semibold text-foreground">
-          {inScope.filter((q) => !excludeIds.has(q.id)).length}
-        </span>
-        /{inScope.length} câu.
+        Mỗi YCCĐ hiện <span className="font-semibold">tổng số câu trong kho</span>;
+        điền <span className="font-semibold">số câu chọn vào khung</span> (mặc
+        định lấy hết). Bấm “Xem” để duyệt + xem nội dung từng câu. Đang chọn{" "}
+        <span className="font-semibold text-foreground">{totalKept}</span>/{totalAvail} câu.
       </p>
-      {inScope.length === 0 ? (
-        <EmptyHint text="Chưa có câu nào trong phạm vi đã chọn (kiểm tra gắn YCCĐ cho câu hỏi)." />
+      {rows.length === 0 ? (
+        <EmptyHint text="Chưa chọn Bài nào ở bước ①." />
       ) : (
-        <ul className="max-h-[440px] space-y-1 overflow-y-auto">
-          {inScope.map((q) => {
-            const kept = !excludeIds.has(q.id);
-            return (
-              <li
-                key={q.id}
-                className={cn(
-                  "flex items-start gap-2 rounded-md border px-2.5 py-1.5",
-                  kept ? "bg-card" : "bg-muted/30 opacity-60",
-                )}
-              >
-                <input
-                  type="checkbox"
-                  checked={kept}
-                  onChange={() => onToggleExclude(q.id)}
-                  className="mt-0.5 h-4 w-4 accent-[var(--color-primary)]"
-                />
-                <span className="rounded bg-slate-100 px-1 font-mono text-[10px] text-slate-600">
-                  {q.id}
-                </span>
-                <div className="min-w-0 flex-1 text-[12px]">
-                  <RenderedContent content={q.content} inline className="line-clamp-2" />
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+        rows.map((r) => {
+          const groups: {
+            id: string;
+            label: string;
+            code?: string | null;
+            bloom?: 1 | 2 | 3 | null;
+            questions: Question[];
+          }[] = [];
+          for (const o of outcomesOf(r.topicId)) {
+            const qs = poolByComp[o.id] ?? [];
+            if (qs.length > 0)
+              groups.push({ id: o.id, label: o.title, code: o.code, bloom: o.bloomLevel, questions: qs });
+          }
+          const topicQs = poolByComp[r.topicId] ?? [];
+          if (topicQs.length > 0)
+            groups.push({
+              id: r.topicId,
+              label: "Câu chung của Bài (chưa gắn YCCĐ cụ thể)",
+              questions: topicQs,
+            });
+          if (groups.length === 0) return null;
+          return (
+            <div key={r.topicId} className="rounded-lg border">
+              <div className="border-b bg-surface-2 px-3 py-1.5 text-[12px] font-semibold">
+                <span className="text-muted-foreground">{r.chapterName} › </span>
+                {r.topicName}
+              </div>
+              <ul className="divide-y">
+                {groups.map((g) => {
+                  const total = g.questions.length;
+                  const n = keptCount(g.questions);
+                  const exp = expanded.has(g.id);
+                  const bloom = g.bloom ? bloomMeta(g.bloom) : null;
+                  return (
+                    <li key={g.id}>
+                      <div className="flex flex-wrap items-center gap-2 px-3 py-2">
+                        {g.code && (
+                          <span className="shrink-0 rounded bg-slate-100 px-1 font-mono text-[10px] text-slate-600">
+                            {g.code}
+                          </span>
+                        )}
+                        {bloom && (
+                          <span
+                            className={cn(
+                              "shrink-0 rounded px-1 text-[9.5px] font-semibold",
+                              bloom.chipBg,
+                              bloom.chipFg,
+                            )}
+                          >
+                            {bloom.short}
+                          </span>
+                        )}
+                        <span className="min-w-[140px] flex-1 text-[12.5px]">{g.label}</span>
+                        <span className="text-[11px] text-muted-foreground">Vào khung:</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={total}
+                          value={n}
+                          onChange={(e) =>
+                            onSetFrameCount(
+                              g.questions,
+                              Math.max(0, Math.min(total, Number(e.target.value) || 0)),
+                            )
+                          }
+                          className="h-8 w-16 rounded-md border bg-card px-2 text-center text-[12.5px]"
+                        />
+                        <span className="text-[11px] font-semibold text-emerald-700">/{total}</span>
+                        <button
+                          type="button"
+                          onClick={() => toggle(expanded, setExpanded, g.id)}
+                          className="inline-flex items-center gap-1 rounded-md border bg-card px-2 py-1 text-[11.5px] text-primary hover:bg-surface-2"
+                        >
+                          {exp ? (
+                            <ChevronDown className="h-3.5 w-3.5" />
+                          ) : (
+                            <ChevronRight className="h-3.5 w-3.5" />
+                          )}
+                          Xem {total} câu
+                        </button>
+                      </div>
+                      {exp && (
+                        <ul className="space-y-1 border-t bg-surface-2/30 px-3 py-2">
+                          {g.questions.map((qq) => {
+                            const isKept = !excludeIds.has(qq.id);
+                            const full = viewFull.has(qq.id);
+                            return (
+                              <li
+                                key={qq.id}
+                                className={cn(
+                                  "rounded-md border px-2.5 py-1.5",
+                                  isKept ? "bg-card" : "bg-muted/30 opacity-70",
+                                )}
+                              >
+                                <div className="flex items-start gap-2">
+                                  <input
+                                    type="checkbox"
+                                    checked={isKept}
+                                    onChange={() => onToggleExclude(qq.id)}
+                                    className="mt-0.5 h-4 w-4 accent-[var(--color-primary)]"
+                                  />
+                                  <span className="mt-0.5 shrink-0 rounded bg-slate-100 px-1 font-mono text-[9.5px] text-slate-600">
+                                    {qq.id}
+                                  </span>
+                                  <span className="mt-0.5 shrink-0 rounded bg-violet-50 px-1 text-[9.5px] font-semibold text-violet-700">
+                                    {QTYPE_LABEL[qq.type] ?? qq.type}
+                                  </span>
+                                  <div className="min-w-0 flex-1 text-[12px]">
+                                    <RenderedContent
+                                      content={qq.content}
+                                      inline={!full}
+                                      className={full ? "" : "line-clamp-2"}
+                                    />
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => toggle(viewFull, setViewFull, qq.id)}
+                                    className="mt-0.5 shrink-0 rounded border bg-card px-1.5 py-0.5 text-[10.5px] text-primary hover:bg-surface-2"
+                                  >
+                                    {full ? "Thu gọn" : "Xem đầy đủ"}
+                                  </button>
+                                </div>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          );
+        })
       )}
     </div>
   );
