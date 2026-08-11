@@ -18,15 +18,25 @@ import { useGradesStore } from "@/features/grades/state/grades-store";
 import { useCampusStore } from "@/features/campus/state/campus-store";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import { useQuestionsStore } from "@/features/question-bank/state/questions-store";
+import { useAuthStore } from "@/features/auth/state/auth-store";
+import { useBlueprintsStore } from "@/features/exams/state/blueprints-store";
+import { usePackagesStore } from "@/features/exams/state/packages-store";
+import { useGeneratedStore } from "@/features/exams/state/generated-store";
 import { RenderedContent } from "@/features/question-bank/components/rendered-content";
 import { cn } from "@/lib/utils";
 
 import {
+  DEFAULT_DS_GRADUATED,
   MOET_DEFAULT_PARTS,
+  type ScoringPolicy,
+  type YccdMatrix,
   type YccdPart,
 } from "../../data/types";
+import type { DraftExam } from "../../lib/generate";
 import {
   cellKey,
+  checkYccdInvariants,
+  generateYccdExams,
   validateYccdMatrix,
   type YccdResolvers,
 } from "../../lib/generate-yccd";
@@ -57,6 +67,10 @@ export function YccdWizard() {
   const activeCampusId = useCampusStore((s) => s.activeCampusId);
   const allComps = useCompetenciesStore((s) => s.competencies);
   const allQuestions = useQuestionsStore((s) => s.questions);
+  const session = useAuthStore((s) => s.session);
+  const createBlueprint = useBlueprintsStore((s) => s.create);
+  const createPackage = usePackagesStore((s) => s.create);
+  const addBatch = useGeneratedStore((s) => s.addBatch);
 
   const campusSubjects = useMemo(
     () =>
@@ -81,6 +95,23 @@ export function YccdWizard() {
   const [collapsedCh, setCollapsedCh] = useState<Set<string>>(new Set());
   const [scopeQuery, setScopeQuery] = useState("");
   const [expandedTopics, setExpandedTopics] = useState<Set<string>>(new Set());
+
+  // Step ④ — cấu trúc + điểm
+  const [pointsByPart, setPointsByPart] = useState<Record<string, number>>({});
+  const [mcqMultiMode, setMcqMultiMode] = useState<"full" | "partial">("partial");
+  const [dsMode, setDsMode] = useState<"graduated" | "weighted" | "full">("graduated");
+  const [dsTable, setDsTable] = useState<Record<number, number>>({ ...DEFAULT_DS_GRADUATED });
+  const [orderStrategy, setOrderStrategy] = useState<"by-section" | "shuffle-all">("by-section");
+  const [duration, setDuration] = useState(45);
+  // Step ⑤ — sinh mã đề
+  const [variantCount, setVariantCount] = useState(4);
+  const [drafts, setDrafts] = useState<DraftExam[]>([]);
+  // Step ⑥ — lưu
+  const [pkgName, setPkgName] = useState("");
+  const [savedPkgId, setSavedPkgId] = useState<string | null>(null);
+
+  const getPoints = (partId: string) =>
+    pointsByPart[partId] ?? DEFAULT_POINTS[partId] ?? 0.25;
 
   // Reset downstream state when scope changes.
   useEffect(() => {
@@ -256,10 +287,104 @@ export function YccdWizard() {
 
   function setCell(t: string, p: string, b: number, v: number) {
     setCells((prev) => ({ ...prev, [cellKey(t, p, b)]: v }));
+    setDrafts([]); // matrix changed → stale drafts
+    setSavedPkgId(null);
   }
 
   const subject = subjects.find((s) => s.id === subjectId);
   const grade = gradeList.find((g) => g.id === gradeId);
+
+  // Full YCCĐ matrix + scoring policy (steps ④–⑥).
+  const yccdMatrix: YccdMatrix = useMemo(
+    () => ({
+      parts: enabledParts.map((p) => ({ ...p, pointsPerQuestion: getPoints(p.id) })),
+      rows: rows.map((r) => ({ topicId: r.topicId, chapterId: r.chapterId })),
+      cells: matrixCells,
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [enabledParts, rows, matrixCells, pointsByPart],
+  );
+  const scoringPolicy: ScoringPolicy = useMemo(() => {
+    const maxScore = matrixCells.reduce((s, c) => s + c.count * getPoints(c.partId), 0);
+    return {
+      mcqMulti: mcqMultiMode,
+      ds: dsMode,
+      dsGraduatedTable: dsTable,
+      maxScore: Math.round(maxScore * 100) / 100,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matrixCells, mcqMultiMode, dsMode, dsTable, pointsByPart]);
+  const totalPoints = scoringPolicy.maxScore;
+
+  const invariants = useMemo(
+    () =>
+      drafts.length > 0
+        ? checkYccdInvariants(
+            drafts,
+            yccdMatrix,
+            new Map(pool.map((q) => [q.id, q])),
+            resolvers,
+          )
+        : null,
+    [drafts, yccdMatrix, pool, resolvers],
+  );
+
+  function handleGenerate() {
+    if (!validation.ok || totalQ === 0) return;
+    const d = generateYccdExams({
+      pool,
+      matrix: yccdMatrix,
+      resolvers,
+      n: Math.max(1, Math.min(50, variantCount)),
+      orderStrategy,
+    });
+    setDrafts(d);
+    setSavedPkgId(null);
+  }
+
+  function handleSave() {
+    if (!session || drafts.length === 0) return;
+    const campusId =
+      session.role === "superadmin" ? activeCampusId : session.campusId ?? null;
+    const byTopic: Record<string, string[]> = {};
+    for (const q of pool) {
+      const oc = q.competencyIds?.[0];
+      const tId = oc ? resolvers.topicOf[oc] : undefined;
+      if (tId && selectedTopics.has(tId)) (byTopic[tId] ??= []).push(q.id);
+    }
+    const name = pkgName.trim() || `Đề YCCĐ ${subject?.name ?? ""} ${grade?.name ?? ""}`.trim();
+    const bp = createBlueprint({
+      name,
+      subjectId,
+      gradeId,
+      duration,
+      campusId,
+      ownerId: session.userId,
+      ownerName: session.name ?? "—",
+      topics: rows.map((r) => ({
+        id: r.topicId,
+        name: r.topicName,
+        pickedQuestionIds: byTopic[r.topicId] ?? [],
+      })),
+    });
+    const pkg = createPackage({
+      name,
+      blueprintId: bp.id,
+      duration,
+      campusId,
+      ownerId: session.userId,
+      ownerName: session.name ?? "—",
+      matrix: [],
+      yccdMatrix,
+      scoringPolicy,
+      status: session.role === "teacher" ? "pending" : "approved",
+    });
+    addBatch(
+      drafts.map((d) => ({ packageId: pkg.id, questionIds: d.questionIds, duration })),
+      (i) => `${name} · Đề ${String(i).padStart(3, "0")}`,
+    );
+    setSavedPkgId(pkg.id);
+  }
 
   const canNext =
     step === 1
@@ -268,7 +393,11 @@ export function YccdWizard() {
         ? true
         : step === 3
           ? validation.ok && totalQ > 0
-          : false;
+          : step === 4
+            ? totalPoints > 0
+            : step === 5
+              ? drafts.length > 0
+              : false;
 
   return (
     <div className="space-y-4">
@@ -341,7 +470,7 @@ export function YccdWizard() {
             {STEPS.map((s, i) => {
               const active = s.n === step;
               const done = s.n < step;
-              const reachable = s.n <= 3;
+              const reachable = true;
               return (
                 <li key={s.n} className="flex items-center gap-1">
                   <button
@@ -449,9 +578,51 @@ export function YccdWizard() {
                 enabledParts={enabledParts}
                 inventory={inventory}
                 cells={cells}
+                pointsByPart={pointsByPart}
                 onCellChange={setCell}
                 validation={validation}
                 totalQ={totalQ}
+              />
+            )}
+            {step === 4 && (
+              <StepStructure
+                enabledParts={enabledParts}
+                pointsByPart={pointsByPart}
+                onPoints={(id, v) => setPointsByPart((p) => ({ ...p, [id]: v }))}
+                mcqMultiMode={mcqMultiMode}
+                setMcqMultiMode={setMcqMultiMode}
+                dsMode={dsMode}
+                setDsMode={setDsMode}
+                dsTable={dsTable}
+                setDsTable={setDsTable}
+                orderStrategy={orderStrategy}
+                setOrderStrategy={setOrderStrategy}
+                duration={duration}
+                setDuration={setDuration}
+                totalPoints={totalPoints}
+                cells={cells}
+              />
+            )}
+            {step === 5 && (
+              <StepGenerate
+                variantCount={variantCount}
+                setVariantCount={setVariantCount}
+                onGenerate={handleGenerate}
+                drafts={drafts}
+                enabledParts={enabledParts}
+                pointsByPart={pointsByPart}
+                totalPoints={totalPoints}
+                invariantsOk={invariants ? invariants.ok : null}
+              />
+            )}
+            {step === 6 && (
+              <StepSave
+                pkgName={pkgName}
+                setPkgName={setPkgName}
+                drafts={drafts}
+                totalPoints={totalPoints}
+                saved={savedPkgId != null}
+                onSave={handleSave}
               />
             )}
           </div>
@@ -469,14 +640,12 @@ export function YccdWizard() {
             <span className="text-[12px] text-muted-foreground">
               Bước {step}/6 · {STEPS[step - 1]?.label}
             </span>
-            {step < 3 ? (
+            {step < 6 ? (
               <Button size="sm" disabled={!canNext} onClick={() => setStep((s) => s + 1)}>
                 Tiếp tục
               </Button>
             ) : (
-              <Button size="sm" disabled title="Bước ④–⑥ sẽ có ở đợt 3c">
-                Bước ④ (sắp có)
-              </Button>
+              <span className="w-[80px]" />
             )}
           </div>
         </>
@@ -767,6 +936,7 @@ function StepMatrix({
   enabledParts,
   inventory,
   cells,
+  pointsByPart: pbp,
   onCellChange,
   validation,
   totalQ,
@@ -778,12 +948,14 @@ function StepMatrix({
   enabledParts: YccdPart[];
   inventory: Record<string, number>;
   cells: Record<string, number>;
+  pointsByPart: Record<string, number>;
   onCellChange: (t: string, p: string, b: number, v: number) => void;
   validation: { ok: boolean; exceeded: unknown[] };
   totalQ: number;
 }) {
   const pointsByPart: Record<string, number> = {};
-  for (const p of enabledParts) pointsByPart[p.id] = DEFAULT_POINTS[p.id] ?? 0.25;
+  for (const p of enabledParts)
+    pointsByPart[p.id] = pbp[p.id] ?? DEFAULT_POINTS[p.id] ?? 0.25;
 
   return (
     <div className="space-y-3">
@@ -841,6 +1013,417 @@ function StepMatrix({
           ✓ Ma trận hợp lệ · tổng {totalQ} câu.
         </p>
       )}
+    </div>
+  );
+}
+
+// ─────────────────────────── Step 4: cấu trúc + điểm ────────────────────
+function StepStructure({
+  enabledParts,
+  pointsByPart,
+  onPoints,
+  mcqMultiMode,
+  setMcqMultiMode,
+  dsMode,
+  setDsMode,
+  dsTable,
+  setDsTable,
+  orderStrategy,
+  setOrderStrategy,
+  duration,
+  setDuration,
+  totalPoints,
+  cells,
+}: {
+  enabledParts: YccdPart[];
+  pointsByPart: Record<string, number>;
+  onPoints: (id: string, v: number) => void;
+  mcqMultiMode: "full" | "partial";
+  setMcqMultiMode: (m: "full" | "partial") => void;
+  dsMode: "graduated" | "weighted" | "full";
+  setDsMode: (m: "graduated" | "weighted" | "full") => void;
+  dsTable: Record<number, number>;
+  setDsTable: (t: Record<number, number>) => void;
+  orderStrategy: "by-section" | "shuffle-all";
+  setOrderStrategy: (s: "by-section" | "shuffle-all") => void;
+  duration: number;
+  setDuration: (n: number) => void;
+  totalPoints: number;
+  cells: Record<string, number>;
+}) {
+  const has = (id: string) => enabledParts.some((p) => p.id === id);
+  const partCount = (partId: string) =>
+    Object.entries(cells).reduce(
+      (s, [k, v]) => (k.split("|")[1] === partId ? s + v : s),
+      0,
+    );
+  const near10 = Math.abs(totalPoints - 10) < 0.001;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end gap-4">
+        <div>
+          <label className="mb-1 block text-[11px] font-bold uppercase tracking-[0.05em] text-muted-foreground">
+            Thứ tự câu
+          </label>
+          <div className="inline-flex overflow-hidden rounded-md border">
+            {(["by-section", "shuffle-all"] as const).map((o) => (
+              <button
+                key={o}
+                type="button"
+                onClick={() => setOrderStrategy(o)}
+                className={cn(
+                  "px-3 py-1.5 text-[12px] transition",
+                  orderStrategy === o
+                    ? "bg-primary text-primary-foreground font-semibold"
+                    : "bg-card text-muted-foreground hover:bg-accent/30",
+                )}
+              >
+                {o === "by-section" ? "Theo phần (I/II/…)" : "Trộn toàn bộ"}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label className="mb-1 block text-[11px] font-bold uppercase tracking-[0.05em] text-muted-foreground">
+            Thời gian (phút)
+          </label>
+          <input
+            type="number"
+            min={5}
+            max={300}
+            value={duration}
+            onChange={(e) => setDuration(Math.max(5, Number(e.target.value) || 45))}
+            className="h-9 w-24 rounded-md border bg-card px-2 text-center text-[13px]"
+          />
+        </div>
+      </div>
+
+      {/* Điểm mỗi phần */}
+      <div className="rounded-lg border">
+        <div className="border-b bg-surface-2 px-3 py-2 text-[12px] font-semibold">
+          Điểm mỗi câu theo phần
+        </div>
+        <ul className="divide-y">
+          {enabledParts.map((p) => (
+            <li key={p.id} className="flex items-center gap-3 px-3 py-2">
+              <span className="flex-1 text-[12.5px]">{p.label}</span>
+              <span className="text-[11px] text-muted-foreground">
+                {partCount(p.id)} câu ×
+              </span>
+              <input
+                type="number"
+                min={0}
+                step={0.25}
+                value={pointsByPart[p.id] ?? DEFAULT_POINTS[p.id] ?? 0.25}
+                onChange={(e) => onPoints(p.id, Math.max(0, Number(e.target.value) || 0))}
+                className="h-8 w-20 rounded-md border bg-card px-2 text-center text-[12.5px]"
+              />
+              <span className="text-[11px] text-muted-foreground">đ/câu</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {/* Chế độ chấm MOET */}
+      {has("mcq") && (
+        <ScoreMode
+          title="Chấm câu nhiều đáp án đúng (mcq-multi)"
+          options={[
+            { v: "full", label: "Toàn phần (đúng hết mới có điểm)" },
+            { v: "partial", label: "Từng phần (mỗi đáp án đúng)" },
+          ]}
+          value={mcqMultiMode}
+          onChange={(v) => setMcqMultiMode(v as "full" | "partial")}
+        />
+      )}
+      {has("ds") && (
+        <div className="space-y-2">
+          <ScoreMode
+            title="Chấm câu Đúng–Sai nhiều ý"
+            options={[
+              { v: "graduated", label: "Lũy tiến theo số ý đúng" },
+              { v: "weighted", label: "Trọng số từng ý" },
+              { v: "full", label: "Toàn phần" },
+            ]}
+            value={dsMode}
+            onChange={(v) => setDsMode(v as "graduated" | "weighted" | "full")}
+          />
+          {dsMode === "graduated" && (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-surface-2/40 px-3 py-2">
+              <span className="text-[11.5px] text-muted-foreground">
+                Bảng lũy tiến (phần điểm khi đúng n ý):
+              </span>
+              {[1, 2, 3, 4].map((k) => (
+                <label key={k} className="inline-flex items-center gap-1 text-[11.5px]">
+                  {k} ý
+                  <input
+                    type="number"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={dsTable[k] ?? 0}
+                    onChange={(e) =>
+                      setDsTable({ ...dsTable, [k]: Math.max(0, Math.min(1, Number(e.target.value) || 0)) })
+                    }
+                    className="h-7 w-16 rounded border bg-card px-1 text-center"
+                  />
+                </label>
+              ))}
+              <button
+                type="button"
+                onClick={() => setDsTable({ 1: 0.1, 2: 0.25, 3: 0.5, 4: 1 })}
+                className="text-[11px] text-primary underline"
+              >
+                THPT
+              </button>
+              <button
+                type="button"
+                onClick={() => setDsTable({ 1: 0.25, 2: 0.5, 3: 0.75, 4: 1 })}
+                className="text-[11px] text-primary underline"
+              >
+                FSC
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div
+        className={cn(
+          "flex items-center justify-between rounded-lg border px-4 py-2.5 text-[13px] font-semibold",
+          near10
+            ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+            : "border-amber-300 bg-amber-50 text-amber-800",
+        )}
+      >
+        <span>Tổng điểm toàn đề</span>
+        <span className="text-[16px]">{totalPoints}đ</span>
+      </div>
+      {!near10 && (
+        <p className="text-[12px] text-amber-700">
+          ⚠ Tổng điểm ≠ 10đ — cân nhắc chuẩn hoá về 10 (chỉnh điểm/câu hoặc số câu).
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ScoreMode({
+  title,
+  options,
+  value,
+  onChange,
+}: {
+  title: string;
+  options: { v: string; label: string }[];
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div>
+      <p className="mb-1 text-[11px] font-bold uppercase tracking-[0.05em] text-muted-foreground">
+        {title}
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {options.map((o) => (
+          <button
+            key={o.v}
+            type="button"
+            onClick={() => onChange(o.v)}
+            className={cn(
+              "rounded-md border px-3 py-1.5 text-[12px] transition",
+              value === o.v
+                ? "border-primary bg-primary/10 text-primary font-semibold"
+                : "border-border bg-card text-muted-foreground hover:bg-accent/30",
+            )}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────── Step 5: sinh mã đề ─────────────────────────
+function StepGenerate({
+  variantCount,
+  setVariantCount,
+  onGenerate,
+  drafts,
+  enabledParts,
+  pointsByPart,
+  totalPoints,
+  invariantsOk,
+}: {
+  variantCount: number;
+  setVariantCount: (n: number) => void;
+  onGenerate: () => void;
+  drafts: DraftExam[];
+  enabledParts: YccdPart[];
+  pointsByPart: Record<string, number>;
+  totalPoints: number;
+  invariantsOk: boolean | null;
+}) {
+  const partOf = (draft: DraftExam, partId: string) =>
+    draft.sections.find((s) => s.topicId === partId)?.questionIds.length ?? 0;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-end gap-3">
+        <div>
+          <label className="mb-1 block text-[11px] font-bold uppercase tracking-[0.05em] text-muted-foreground">
+            Số mã đề
+          </label>
+          <input
+            type="number"
+            min={1}
+            max={50}
+            value={variantCount}
+            onChange={(e) => setVariantCount(Math.max(1, Math.min(50, Number(e.target.value) || 1)))}
+            className="h-9 w-24 rounded-md border bg-card px-2 text-center text-[13px]"
+          />
+        </div>
+        <Button size="sm" onClick={onGenerate}>
+          <Target className="h-3.5 w-3.5" />
+          Sinh {variantCount} mã đề
+        </Button>
+        {invariantsOk != null &&
+          (invariantsOk ? (
+            <span className="text-[12px] font-semibold text-emerald-700">
+              ✓ Tất cả mã đề khớp ma trận
+            </span>
+          ) : (
+            <span className="text-[12px] font-semibold text-amber-700">
+              ⚠ Một số mã đề thiếu câu (kho không đủ) — quay lại bước ③.
+            </span>
+          ))}
+      </div>
+
+      {drafts.length === 0 ? (
+        <EmptyHint text="Bấm “Sinh mã đề” để tạo các biến thể từ ma trận." />
+      ) : (
+        <ul className="space-y-1.5">
+          {drafts.map((d, i) => {
+            const pts =
+              enabledParts.reduce(
+                (s, p) => s + partOf(d, p.id) * (pointsByPart[p.id] ?? DEFAULT_POINTS[p.id] ?? 0.25),
+                0,
+              );
+            return (
+              <li
+                key={i}
+                className="flex flex-wrap items-center gap-3 rounded-lg border bg-card px-3 py-2 text-[12px]"
+              >
+                <span className="rounded bg-primary/10 px-2 py-0.5 font-mono font-semibold text-primary">
+                  Đề {String(i + 1).padStart(3, "0")}
+                </span>
+                {enabledParts.map((p) => (
+                  <span key={p.id} className="text-muted-foreground">
+                    {p.label.split(" ").slice(-1)[0]}:{" "}
+                    <span className="font-semibold text-foreground">{partOf(d, p.id)}</span>
+                  </span>
+                ))}
+                <span className="ml-auto text-muted-foreground">
+                  {d.questionIds.length} câu ·{" "}
+                  <span className="font-semibold text-foreground">
+                    {Math.round(pts * 100) / 100}đ
+                  </span>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {drafts.length > 0 && (
+        <p className="text-[11.5px] text-muted-foreground">
+          Mỗi mã đề rút ngẫu nhiên khác nhau, cùng ma trận & cùng {totalPoints}đ.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────── Step 6: lưu ────────────────────────────────
+function StepSave({
+  pkgName,
+  setPkgName,
+  drafts,
+  totalPoints,
+  saved,
+  onSave,
+}: {
+  pkgName: string;
+  setPkgName: (s: string) => void;
+  drafts: DraftExam[];
+  totalPoints: number;
+  saved: boolean;
+  onSave: () => void;
+}) {
+  const nQ = drafts[0]?.questionIds.length ?? 0;
+  return (
+    <div className="space-y-4">
+      {saved ? (
+        <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-5 py-6 text-center">
+          <p className="text-[15px] font-bold text-emerald-800">✓ Đã lưu gói đề</p>
+          <p className="mt-1 text-[12.5px] text-emerald-700">
+            {drafts.length} mã đề đã vào kho “Đề đã sinh”.
+          </p>
+          <div className="mt-3 flex flex-wrap justify-center gap-2">
+            <Link
+              href="/admin/exam-blueprints?tab=generated"
+              className="rounded-md border bg-card px-3 py-1.5 text-[12.5px] font-semibold text-primary hover:bg-surface-2"
+            >
+              → Xem “Đề đã sinh”
+            </Link>
+            <Link
+              href="/admin/shifts"
+              className="rounded-md border bg-card px-3 py-1.5 text-[12.5px] font-semibold hover:bg-surface-2"
+            >
+              → Tạo Ca kíp thi
+            </Link>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div>
+            <label className="mb-1 block text-[11px] font-bold uppercase tracking-[0.05em] text-muted-foreground">
+              Tên gói đề
+            </label>
+            <input
+              value={pkgName}
+              onChange={(e) => setPkgName(e.target.value)}
+              placeholder="vd: KT giữa kì I — Sinh học 10"
+              className="h-9 w-full max-w-md rounded-md border bg-card px-3 text-[13px]"
+            />
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <Kpi label="Số mã đề" value={drafts.length} />
+            <Kpi label="Câu / đề" value={nQ} />
+            <Kpi label="Điểm / đề" value={totalPoints} />
+          </div>
+          <Button size="sm" disabled={drafts.length === 0} onClick={onSave}>
+            Lưu vào “Sinh đề”
+          </Button>
+          {drafts.length === 0 && (
+            <p className="text-[12px] text-amber-700">
+              Chưa có mã đề — quay lại bước ⑤ để sinh.
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function Kpi({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-lg border bg-card px-3 py-2 text-center">
+      <p className="text-[20px] font-bold leading-none">{value}</p>
+      <p className="mt-1 text-[10.5px] uppercase tracking-[0.05em] text-muted-foreground">
+        {label}
+      </p>
     </div>
   );
 }
