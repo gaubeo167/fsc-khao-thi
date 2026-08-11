@@ -7,14 +7,40 @@ import type {
   PackageMatrixRow,
 } from "../data/types";
 
-/** Fisher–Yates shuffle (in-place on a copy). */
-function shuffle<T>(arr: T[]): T[] {
+/** Deterministic PRNG (mulberry32) — used by the YCCĐ engine so "N mã đề
+ *  khớp ma trận" is reproducible/testable. Returns a `() => number` in [0,1). */
+export function mulberry32(seed: number): () => number {
+  let s = seed >>> 0;
+  return function () {
+    s = (s + 0x6d2b79f5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Fisher–Yates shuffle (in-place on a copy). `rng` defaults to Math.random
+ *  so existing callers are unchanged; pass a seeded rng for determinism. */
+export function shuffle<T>(arr: T[], rng: () => number = Math.random): T[] {
   const a = arr.slice();
   for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(rng() * (i + 1));
     [a[i], a[j]] = [a[j]!, a[i]!];
   }
   return a;
+}
+
+/** Normalised question content — used to avoid two questions with the SAME
+ *  content landing in one đề. Exported for the YCCĐ engine's dedup. */
+export function normContent(s?: string): string {
+  return (s ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+/** Build a `contentOf(id)` closure from a question map. */
+export function makeContentOf(
+  byId: Map<string, { content?: string }>,
+): (id: string) => string {
+  return (id: string) => normContent(byId.get(id)?.content);
 }
 
 /** One section (mạch/phần) of a draft exam, in blueprint topic order. */
@@ -150,15 +176,16 @@ export function generateExams(
  * already in `taken`. Mutates `taken` with whatever it returns so subsequent
  * calls within the same exam stay unique.
  */
-function drawN(
+export function drawN(
   pool: string[],
   count: number,
   taken: Set<string>,
   takenContent: Set<string>,
   contentOf: (id: string) => string,
+  rng: () => number = Math.random,
 ): string[] {
   if (count <= 0) return [];
-  const shuffled = shuffle(pool.filter((id) => !taken.has(id)));
+  const shuffled = shuffle(pool.filter((id) => !taken.has(id)), rng);
   const picked: string[] = [];
   // Pick one at a time, skipping ids whose content is already taken (either
   // in a previous drawN or earlier in THIS call) so content-duplicates never
