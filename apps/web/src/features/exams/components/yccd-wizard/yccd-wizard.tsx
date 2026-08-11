@@ -3,6 +3,7 @@
 import {
   ChevronDown,
   ChevronRight,
+  Search,
   Target,
   TriangleAlert,
 } from "lucide-react";
@@ -11,7 +12,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
-import type { Competency } from "@/features/competencies/data/types";
+import { bloomMeta, type Competency } from "@/features/competencies/data/types";
 import { useCompetenciesStore } from "@/features/competencies/state/competencies-store";
 import { useGradesStore } from "@/features/grades/state/grades-store";
 import { useCampusStore } from "@/features/campus/state/campus-store";
@@ -51,6 +52,7 @@ const DEFAULT_POINTS: Record<string, number> = {
 
 export function YccdWizard() {
   const subjects = useSubjectsStore((s) => s.subjects);
+  const tocNodes = useSubjectsStore((s) => s.tocNodes);
   const gradeList = useGradesStore((s) => s.grades);
   const activeCampusId = useCampusStore((s) => s.activeCampusId);
   const allComps = useCompetenciesStore((s) => s.competencies);
@@ -77,6 +79,8 @@ export function YccdWizard() {
   const [enabled, setEnabled] = useState<Set<string>>(new Set(["mcq", "ds", "tl"]));
   const [cells, setCells] = useState<Record<string, number>>({});
   const [collapsedCh, setCollapsedCh] = useState<Set<string>>(new Set());
+  const [scopeQuery, setScopeQuery] = useState("");
+  const [expandedTopics, setExpandedTopics] = useState<Set<string>>(new Set());
 
   // Reset downstream state when scope changes.
   useEffect(() => {
@@ -96,18 +100,6 @@ export function YccdWizard() {
     return c;
   }, [allComps, subjectId, gradeId]);
 
-  const resolvers: YccdResolvers = useMemo(() => {
-    const topicOf: Record<string, string> = {};
-    const bloomOf: Record<string, 1 | 2 | 3> = {};
-    for (const c of comps) {
-      if (c.kind === "outcome" && c.parentId) {
-        topicOf[c.id] = c.parentId;
-        if (c.bloomLevel) bloomOf[c.id] = c.bloomLevel;
-      }
-    }
-    return { topicOf, bloomOf };
-  }, [comps]);
-
   const chapters = useMemo(
     () => comps.filter((c) => c.kind === "chapter").sort((a, b) => a.order - b.order),
     [comps],
@@ -115,7 +107,7 @@ export function YccdWizard() {
   const topicsOf = (chId: string) =>
     comps.filter((c) => c.kind === "topic" && c.parentId === chId).sort((a, b) => a.order - b.order);
 
-  const pool = useMemo(
+  const rawPool = useMemo(
     () =>
       allQuestions.filter(
         (q) =>
@@ -126,6 +118,71 @@ export function YccdWizard() {
       ),
     [allQuestions, subjectId, gradeId],
   );
+
+  // ── Code bridge: imported questions carry `tocNodeId` (mục lục) whose CODE
+  // equals the YCCĐ code (same source file), but no `competencyIds`. Resolve
+  // each question's YCCĐ / Bài by code, and its Bloom from `difficulty`
+  // (a/b/c = NB/TH/VD), so counts work WITHOUT touching the DB. Real
+  // `competencyIds` set later (Đợt 2) take priority.
+  const { pool, resolvers, countByTopic, countByOutcome } = useMemo(() => {
+    const tocCode = new Map<string, string>();
+    for (const n of tocNodes) if (n.code) tocCode.set(n.id, n.code);
+    const compByCode = new Map<string, Competency>();
+    const compById = new Map<string, Competency>();
+    for (const c of comps) {
+      if (c.code) compByCode.set(c.code, c);
+      compById.set(c.id, c);
+    }
+    const DIFF: Record<string, 1 | 2 | 3> = { easy: 1, medium: 2, hard: 3 };
+
+    const topicOf: Record<string, string> = {};
+    const bloomOf: Record<string, 1 | 2 | 3> = {};
+    for (const c of comps) {
+      if (c.kind === "outcome" && c.parentId) {
+        topicOf[c.id] = c.parentId;
+        if (c.bloomLevel) bloomOf[c.id] = c.bloomLevel;
+      } else if (c.kind === "topic") {
+        topicOf[c.id] = c.id; // topic maps to itself (topic-level tagged questions)
+      }
+    }
+
+    const resolve = (q: (typeof rawPool)[number]) => {
+      const tagged =
+        q.competencyIds?.[0] ??
+        (q.type === "multi-tf"
+          ? q.subQuestions?.find((s) => s.competencyId)?.competencyId
+          : undefined);
+      const src = tagged ?? (q.tocNodeId ? compByCode.get(tocCode.get(q.tocNodeId) ?? "")?.id : undefined);
+      const c = src ? compById.get(src) : undefined;
+      if (!c) return null;
+      const topicId = c.kind === "outcome" ? c.parentId ?? c.id : c.id;
+      const bloom =
+        q.bloomLevel ?? (c.kind === "outcome" ? c.bloomLevel : undefined) ?? DIFF[q.difficulty] ?? 1;
+      return { compId: c.id, topicId, bloom: bloom as 1 | 2 | 3, kind: c.kind };
+    };
+
+    const ct: Record<string, number> = {};
+    const co: Record<string, number> = {};
+    const aug = rawPool.map((q) => {
+      const pl = resolve(q);
+      if (!pl) return q;
+      topicOf[pl.compId] = pl.topicId;
+      bloomOf[pl.compId] = pl.bloom;
+      ct[pl.topicId] = (ct[pl.topicId] ?? 0) + 1;
+      if (pl.kind === "outcome") co[pl.compId] = (co[pl.compId] ?? 0) + 1;
+      return {
+        ...q,
+        competencyIds: q.competencyIds?.length ? q.competencyIds : [pl.compId],
+        bloomLevel: q.bloomLevel ?? pl.bloom,
+      };
+    });
+    return {
+      pool: aug,
+      resolvers: { topicOf, bloomOf } as YccdResolvers,
+      countByTopic: ct,
+      countByOutcome: co,
+    };
+  }, [rawPool, comps, tocNodes]);
 
   const enabledParts = useMemo(
     () => parts.filter((p) => enabled.has(p.id)),
@@ -331,6 +388,11 @@ export function YccdWizard() {
               <StepScope
                 chapters={chapters}
                 topicsOf={topicsOf}
+                outcomesOf={(tid) =>
+                  comps
+                    .filter((c) => c.kind === "outcome" && c.parentId === tid)
+                    .sort((a, b) => (a.code ?? "").localeCompare(b.code ?? ""))
+                }
                 selectedTopics={selectedTopics}
                 onToggle={toggleTopic}
                 collapsed={collapsedCh}
@@ -341,9 +403,18 @@ export function YccdWizard() {
                     return n;
                   })
                 }
-                pool={pool}
-                resolvers={resolvers}
-                enabledParts={enabledParts}
+                expandedTopics={expandedTopics}
+                onToggleTopicExpand={(id) =>
+                  setExpandedTopics((prev) => {
+                    const n = new Set(prev);
+                    n.has(id) ? n.delete(id) : n.add(id);
+                    return n;
+                  })
+                }
+                countByTopic={countByTopic}
+                countByOutcome={countByOutcome}
+                query={scopeQuery}
+                onQuery={setScopeQuery}
               />
             )}
             {step === 2 && (
@@ -426,47 +497,68 @@ function EmptyHint({ text }: { text: string }) {
 function StepScope({
   chapters,
   topicsOf,
+  outcomesOf,
   selectedTopics,
   onToggle,
   collapsed,
   onToggleCollapse,
-  pool,
-  resolvers,
-  enabledParts,
+  expandedTopics,
+  onToggleTopicExpand,
+  countByTopic,
+  countByOutcome,
+  query,
+  onQuery,
 }: {
   chapters: Competency[];
   topicsOf: (id: string) => Competency[];
+  outcomesOf: (id: string) => Competency[];
   selectedTopics: Set<string>;
   onToggle: (id: string) => void;
   collapsed: Set<string>;
   onToggleCollapse: (id: string) => void;
-  pool: import("@/features/question-bank/data/seed-questions").Question[];
-  resolvers: YccdResolvers;
-  enabledParts: YccdPart[];
+  expandedTopics: Set<string>;
+  onToggleTopicExpand: (id: string) => void;
+  countByTopic: Record<string, number>;
+  countByOutcome: Record<string, number>;
+  query: string;
+  onQuery: (q: string) => void;
 }) {
-  // Inventory per topic (total across parts+blooms).
-  const invByTopic = useMemo(() => {
-    const inv = buildYccdInventory(pool, enabledParts, resolvers);
-    const byTopic: Record<string, number> = {};
-    for (const [k, v] of Object.entries(inv)) {
-      const topicId = k.split("|")[0]!;
-      byTopic[topicId] = (byTopic[topicId] ?? 0) + v;
-    }
-    return byTopic;
-  }, [pool, enabledParts, resolvers]);
+  const q = query.trim().toLowerCase();
+  const matchOutcome = (o: Competency) =>
+    !q ||
+    (o.code ?? "").toLowerCase().includes(q) ||
+    o.title.toLowerCase().includes(q);
+  const matchTopic = (t: Competency) =>
+    !q ||
+    t.title.toLowerCase().includes(q) ||
+    (t.code ?? "").toLowerCase().includes(q) ||
+    outcomesOf(t.id).some(matchOutcome);
 
   return (
-    <div className="space-y-2">
-      <p className="text-[12.5px] text-muted-foreground">
-        Chọn các <span className="font-semibold">Bài / Chủ đề</span> (hàng của
-        ma trận). Số câu trong kho hiện bên phải mỗi Bài.
-      </p>
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="text-[12.5px] text-muted-foreground">
+          Chọn các <span className="font-semibold">Bài</span> (hàng của ma
+          trận); mở rộng để xem YCCĐ + mức Bloom + số câu.
+        </p>
+        <div className="relative ml-auto min-w-[240px] flex-1 max-w-sm">
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <input
+            value={query}
+            onChange={(e) => onQuery(e.target.value)}
+            placeholder="Lọc theo mã / nội dung YCCĐ, Bài…"
+            className="h-8 w-full rounded-md border bg-card pl-8 pr-2 text-[12.5px] focus:outline-none focus:ring-2 focus:ring-primary/40"
+          />
+        </div>
+      </div>
+
       {chapters.length === 0 ? (
         <EmptyHint text="Khung YCCĐ chưa có Chương nào." />
       ) : (
         chapters.map((ch, ci) => {
-          const topics = topicsOf(ch.id);
-          const open = !collapsed.has(ch.id);
+          const topics = topicsOf(ch.id).filter(matchTopic);
+          if (q && topics.length === 0) return null;
+          const open = !collapsed.has(ch.id) || !!q;
           return (
             <div key={ch.id} className="rounded-lg border">
               <button
@@ -493,28 +585,90 @@ function StepScope({
                   ) : (
                     topics.map((t) => {
                       const on = selectedTopics.has(t.id);
-                      const inv = invByTopic[t.id] ?? 0;
+                      const cnt = countByTopic[t.id] ?? 0;
+                      const outcomes = outcomesOf(t.id);
+                      const exp = expandedTopics.has(t.id) || !!q;
                       return (
                         <li key={t.id}>
-                          <label className="flex cursor-pointer items-center gap-2.5 px-3 py-2 hover:bg-surface-2/40">
+                          <div className="flex items-center gap-2 px-3 py-2 hover:bg-surface-2/40">
                             <input
                               type="checkbox"
                               checked={on}
                               onChange={() => onToggle(t.id)}
                               className="h-4 w-4 accent-[var(--color-primary)]"
                             />
-                            <span className="flex-1 text-[12.5px]">{t.title}</span>
+                            <button
+                              type="button"
+                              onClick={() => onToggleTopicExpand(t.id)}
+                              className="flex flex-1 items-center gap-1.5 text-left"
+                            >
+                              {outcomes.length > 0 &&
+                                (exp ? (
+                                  <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                                ) : (
+                                  <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                                ))}
+                              <span className="text-[12.5px]">{t.title}</span>
+                              <span className="text-[10.5px] text-muted-foreground">
+                                ({outcomes.length} YCCĐ)
+                              </span>
+                            </button>
                             <span
                               className={cn(
                                 "rounded px-1.5 py-0.5 text-[10.5px] font-semibold",
-                                inv > 0
+                                cnt > 0
                                   ? "bg-emerald-50 text-emerald-700"
                                   : "bg-muted text-muted-foreground",
                               )}
                             >
-                              {inv} câu
+                              {cnt} câu
                             </span>
-                          </label>
+                          </div>
+                          {exp && outcomes.length > 0 && (
+                            <ul className="space-y-0.5 border-t bg-surface-2/30 px-3 py-1.5">
+                              {outcomes.filter(matchOutcome).map((o) => {
+                                const bloom = bloomMeta(o.bloomLevel ?? null);
+                                const oc = countByOutcome[o.id] ?? 0;
+                                return (
+                                  <li
+                                    key={o.id}
+                                    className="flex items-center gap-1.5 py-0.5 pl-6 text-[11.5px]"
+                                  >
+                                    {o.code && (
+                                      <span className="shrink-0 rounded bg-slate-100 px-1 font-mono text-[9.5px] text-slate-600">
+                                        {o.code}
+                                      </span>
+                                    )}
+                                    {bloom && (
+                                      <span
+                                        className={cn(
+                                          "shrink-0 rounded px-1 text-[9.5px] font-semibold",
+                                          bloom.chipBg,
+                                          bloom.chipFg,
+                                        )}
+                                        title={bloom.full}
+                                      >
+                                        {bloom.short}
+                                      </span>
+                                    )}
+                                    <span className="min-w-0 flex-1 truncate text-foreground/80">
+                                      {o.title}
+                                    </span>
+                                    <span
+                                      className={cn(
+                                        "shrink-0 rounded px-1 text-[9.5px] font-semibold",
+                                        oc > 0
+                                          ? "bg-emerald-50 text-emerald-700"
+                                          : "text-muted-foreground/60",
+                                      )}
+                                    >
+                                      {oc} câu
+                                    </span>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          )}
                         </li>
                       );
                     })
