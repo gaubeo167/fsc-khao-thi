@@ -142,29 +142,43 @@ export function YccdMatrixTable({
                         const max = cap(r.topicId, p.id, b);
                         const val = get(r.topicId, p.id, b);
                         return (
-                          <td key={`${p.id}-${b}`} className="border p-0.5">
+                          <td
+                            key={`${p.id}-${b}`}
+                            className={cn("border p-0.5", max > 0 && "bg-emerald-50/50")}
+                          >
                             {max > 0 ? (
-                              <input
-                                type="number"
-                                min={0}
-                                max={max}
-                                value={val || ""}
-                                onChange={(e) =>
-                                  onCellChange(
-                                    r.topicId,
-                                    p.id,
-                                    b,
-                                    Math.max(0, Math.min(max, Number(e.target.value) || 0)),
-                                  )
-                                }
-                                title={`Kho: ${max} câu`}
-                                className={cn(
-                                  "h-7 w-11 rounded border-none bg-transparent text-center tabular-nums focus:outline-none focus:ring-1 focus:ring-primary/50",
-                                  val > 0 && "font-semibold text-foreground",
-                                )}
-                              />
+                              <div className="flex flex-col items-center leading-none">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={max}
+                                  value={val || ""}
+                                  onChange={(e) =>
+                                    onCellChange(
+                                      r.topicId,
+                                      p.id,
+                                      b,
+                                      Math.max(0, Math.min(max, Number(e.target.value) || 0)),
+                                    )
+                                  }
+                                  placeholder="0"
+                                  title={`Có ${max} câu trong kho — điền tối đa ${max}`}
+                                  className={cn(
+                                    "h-6 w-11 rounded border-none bg-transparent text-center text-[13px] tabular-nums placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-primary/50",
+                                    val > 0 ? "font-semibold text-foreground" : "text-muted-foreground",
+                                  )}
+                                />
+                                <span
+                                  className="text-[9px] font-medium text-emerald-700/80"
+                                  title="Số câu có trong kho"
+                                >
+                                  /{max}
+                                </span>
+                              </div>
                             ) : (
-                              <span className="inline-block h-7 w-11 leading-7 text-muted-foreground/40">·</span>
+                              <span className="inline-block h-9 w-11 leading-9 text-muted-foreground/25">
+                                ·
+                              </span>
                             )}
                           </td>
                         );

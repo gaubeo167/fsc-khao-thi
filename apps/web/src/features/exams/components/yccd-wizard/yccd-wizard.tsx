@@ -989,8 +989,10 @@ function StepMatrix({
       </div>
 
       <p className="text-[12px] text-muted-foreground">
-        Điền số câu mỗi ô — <span className="font-semibold">không vượt kho</span>{" "}
-        (giữ tối đa theo tồn kho từng ô). Điểm/câu tạm thời; tinh chỉnh ở bước ④.
+        Ô <span className="rounded bg-emerald-50 px-1 text-emerald-700">tô xanh</span> là
+        có câu trong kho; số <span className="font-semibold text-emerald-700">/N</span> dưới
+        mỗi ô = <span className="font-semibold">số câu có sẵn</span>. Điền số câu cần —
+        không vượt N. Điểm/câu tinh chỉnh ở bước ④.
       </p>
 
       <YccdMatrixTable
