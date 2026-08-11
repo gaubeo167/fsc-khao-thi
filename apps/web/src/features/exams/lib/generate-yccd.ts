@@ -77,7 +77,7 @@ export function placementOf(
 export function cellKey(
   topicId: string,
   partId: string,
-  bloom: BloomLevel,
+  bloom: number,
 ): string {
   return `${topicId}|${partId}|${bloom}`;
 }

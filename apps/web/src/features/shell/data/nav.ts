@@ -17,6 +17,7 @@ import {
   Library,
   Play,
   Settings,
+  Target,
   TrendingUp,
   Users,
   type LucideIcon,
@@ -100,6 +101,7 @@ export const NAV_GROUPS: NavGroup[] = [
       // check in `filterNavForRole`. The role array stays as the BASELINE
       // — extra teachers get an additional pass.
       { href: "/admin/exam-blueprints", icon: FileText, label: "Quản lý đề thi", roles: LEAD, needsCreate: "blueprint" },
+      { href: "/admin/yccd-exam", icon: Target, label: "Tạo đề theo YCCĐ", roles: LEAD, needsCreate: "blueprint" },
       // Open to STAFF so teachers can see shifts in their subject scope
       // (proctor view). The "Tạo ca thi mới" button is internally gated
       // by the `canCreateShift` flag. Teachers without proctor or create
