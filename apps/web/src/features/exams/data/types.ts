@@ -10,6 +10,7 @@
  */
 
 import type { BloomLevel } from "@/features/competencies/data/types";
+import type { QuestionType } from "@/features/question-bank/data/question-types";
 
 export interface BlueprintTopic {
   id: string;
@@ -68,25 +69,49 @@ export interface PackageMatrixRow {
 }
 
 // ───────────────────────── YCCĐ (competency-based) exam ─────────────────────
-/** The 4 MOET question buckets a YCCĐ matrix counts by (12 QuestionType → 4). */
-export type YccdType = "mcq" | "mcqMulti" | "ds" | "tl";
+/**
+ * A configurable exam PART (cấu phần) — one column-group of the MOET matrix.
+ * THPT typically has all 4 (Nhiều lựa chọn / Đúng–Sai / Trả lời ngắn / Tự
+ * luận); other subjects or levels may use only 2–3. The teacher picks which
+ * parts their exam has; the matrix + structure only show the selected parts.
+ */
+export interface YccdPart {
+  id: string;
+  label: string;
+  /** QuestionTypes this part draws from (parts should partition the types). */
+  questionTypes: QuestionType[];
+  /** Điểm mỗi câu của phần (bước ④). */
+  pointsPerQuestion?: number;
+}
 
-/** One matrix row: how many of each bucket to draw for ONE outcome (YCCĐ leaf).
- *  Counts are clamped to inventory in wizard step ③. */
-export interface YccdMatrixRow {
-  /** Competency.id (kind === "outcome"); also the paired BlueprintTopic.id
-   *  so sections group by YCCĐ. */
-  competencyId: string;
-  /** Denormalised for display/audit; source of truth is the Competency doc. */
-  bloomLevel?: BloomLevel | null;
-  /** TN 1 đáp án + Đúng/Sai đơn (mcq-single, true-false). */
-  mcqCount: number;
-  /** TN nhiều đáp án (mcq-multi). */
-  mcqMultiCount: number;
-  /** Đúng–Sai chùm (multi-tf) — đếm THEO CHÙM (mỗi câu = 1 chùm nhiều ý). */
-  dsCount: number;
-  /** Tự luận / trả lời ngắn (essay, short-answer, ai-generated). */
-  tlCount: number;
+/** MOET default parts (THPT). Teacher enables a subset + can rename. */
+export const MOET_DEFAULT_PARTS: YccdPart[] = [
+  { id: "mcq", label: "Trắc nghiệm nhiều lựa chọn", questionTypes: ["mcq-single", "mcq-multi"] },
+  { id: "ds", label: "Trắc nghiệm Đúng – Sai", questionTypes: ["multi-tf"] },
+  { id: "short", label: "Trắc nghiệm trả lời ngắn", questionTypes: ["short-answer"] },
+  { id: "tl", label: "Tự luận", questionTypes: ["essay", "ai-generated"] },
+];
+
+/** One cell of the MOET matrix: số câu cần bốc cho (Bài × phần × mức Bloom).
+ *  Sparse — thiếu cell = 0. */
+export interface YccdMatrixCell {
+  /** Competency.id (kind === "topic") — the Bài/Chủ đề row. */
+  topicId: string;
+  /** YccdPart.id — the question-type column group. */
+  partId: string;
+  /** 1=Biết, 2=Hiểu, 3=Vận dụng — the sub-column. */
+  bloom: BloomLevel;
+  count: number;
+}
+
+/** The full MOET matrix stored on the package. */
+export interface YccdMatrix {
+  /** Selected parts (configurable, ordered). */
+  parts: YccdPart[];
+  /** Selected topic (Bài) rows, ordered; each carries its chapter for grouping. */
+  rows: { topicId: string; chapterId: string | null }[];
+  /** Sparse cell counts. */
+  cells: YccdMatrixCell[];
 }
 
 /** MOET scoring policy (Axis-B), frozen onto the package. */
@@ -128,11 +153,11 @@ export interface ExamPackage {
 
   /**
    * Present ⇒ this package was built by the YCCĐ wizard; the generator draws
-   * by OUTCOME×TYPE instead of mạch/độ-khó (mirrors the `cpCounts` switch).
-   * When set, `matrix` may be empty. Additive & optional — legacy packages
-   * are untouched.
+   * by (Bài × phần × Bloom) instead of mạch/độ-khó (mirrors the `cpCounts`
+   * switch). When set, `matrix` may be empty. Additive & optional — legacy
+   * packages are untouched.
    */
-  matrixByOutcome?: YccdMatrixRow[];
+  yccdMatrix?: YccdMatrix;
   /** MOET scoring policy (Axis-B) for YCCĐ packages; frozen into ExamForm. */
   scoringPolicy?: ScoringPolicy;
 
@@ -160,14 +185,14 @@ export interface ExamPackage {
   updatedAt: string;
 }
 
-/** An ExamPackage created by the YCCĐ wizard (has an outcome matrix). */
+/** An ExamPackage created by the YCCĐ wizard (has a MOET matrix). */
 export type YccdPackage = ExamPackage & {
-  matrixByOutcome: YccdMatrixRow[];
+  yccdMatrix: YccdMatrix;
   scoringPolicy: ScoringPolicy;
 };
 
 export function isYccdPackage(p: ExamPackage): p is YccdPackage {
-  return Array.isArray(p.matrixByOutcome) && p.matrixByOutcome.length > 0;
+  return !!p.yccdMatrix && p.yccdMatrix.cells.length > 0;
 }
 
 export interface GeneratedExam {

@@ -1,18 +1,23 @@
 /**
- * YCCĐ-based exam generation — a parallel to `generate.ts`, drawing by
- * (outcome × question-type) instead of (mạch × difficulty). Produces the same
- * `DraftExam` shape so it flows through the existing preview (`addBatch`) and
- * runtime (`materializeExamForm`) bridges unchanged.
+ * YCCĐ-based exam generation — draws by the MOET matrix (Bài × phần × Bloom)
+ * instead of (mạch × difficulty). Produces the same `DraftExam` shape so it
+ * flows through the existing preview + runtime bridges unchanged.
  *
- * Determinism: seeded via mulberry32 so "N mã đề khớp ma trận" is reproducible
- * and unit-testable. Uniqueness (câu-level) is guaranteed by the shared
- * `taken` / `takenContent` sets across every outcome + type in one paper.
+ * Structure:
+ *   - Rows   = topic competencies (Bài / Chủ đề, kind === "topic").
+ *   - Cols   = configurable PARTS (cấu phần, 2–4) × Bloom (Biết/Hiểu/Vận dụng).
+ *   - A question is placed by (topic of its primary outcome × its part × its
+ *     bloom). Exam SECTIONS group by part (Phần I / II / …).
+ *
+ * Determinism via seeded mulberry32; câu-level uniqueness via shared
+ * taken/takenContent across the whole paper.
  */
+import type { BloomLevel } from "@/features/competencies/data/types";
 import type { QuestionType } from "@/features/question-bank/data/question-types";
 import type { Question } from "@/features/question-bank/data/seed-questions";
 import type { ExamOrderStrategy } from "@/features/exam-forms/data/types";
 
-import type { YccdMatrixRow, YccdType } from "../data/types";
+import type { YccdMatrix, YccdMatrixCell, YccdPart } from "../data/types";
 
 import {
   drawN,
@@ -24,71 +29,81 @@ import {
   type DraftSection,
 } from "./generate";
 
-/** Map a QuestionType → its MOET matrix bucket (null = not a YCCĐ-matrix type). */
-export function yccdTypeOf(t: QuestionType): YccdType | null {
-  switch (t) {
-    case "mcq-single":
-    case "true-false":
-      return "mcq";
-    case "mcq-multi":
-      return "mcqMulti";
-    case "multi-tf":
-      return "ds";
-    case "essay":
-    case "ai-generated":
-    case "short-answer":
-      return "tl";
-    default:
-      return null; // fill-blank / matching / ordering / drag-drop / underline
-  }
+/** The part a QuestionType belongs to, given the selected parts (null = none). */
+export function partIdForType(
+  parts: YccdPart[],
+  t: QuestionType,
+): string | null {
+  for (const p of parts) if (p.questionTypes.includes(t)) return p.id;
+  return null;
 }
 
-/** Does a question assess `outcomeId` — at question level, per-ý (multi-tf),
- *  or per-option (mcq)? */
-export function questionHitsOutcome(q: Question, outcomeId: string): boolean {
-  if (q.competencyIds?.includes(outcomeId)) return true;
+/** A question's primary outcome — question-level first, else per-ý / per-option. */
+export function primaryOutcome(q: Question): string | null {
+  if (q.competencyIds && q.competencyIds.length > 0) return q.competencyIds[0]!;
   if (q.type === "multi-tf") {
-    return (q.subQuestions ?? []).some((s) => s.competencyId === outcomeId);
+    return (q.subQuestions ?? []).find((s) => s.competencyId)?.competencyId ?? null;
   }
   if (q.type === "mcq-multi" || q.type === "mcq-single") {
-    return (q.options ?? []).some((o) => o.competencyId === outcomeId);
+    return (q.options ?? []).find((o) => o.competencyId)?.competencyId ?? null;
   }
-  return false;
+  return null;
+}
+
+export interface YccdResolvers {
+  /** outcome competencyId → its parent topic competencyId. */
+  topicOf: Record<string, string>;
+  /** outcome competencyId → its Bloom level (fallback when q.bloomLevel unset). */
+  bloomOf: Record<string, BloomLevel>;
+}
+
+/** Resolve a question's matrix placement, or null if it can't be placed. */
+export function placementOf(
+  q: Question,
+  parts: YccdPart[],
+  r: YccdResolvers,
+): { topicId: string; partId: string; bloom: BloomLevel } | null {
+  const partId = partIdForType(parts, q.type);
+  if (!partId) return null;
+  const oc = primaryOutcome(q);
+  if (!oc) return null;
+  const topicId = r.topicOf[oc];
+  if (!topicId) return null;
+  const bloom = (q.bloomLevel ?? r.bloomOf[oc]) as BloomLevel | undefined;
+  if (!bloom) return null;
+  return { topicId, partId, bloom };
+}
+
+export function cellKey(
+  topicId: string,
+  partId: string,
+  bloom: BloomLevel,
+): string {
+  return `${topicId}|${partId}|${bloom}`;
 }
 
 export interface YccdDrawInput {
-  /** Candidate pool (already filtered: approved, !archived, subject+grade). */
   pool: Question[];
-  matrix: YccdMatrixRow[];
-  /** Number of variants (mã đề). */
+  matrix: YccdMatrix;
+  resolvers: YccdResolvers;
   n: number;
-  /** Ids never drawn (teacher un-ticked in step ②). */
   exclude?: Set<string>;
-  /** Deterministic seed; each variant uses seed+i. */
   seed?: number;
   orderStrategy?: ExamOrderStrategy;
-  /** Optional display name per outcome for the section label. */
-  labelOf?: (competencyId: string) => string;
 }
 
-type Buckets = Map<string, Record<YccdType, string[]>>;
-
-function bucketByOutcomeType(pool: Question[], matrix: YccdMatrixRow[]): Buckets {
-  const buckets: Buckets = new Map();
-  for (const row of matrix) {
-    if (buckets.has(row.competencyId)) continue;
-    const rec: Record<YccdType, string[]> = {
-      mcq: [],
-      mcqMulti: [],
-      ds: [],
-      tl: [],
-    };
-    for (const q of pool) {
-      if (!questionHitsOutcome(q, row.competencyId)) continue;
-      const t = yccdTypeOf(q.type);
-      if (t) rec[t].push(q.id);
-    }
-    buckets.set(row.competencyId, rec);
+/** Bucket pool ids by cellKey (constant across variants). */
+function bucketPool(
+  pool: Question[],
+  parts: YccdPart[],
+  r: YccdResolvers,
+): Map<string, string[]> {
+  const buckets = new Map<string, string[]>();
+  for (const q of pool) {
+    const pl = placementOf(q, parts, r);
+    if (!pl) continue;
+    const k = cellKey(pl.topicId, pl.partId, pl.bloom);
+    (buckets.get(k) ?? buckets.set(k, []).get(k)!).push(q.id);
   }
   return buckets;
 }
@@ -97,39 +112,49 @@ export function generateYccdExams(input: YccdDrawInput): DraftExam[] {
   const {
     pool,
     matrix,
+    resolvers,
     n,
     exclude,
     seed,
     orderStrategy = "shuffle-all",
-    labelOf,
   } = input;
   const byId = new Map(pool.map((q) => [q.id, q] as const));
   const contentOf = makeContentOf(byId);
-  const buckets = bucketByOutcomeType(pool, matrix);
+  const buckets = bucketPool(pool, matrix.parts, resolvers);
   const baseSeed = seed ?? Date.now();
 
   const exams: DraftExam[] = [];
   for (let i = 0; i < n; i++) {
     const rng = mulberry32(baseSeed + i);
-    // Shared across the whole paper → cross-outcome & cross-type uniqueness.
     const taken = new Set<string>(exclude ?? []);
     const takenContent = new Set<string>();
 
-    const sections: DraftSection[] = [];
-    for (const row of matrix) {
-      const b = buckets.get(row.competencyId);
-      if (!b) continue;
-      const drawn: string[] = [
-        ...drawN(b.mcq, row.mcqCount, taken, takenContent, contentOf, rng),
-        ...drawN(b.mcqMulti, row.mcqMultiCount, taken, takenContent, contentOf, rng),
-        ...drawN(b.ds, row.dsCount, taken, takenContent, contentOf, rng),
-        ...drawN(b.tl, row.tlCount, taken, takenContent, contentOf, rng),
-      ];
+    // Draw each cell; collect per part so sections group by phần.
+    const byPart = new Map<string, string[]>();
+    for (const cell of matrix.cells) {
+      if (cell.count <= 0) continue;
+      const k = cellKey(cell.topicId, cell.partId, cell.bloom);
+      const drawn = drawN(
+        buckets.get(k) ?? [],
+        cell.count,
+        taken,
+        takenContent,
+        contentOf,
+        rng,
+      );
       if (drawn.length === 0) continue;
+      const prev = byPart.get(cell.partId) ?? [];
+      byPart.set(cell.partId, [...prev, ...drawn]);
+    }
+
+    const sections: DraftSection[] = [];
+    for (const part of matrix.parts) {
+      const ids = byPart.get(part.id);
+      if (!ids || ids.length === 0) continue;
       sections.push({
-        topicId: row.competencyId,
-        name: labelOf?.(row.competencyId) ?? row.competencyId,
-        questionIds: shuffle(drawn, rng),
+        topicId: part.id,
+        name: part.label,
+        questionIds: shuffle(ids, rng),
       });
     }
 
@@ -143,67 +168,66 @@ export function generateYccdExams(input: YccdDrawInput): DraftExam[] {
 
 // ───────────────────────── validation / invariants ──────────────────────
 export interface YccdShortfall {
-  competencyId: string;
-  type: YccdType;
+  topicId: string;
+  partId: string;
+  bloom: BloomLevel;
   need: number;
   have: number;
 }
 
-/** Pre-draw gate: every matrix count must be ≤ inventory (content-deduped). */
+/** Pre-draw gate: every cell count ≤ inventory (keyed by cellKey). */
 export function validateYccdMatrix(
-  matrix: YccdMatrixRow[],
-  inventory: Record<string, Record<YccdType, number>>,
+  cells: YccdMatrixCell[],
+  inventory: Record<string, number>,
 ): { ok: boolean; exceeded: YccdShortfall[] } {
   const exceeded: YccdShortfall[] = [];
-  for (const row of matrix) {
-    const inv = inventory[row.competencyId] ?? { mcq: 0, mcqMulti: 0, ds: 0, tl: 0 };
-    const checks: Array<[YccdType, number]> = [
-      ["mcq", row.mcqCount],
-      ["mcqMulti", row.mcqMultiCount],
-      ["ds", row.dsCount],
-      ["tl", row.tlCount],
-    ];
-    for (const [type, need] of checks) {
-      if (need > inv[type]) {
-        exceeded.push({ competencyId: row.competencyId, type, need, have: inv[type] });
-      }
+  for (const c of cells) {
+    if (c.count <= 0) continue;
+    const have = inventory[cellKey(c.topicId, c.partId, c.bloom)] ?? 0;
+    if (c.count > have) {
+      exceeded.push({
+        topicId: c.topicId,
+        partId: c.partId,
+        bloom: c.bloom,
+        need: c.count,
+        have,
+      });
     }
   }
   return { ok: exceeded.length === 0, exceeded };
 }
 
-/** Post-draw check: every variant's per-outcome per-type counts match the
- *  matrix. `drawN` under-delivers silently, so this catches shortfalls. */
+/** Post-draw check: every variant delivers each cell's count. */
 export function checkYccdInvariants(
   drafts: DraftExam[],
-  matrix: YccdMatrixRow[],
+  matrix: YccdMatrix,
   byId: Map<string, Question>,
+  resolvers: YccdResolvers,
 ): { ok: boolean; shortfalls: Array<YccdShortfall & { variant: number }> } {
   const shortfalls: Array<YccdShortfall & { variant: number }> = [];
   drafts.forEach((draft, vi) => {
-    for (const row of matrix) {
-      const sec = draft.sections.find((s) => s.topicId === row.competencyId);
-      const counts: Record<YccdType, number> = { mcq: 0, mcqMulti: 0, ds: 0, tl: 0 };
-      for (const qid of sec?.questionIds ?? []) {
-        const t = yccdTypeOf(byId.get(qid)?.type ?? ("" as QuestionType));
-        if (t) counts[t]++;
-      }
-      const need: Array<[YccdType, number]> = [
-        ["mcq", row.mcqCount],
-        ["mcqMulti", row.mcqMultiCount],
-        ["ds", row.dsCount],
-        ["tl", row.tlCount],
-      ];
-      for (const [type, want] of need) {
-        if (counts[type] < want) {
-          shortfalls.push({
-            variant: vi,
-            competencyId: row.competencyId,
-            type,
-            need: want,
-            have: counts[type],
-          });
-        }
+    const counts = new Map<string, number>();
+    for (const qid of draft.questionIds) {
+      const q = byId.get(qid);
+      if (!q) continue;
+      const pl = placementOf(q, matrix.parts, resolvers);
+      if (!pl) continue;
+      const k = cellKey(pl.topicId, pl.partId, pl.bloom);
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
+    for (const c of matrix.cells) {
+      if (c.count <= 0) continue;
+      const k = cellKey(c.topicId, c.partId, c.bloom);
+      const have = counts.get(k) ?? 0;
+      if (have < c.count) {
+        shortfalls.push({
+          variant: vi,
+          topicId: c.topicId,
+          partId: c.partId,
+          bloom: c.bloom,
+          need: c.count,
+          have,
+        });
       }
     }
   });

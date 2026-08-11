@@ -1,49 +1,40 @@
 /**
- * Tồn kho (inventory) builder for the YCCĐ wizard — how many questions are
- * available per (outcome × type). Content-deduped within each bucket so the
- * matrix (step ③) can never promise more than the draw can actually deliver.
+ * Tồn kho (inventory) for the MOET matrix — available question count per
+ * (Bài × phần × Bloom), content-deduped so the matrix (step ③) can never
+ * promise more than the draw can deliver. Keyed by `cellKey` for O(1) lookup.
  */
 import type { Question } from "@/features/question-bank/data/seed-questions";
 
-import type { YccdType } from "../data/types";
+import type { YccdPart } from "../data/types";
 
 import {
+  cellKey,
   normContent,
-  questionHitsOutcome,
-  yccdTypeOf,
+  placementOf,
+  type YccdResolvers,
 } from "./generate-yccd";
 
-export type YccdInventory = Record<string, Record<YccdType, number>>;
-
-export function emptyBucket(): Record<YccdType, number> {
-  return { mcq: 0, mcqMulti: 0, ds: 0, tl: 0 };
-}
+/** cellKey(topicId, partId, bloom) → available count. */
+export type YccdInventory = Record<string, number>;
 
 export function buildYccdInventory(
   pool: Question[],
-  outcomeIds: string[],
+  parts: YccdPart[],
+  resolvers: YccdResolvers,
   exclude?: Set<string>,
 ): YccdInventory {
   const inv: YccdInventory = {};
-  for (const oid of outcomeIds) {
-    const rec = emptyBucket();
-    const seen: Record<YccdType, Set<string>> = {
-      mcq: new Set(),
-      mcqMulti: new Set(),
-      ds: new Set(),
-      tl: new Set(),
-    };
-    for (const q of pool) {
-      if (exclude?.has(q.id)) continue;
-      if (!questionHitsOutcome(q, oid)) continue;
-      const t = yccdTypeOf(q.type);
-      if (!t) continue;
-      const c = normContent(q.content);
-      if (seen[t].has(c)) continue; // dedup content within (outcome × type)
-      seen[t].add(c);
-      rec[t]++;
-    }
-    inv[oid] = rec;
+  const seen: Record<string, Set<string>> = {}; // key → set of normalised content
+  for (const q of pool) {
+    if (exclude?.has(q.id)) continue;
+    const pl = placementOf(q, parts, resolvers);
+    if (!pl) continue;
+    const k = cellKey(pl.topicId, pl.partId, pl.bloom);
+    const c = normContent(q.content);
+    const set = (seen[k] ??= new Set());
+    if (set.has(c)) continue; // dedup content within the cell
+    set.add(c);
+    inv[k] = (inv[k] ?? 0) + 1;
   }
   return inv;
 }
