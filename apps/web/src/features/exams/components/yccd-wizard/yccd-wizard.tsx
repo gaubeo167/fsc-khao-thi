@@ -388,11 +388,11 @@ export function YccdWizard({
 
   /**
    * Dạng câu CÓ trong khung nhưng KHÔNG phần nào nhận. Cấu hình phần lưu theo
-   * Môn+Khối có thể thiếu dạng (vd chỉ có Đúng–Sai + Trả lời ngắn), khi đó câu
-   * nhiều lựa chọn trong khung biến mất khỏi ma trận mà không báo gì. Bổ sung
-   * phần mặc định MOET cho những dạng đó và nói rõ ở bước ③.
+   * Môn+Khối có thể thiếu dạng (bản lưu Sinh học·K10 chỉ có Đúng–Sai + Trả
+   * lời ngắn), khi đó câu nhiều lựa chọn trong khung biến mất khỏi ma trận mà
+   * không báo gì.
    */
-  const autoParts = useMemo(() => {
+  const missingParts = useMemo(() => {
     const covered = new Set(parts.flatMap((p) => p.questionTypes));
     return MOET_DEFAULT_PARTS.filter(
       (d) =>
@@ -401,14 +401,52 @@ export function YccdWizard({
     );
   }, [parts, frameTypes]);
 
+  // Ma trận phải phủ HẾT dạng câu có trong khung, đúng mẫu Bộ. Thiếu dạng nào
+  // thì bổ sung thẳng vào CẤU TRÚC PHẦN (không chỉ vá ở bảng) để bước ④ đặt
+  // tên/điểm/thứ tự được và "Lưu cấu hình cho Môn+Khối" ghi lại bản đầy đủ.
+  const [autoAddedPartIds, setAutoAddedPartIds] = useState<string[]>([]);
+  /** Phần người dùng tự xoá ở bước ④ — không tự thêm lại. */
+  const [droppedPartIds, setDroppedPartIds] = useState<string[]>([]);
+  const toAddParts = useMemo(
+    () => missingParts.filter((p) => !droppedPartIds.includes(p.id)),
+    [missingParts, droppedPartIds],
+  );
+  useEffect(() => {
+    if (toAddParts.length === 0) return;
+    setAutoAddedPartIds((prev) => [
+      ...prev,
+      ...toAddParts.map((p) => p.id).filter((id) => !prev.includes(id)),
+    ]);
+    setParts((prev) => {
+      const next = [
+        ...prev,
+        ...toAddParts
+          .filter((m) => !prev.some((p) => p.id === m.id))
+          .map((p) => ({ ...p, questionTypes: [...p.questionTypes] })),
+      ];
+      // Chỉ sắp lại khi VỪA bổ sung — cấu hình đủ dạng thì giữ nguyên thứ tự
+      // người dùng đã đặt. Phần tự đặt (id lạ) xuống cuối, giữ thứ tự cũ.
+      const order = MOET_DEFAULT_PARTS.map((p) => p.id);
+      const rank = (id: string) => (order.indexOf(id) === -1 ? 99 : order.indexOf(id));
+      return next.sort((a, b) => rank(a.id) - rank(b.id));
+    });
+  }, [missingParts]);
+
   // Cấu phần đề tự suy theo LOẠI CÂU có trong khung — chỉ hiện phần nào thực
   // sự có câu, không bắt người dùng bật/tắt tay.
   const enabledParts = useMemo(
-    () => [
-      ...parts.filter((p) => scopedPool.some((q) => p.questionTypes.includes(q.type))),
-      ...autoParts,
-    ],
-    [parts, scopedPool, autoParts],
+    () => parts.filter((p) => scopedPool.some((q) => p.questionTypes.includes(q.type))),
+    [parts, scopedPool],
+  );
+  const autoParts = useMemo(
+    () => enabledParts.filter((p) => autoAddedPartIds.includes(p.id)),
+    [enabledParts, autoAddedPartIds],
+  );
+  /** Dạng có câu trong khung mà KHÔNG phần nào nhận (vì người dùng đã xoá
+   *  phần đó ở bước ④) — những câu này không vào được đề, phải nói rõ. */
+  const uncoveredParts = useMemo(
+    () => missingParts.filter((p) => droppedPartIds.includes(p.id)),
+    [missingParts, droppedPartIds],
   );
 
   const inventory = useMemo(
@@ -677,6 +715,11 @@ export function YccdWizard({
   // (tránh cộng nhầm tổng điểm), và làm mới mã đề đã sinh.
   function handlePartsChange(next: YccdPart[]) {
     const activeIds = new Set(next.filter((p) => p.questionTypes.length > 0).map((p) => p.id));
+    // Người dùng chủ động bỏ một phần ở bước ④ thì đừng tự thêm lại (nếu
+    // không nút Xoá sẽ như hỏng). Bước ③ vẫn cảnh báo câu thuộc dạng đó
+    // không vào đề được.
+    const removed = parts.filter((p) => !next.some((n) => n.id === p.id)).map((p) => p.id);
+    if (removed.length > 0) setDroppedPartIds((prev) => [...new Set([...prev, ...removed])]);
     setParts(next);
     setCells((prev) => {
       const out: Record<string, number> = {};
@@ -919,6 +962,7 @@ export function YccdWizard({
                 validation={validation}
                 totalQ={totalQ}
                 autoParts={autoParts}
+                uncoveredParts={uncoveredParts}
               />
             )}
             {step === 4 && (
@@ -1592,6 +1636,7 @@ function StepMatrix({
   validation,
   totalQ,
   autoParts,
+  uncoveredParts,
 }: {
   rows: MatrixRow[];
   enabledParts: YccdPart[];
@@ -1602,6 +1647,7 @@ function StepMatrix({
   validation: { ok: boolean; exceeded: unknown[] };
   totalQ: number;
   autoParts: YccdPart[];
+  uncoveredParts: YccdPart[];
 }) {
   const pointsByPart: Record<string, number> = {};
   for (const p of enabledParts)
@@ -1656,6 +1702,19 @@ function StepMatrix({
             tương ứng để những câu này không bị rơi khỏi đề — sang{" "}
             <b>bước ④</b> nếu muốn đổi tên phần, thứ tự hoặc điểm/câu, rồi bấm
             “Lưu cấu hình cho Môn+Khối”.
+          </span>
+        </div>
+      )}
+
+      {/* Người dùng đã tự xoá phần ở bước ④ — tôn trọng, nhưng nói rõ hậu quả. */}
+      {uncoveredParts.length > 0 && (
+        <div className="flex items-start gap-2 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-[12px] text-rose-800">
+          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            Khung đề đang có câu dạng{" "}
+            <b>{uncoveredParts.map((p) => p.label).join(", ")}</b> nhưng không
+            phần nào nhận dạng này — những câu đó <b>sẽ không vào đề</b>. Thêm
+            lại phần ở <b>bước ④</b>, hoặc bỏ các câu đó ra ở <b>bước ②</b>.
           </span>
         </div>
       )}
