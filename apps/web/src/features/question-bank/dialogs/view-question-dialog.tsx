@@ -2,6 +2,8 @@
 
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { bloomMeta } from "@/features/competencies/data/types";
+import { useCompetenciesStore } from "@/features/competencies/state/competencies-store";
 import { useGradesStore } from "@/features/grades/state/grades-store";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 
@@ -126,6 +128,9 @@ export function ViewQuestionDialog({ question, onClose }: Props) {
 }
 
 export function AnswerView({ question }: { question: Question }) {
+  const competencies = useCompetenciesStore((s) => s.competencies);
+  const compById = (id: string | null | undefined) =>
+    id ? competencies.find((c) => c.id === id) : undefined;
   switch (question.type) {
     case "mcq-single":
     case "mcq-multi":
@@ -196,29 +201,57 @@ export function AnswerView({ question }: { question: Question }) {
     case "multi-tf":
       return (
         <ul className="space-y-1.5">
-          {question.subQuestions.map((s, i) => (
-            <li
-              key={s.id}
-              className="flex items-center gap-2 rounded-lg border bg-surface px-3 py-2 text-[13px]"
-            >
-              <span className="w-5 shrink-0 text-center text-[11px] font-semibold tabular-nums text-muted-foreground">
-                {i + 1}.
-              </span>
-              <span className="min-w-0 flex-1">
-                <RenderedContent content={s.statement} />
-              </span>
-              <span
-                className={cn(
-                  "rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em]",
-                  s.correctAnswer
-                    ? "border-[#86EFAC] bg-[#DCFCE7] text-[#166534]"
-                    : "border-[#FCA5A5] bg-[#FEE2E2] text-[#991B1B]",
-                )}
+          {question.subQuestions.map((s, i) => {
+            const bloom = s.bloomLevel ? bloomMeta(s.bloomLevel) : null;
+            const comp = compById(s.competencyId);
+            return (
+              <li
+                key={s.id}
+                className="flex items-start gap-2 rounded-lg border bg-surface px-3 py-2 text-[13px]"
               >
-                {s.correctAnswer ? "Đúng" : "Sai"}
-              </span>
-            </li>
-          ))}
+                <span className="mt-0.5 w-5 shrink-0 text-center text-[11px] font-semibold tabular-nums text-muted-foreground">
+                  {String.fromCharCode(97 + i)})
+                </span>
+                <span className="min-w-0 flex-1">
+                  <RenderedContent content={s.statement} />
+                  {(bloom || comp) && (
+                    <span className="mt-1 flex flex-wrap items-center gap-1">
+                      {bloom && (
+                        <span
+                          className={cn(
+                            "rounded px-1.5 py-0.5 text-[10px] font-semibold",
+                            bloom.chipBg,
+                            bloom.chipFg,
+                          )}
+                          title={`Mức nhận thức: ${bloom.full}`}
+                        >
+                          {bloom.full}
+                        </span>
+                      )}
+                      {comp && (
+                        <span
+                          className="inline-flex items-center gap-1 rounded bg-teal-50 px-1.5 py-0.5 text-[10px] font-semibold text-teal-700"
+                          title={comp.title}
+                        >
+                          YCCĐ{comp.code ? ` ${comp.code}` : ""}
+                        </span>
+                      )}
+                    </span>
+                  )}
+                </span>
+                <span
+                  className={cn(
+                    "mt-0.5 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em]",
+                    s.correctAnswer
+                      ? "border-[#86EFAC] bg-[#DCFCE7] text-[#166534]"
+                      : "border-[#FCA5A5] bg-[#FEE2E2] text-[#991B1B]",
+                  )}
+                >
+                  {s.correctAnswer ? "Đúng" : "Sai"}
+                </span>
+              </li>
+            );
+          })}
         </ul>
       );
 

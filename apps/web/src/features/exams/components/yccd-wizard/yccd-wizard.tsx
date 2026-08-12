@@ -3,12 +3,13 @@
 import {
   ChevronDown,
   ChevronRight,
+  Eye,
   Search,
   Target,
   TriangleAlert,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
@@ -23,6 +24,7 @@ import { useBlueprintsStore } from "@/features/exams/state/blueprints-store";
 import { usePackagesStore } from "@/features/exams/state/packages-store";
 import { useGeneratedStore } from "@/features/exams/state/generated-store";
 import { RenderedContent } from "@/features/question-bank/components/rendered-content";
+import { ViewQuestionDialog } from "@/features/question-bank/dialogs/view-question-dialog";
 import type { Question } from "@/features/question-bank/data/seed-questions";
 import { cn } from "@/lib/utils";
 
@@ -88,7 +90,9 @@ export function YccdWizard() {
   const [gradeId, setGradeId] = useState("grade-10");
   const [step, setStep] = useState(1);
 
-  const [selectedTopics, setSelectedTopics] = useState<Set<string>>(new Set());
+  // Selected competency ids — outcome ids (YCCĐ) + topic ids (for a Bài's
+  // topic-level questions). Granular: pick individual YCCĐ or whole Bài.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [excludeIds, setExcludeIds] = useState<Set<string>>(new Set());
   const [parts] = useState<YccdPart[]>(() => MOET_DEFAULT_PARTS.map((p) => ({ ...p })));
   const [enabled, setEnabled] = useState<Set<string>>(new Set(["mcq", "ds", "tl"]));
@@ -116,7 +120,7 @@ export function YccdWizard() {
 
   // Reset downstream state when scope changes.
   useEffect(() => {
-    setSelectedTopics(new Set());
+    setSelected(new Set());
     setExcludeIds(new Set());
     setCells({});
     setStep(1);
@@ -225,9 +229,20 @@ export function YccdWizard() {
     [parts, enabled],
   );
 
+  // Only questions whose resolved YCCĐ / Bài is selected in step ① (granular
+  // — a single YCCĐ or a whole Bài). Feeds the matrix inventory + draw.
+  const scopedPool = useMemo(
+    () =>
+      pool.filter((q) => {
+        const c = q.competencyIds?.[0];
+        return c ? selected.has(c) : false;
+      }),
+    [pool, selected],
+  );
+
   const inventory = useMemo(
-    () => buildYccdInventory(pool, enabledParts, resolvers, excludeIds),
-    [pool, enabledParts, resolvers, excludeIds],
+    () => buildYccdInventory(scopedPool, enabledParts, resolvers, excludeIds),
+    [scopedPool, enabledParts, resolvers, excludeIds],
   );
 
   // Questions grouped by their resolved competency (outcome or topic-level),
@@ -253,6 +268,33 @@ export function YccdWizard() {
     setSavedPkgId(null);
   }
 
+  // Selectable comp ids under a Bài: its YCCĐ + topic-level bucket (if any).
+  const baiItems = (topicId: string) => {
+    const ids = outcomesOf(topicId).map((o) => o.id);
+    if ((poolByComp[topicId] ?? []).length > 0) ids.push(topicId);
+    return ids;
+  };
+  function toggleComp(id: string) {
+    setSelected((prev) => {
+      const n = new Set(prev);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
+    setDrafts([]);
+    setSavedPkgId(null);
+  }
+  function toggleBai(topicId: string) {
+    const items = baiItems(topicId);
+    const allOn = items.length > 0 && items.every((i) => selected.has(i));
+    setSelected((prev) => {
+      const n = new Set(prev);
+      items.forEach((i) => (allOn ? n.delete(i) : n.add(i)));
+      return n;
+    });
+    setDrafts([]);
+    setSavedPkgId(null);
+  }
+
   // Auto-clamp any cell that now exceeds inventory (e.g. after un-ticking).
   useEffect(() => {
     setCells((prev) => {
@@ -269,11 +311,16 @@ export function YccdWizard() {
     });
   }, [inventory]);
 
+  // A Bài is a matrix row if ≥1 of its YCCĐ (or its topic-level bucket) is
+  // selected.
   const rows: MatrixRow[] = useMemo(() => {
     const out: MatrixRow[] = [];
     for (const ch of chapters) {
       for (const t of topicsOf(ch.id)) {
-        if (selectedTopics.has(t.id)) {
+        const inScope =
+          selected.has(t.id) ||
+          outcomesOf(t.id).some((o) => selected.has(o.id));
+        if (inScope) {
           out.push({
             topicId: t.id,
             topicName: t.title,
@@ -285,7 +332,7 @@ export function YccdWizard() {
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chapters, selectedTopics, comps]);
+  }, [chapters, selected, comps]);
 
   const matrixCells = useMemo(
     () =>
@@ -304,14 +351,6 @@ export function YccdWizard() {
   const totalQ = matrixCells.reduce((s, c) => s + c.count, 0);
 
   const noFramework = subjectId && comps.filter((c) => c.kind === "outcome").length === 0;
-
-  function toggleTopic(id: string) {
-    setSelectedTopics((prev) => {
-      const n = new Set(prev);
-      n.has(id) ? n.delete(id) : n.add(id);
-      return n;
-    });
-  }
 
   function setCell(t: string, p: string, b: number, v: number) {
     setCells((prev) => ({ ...prev, [cellKey(t, p, b)]: v }));
@@ -375,10 +414,11 @@ export function YccdWizard() {
     const campusId =
       session.role === "superadmin" ? activeCampusId : session.campusId ?? null;
     const byTopic: Record<string, string[]> = {};
-    for (const q of pool) {
+    for (const q of scopedPool) {
+      if (excludeIds.has(q.id)) continue;
       const oc = q.competencyIds?.[0];
       const tId = oc ? resolvers.topicOf[oc] : undefined;
-      if (tId && selectedTopics.has(tId)) (byTopic[tId] ??= []).push(q.id);
+      if (tId) (byTopic[tId] ??= []).push(q.id);
     }
     const name = pkgName.trim() || `Đề YCCĐ ${subject?.name ?? ""} ${grade?.name ?? ""}`.trim();
     const bp = createBlueprint({
@@ -416,7 +456,7 @@ export function YccdWizard() {
 
   const canNext =
     step === 1
-      ? selectedTopics.size > 0
+      ? rows.length > 0
       : step === 2
         ? true
         : step === 3
@@ -546,8 +586,10 @@ export function YccdWizard() {
                 chapters={chapters}
                 topicsOf={topicsOf}
                 outcomesOf={outcomesOf}
-                selectedTopics={selectedTopics}
-                onToggle={toggleTopic}
+                baiItems={baiItems}
+                selected={selected}
+                onToggleComp={toggleComp}
+                onToggleBai={toggleBai}
                 collapsed={collapsedCh}
                 onToggleCollapse={(id) =>
                   setCollapsedCh((prev) => {
@@ -576,6 +618,7 @@ export function YccdWizard() {
                 chapters={chapters}
                 topicsOf={topicsOf}
                 outcomesOf={outcomesOf}
+                selected={selected}
                 poolByComp={poolByComp}
                 excludeIds={excludeIds}
                 onToggleExclude={(id) =>
@@ -696,8 +739,10 @@ function StepScope({
   chapters,
   topicsOf,
   outcomesOf,
-  selectedTopics,
-  onToggle,
+  baiItems,
+  selected,
+  onToggleComp,
+  onToggleBai,
   collapsed,
   onToggleCollapse,
   expandedTopics,
@@ -710,8 +755,10 @@ function StepScope({
   chapters: Competency[];
   topicsOf: (id: string) => Competency[];
   outcomesOf: (id: string) => Competency[];
-  selectedTopics: Set<string>;
-  onToggle: (id: string) => void;
+  baiItems: (topicId: string) => string[];
+  selected: Set<string>;
+  onToggleComp: (id: string) => void;
+  onToggleBai: (topicId: string) => void;
   collapsed: Set<string>;
   onToggleCollapse: (id: string) => void;
   expandedTopics: Set<string>;
@@ -736,8 +783,8 @@ function StepScope({
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-[12.5px] text-muted-foreground">
-          Chọn các <span className="font-semibold">Bài</span> (hàng của ma
-          trận); mở rộng để xem YCCĐ + mức Bloom + số câu.
+          Chọn <span className="font-semibold">từng YCCĐ</span> (mở rộng Bài) hoặc
+          tích ô Bài để chọn cả nhóm. Mỗi YCCĐ hiện mức Bloom + số câu trong kho.
         </p>
         <div className="relative ml-auto min-w-[240px] flex-1 max-w-sm">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -782,33 +829,37 @@ function StepScope({
                     </li>
                   ) : (
                     topics.map((t) => {
-                      const on = selectedTopics.has(t.id);
+                      const items = baiItems(t.id);
+                      const selCount = items.filter((i) => selected.has(i)).length;
+                      const allOn = items.length > 0 && selCount === items.length;
+                      const someOn = selCount > 0 && selCount < items.length;
                       const cnt = countByTopic[t.id] ?? 0;
                       const outcomes = outcomesOf(t.id);
+                      const hasTopicLevel = items.includes(t.id);
                       const exp = expandedTopics.has(t.id) || !!q;
                       return (
                         <li key={t.id}>
                           <div className="flex items-center gap-2 px-3 py-2 hover:bg-surface-2/40">
-                            <input
-                              type="checkbox"
-                              checked={on}
-                              onChange={() => onToggle(t.id)}
-                              className="h-4 w-4 accent-[var(--color-primary)]"
+                            <IndetCheckbox
+                              checked={allOn}
+                              indeterminate={someOn}
+                              onChange={() => onToggleBai(t.id)}
+                              title="Chọn / bỏ tất cả YCCĐ của Bài"
                             />
                             <button
                               type="button"
                               onClick={() => onToggleTopicExpand(t.id)}
                               className="flex flex-1 items-center gap-1.5 text-left"
                             >
-                              {outcomes.length > 0 &&
+                              {items.length > 0 &&
                                 (exp ? (
                                   <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
                                 ) : (
                                   <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
                                 ))}
-                              <span className="text-[12.5px]">{t.title}</span>
+                              <span className="text-[12.5px] font-medium">{t.title}</span>
                               <span className="text-[10.5px] text-muted-foreground">
-                                ({outcomes.length} YCCĐ)
+                                (chọn {selCount}/{items.length} YCCĐ)
                               </span>
                             </button>
                             <span
@@ -822,49 +873,69 @@ function StepScope({
                               {cnt} câu
                             </span>
                           </div>
-                          {exp && outcomes.length > 0 && (
+                          {exp && items.length > 0 && (
                             <ul className="space-y-0.5 border-t bg-surface-2/30 px-3 py-1.5">
                               {outcomes.filter(matchOutcome).map((o) => {
                                 const bloom = bloomMeta(o.bloomLevel ?? null);
                                 const oc = countByOutcome[o.id] ?? 0;
                                 return (
-                                  <li
-                                    key={o.id}
-                                    className="flex items-center gap-1.5 py-0.5 pl-6 text-[11.5px]"
-                                  >
-                                    {o.code && (
-                                      <span className="shrink-0 rounded bg-slate-100 px-1 font-mono text-[9.5px] text-slate-600">
-                                        {o.code}
+                                  <li key={o.id}>
+                                    <label className="flex cursor-pointer items-center gap-1.5 rounded py-0.5 pl-4 pr-1 text-[11.5px] hover:bg-surface-2/60">
+                                      <input
+                                        type="checkbox"
+                                        checked={selected.has(o.id)}
+                                        onChange={() => onToggleComp(o.id)}
+                                        className="h-3.5 w-3.5 shrink-0 accent-[var(--color-primary)]"
+                                      />
+                                      {o.code && (
+                                        <span className="shrink-0 rounded bg-slate-100 px-1 font-mono text-[9.5px] text-slate-600">
+                                          {o.code}
+                                        </span>
+                                      )}
+                                      {bloom && (
+                                        <span
+                                          className={cn(
+                                            "shrink-0 rounded px-1 text-[9.5px] font-semibold",
+                                            bloom.chipBg,
+                                            bloom.chipFg,
+                                          )}
+                                          title={bloom.full}
+                                        >
+                                          {bloom.short}
+                                        </span>
+                                      )}
+                                      <span className="min-w-0 flex-1 truncate text-foreground/80">
+                                        {o.title}
                                       </span>
-                                    )}
-                                    {bloom && (
                                       <span
                                         className={cn(
                                           "shrink-0 rounded px-1 text-[9.5px] font-semibold",
-                                          bloom.chipBg,
-                                          bloom.chipFg,
+                                          oc > 0
+                                            ? "bg-emerald-50 text-emerald-700"
+                                            : "text-muted-foreground/60",
                                         )}
-                                        title={bloom.full}
                                       >
-                                        {bloom.short}
+                                        {oc} câu
                                       </span>
-                                    )}
-                                    <span className="min-w-0 flex-1 truncate text-foreground/80">
-                                      {o.title}
-                                    </span>
-                                    <span
-                                      className={cn(
-                                        "shrink-0 rounded px-1 text-[9.5px] font-semibold",
-                                        oc > 0
-                                          ? "bg-emerald-50 text-emerald-700"
-                                          : "text-muted-foreground/60",
-                                      )}
-                                    >
-                                      {oc} câu
-                                    </span>
+                                    </label>
                                   </li>
                                 );
                               })}
+                              {hasTopicLevel && (!q || "câu chung của bài".includes(q)) && (
+                                <li>
+                                  <label className="flex cursor-pointer items-center gap-1.5 rounded py-0.5 pl-4 pr-1 text-[11.5px] hover:bg-surface-2/60">
+                                    <input
+                                      type="checkbox"
+                                      checked={selected.has(t.id)}
+                                      onChange={() => onToggleComp(t.id)}
+                                      className="h-3.5 w-3.5 shrink-0 accent-[var(--color-primary)]"
+                                    />
+                                    <span className="flex-1 italic text-muted-foreground">
+                                      Câu chung của Bài (chưa gắn YCCĐ cụ thể)
+                                    </span>
+                                  </label>
+                                </li>
+                              )}
                             </ul>
                           )}
                         </li>
@@ -900,6 +971,7 @@ const QTYPE_LABEL: Record<string, string> = {
 function StepFrame({
   rows,
   outcomesOf,
+  selected,
   poolByComp,
   excludeIds,
   onToggleExclude,
@@ -909,28 +981,32 @@ function StepFrame({
   chapters: Competency[];
   topicsOf: (id: string) => Competency[];
   outcomesOf: (id: string) => Competency[];
+  selected: Set<string>;
   poolByComp: Record<string, Question[]>;
   excludeIds: Set<string>;
   onToggleExclude: (id: string) => void;
   onSetFrameCount: (questions: Question[], n: number) => void;
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [viewFull, setViewFull] = useState<Set<string>>(new Set());
+  const [previewQ, setPreviewQ] = useState<Question | null>(null);
   const toggle = (set: Set<string>, setFn: (s: Set<string>) => void, id: string) => {
     const n = new Set(set);
     n.has(id) ? n.delete(id) : n.add(id);
     setFn(n);
   };
   const keptCount = (qs: Question[]) => qs.filter((q) => !excludeIds.has(q.id)).length;
+  // Only the YCCĐ / topic-level buckets selected in step ①.
+  const selOutcomes = (topicId: string) =>
+    outcomesOf(topicId).filter((o) => selected.has(o.id));
 
   const totalAvail = rows.reduce((s, r) => {
-    let c = (poolByComp[r.topicId] ?? []).length;
-    for (const o of outcomesOf(r.topicId)) c += (poolByComp[o.id] ?? []).length;
+    let c = selected.has(r.topicId) ? (poolByComp[r.topicId] ?? []).length : 0;
+    for (const o of selOutcomes(r.topicId)) c += (poolByComp[o.id] ?? []).length;
     return s + c;
   }, 0);
   const totalKept = rows.reduce((s, r) => {
-    let c = keptCount(poolByComp[r.topicId] ?? []);
-    for (const o of outcomesOf(r.topicId)) c += keptCount(poolByComp[o.id] ?? []);
+    let c = selected.has(r.topicId) ? keptCount(poolByComp[r.topicId] ?? []) : 0;
+    for (const o of selOutcomes(r.topicId)) c += keptCount(poolByComp[o.id] ?? []);
     return s + c;
   }, 0);
 
@@ -953,12 +1029,12 @@ function StepFrame({
             bloom?: 1 | 2 | 3 | null;
             questions: Question[];
           }[] = [];
-          for (const o of outcomesOf(r.topicId)) {
+          for (const o of selOutcomes(r.topicId)) {
             const qs = poolByComp[o.id] ?? [];
             if (qs.length > 0)
               groups.push({ id: o.id, label: o.title, code: o.code, bloom: o.bloomLevel, questions: qs });
           }
-          const topicQs = poolByComp[r.topicId] ?? [];
+          const topicQs = selected.has(r.topicId) ? poolByComp[r.topicId] ?? [] : [];
           if (topicQs.length > 0)
             groups.push({
               id: r.topicId,
@@ -1030,7 +1106,6 @@ function StepFrame({
                         <ul className="space-y-1 border-t bg-surface-2/30 px-3 py-2">
                           {g.questions.map((qq) => {
                             const isKept = !excludeIds.has(qq.id);
-                            const full = viewFull.has(qq.id);
                             return (
                               <li
                                 key={qq.id}
@@ -1055,16 +1130,18 @@ function StepFrame({
                                   <div className="min-w-0 flex-1 text-[12px]">
                                     <RenderedContent
                                       content={qq.content}
-                                      inline={!full}
-                                      className={full ? "" : "line-clamp-2"}
+                                      inline
+                                      className="line-clamp-2"
                                     />
                                   </div>
                                   <button
                                     type="button"
-                                    onClick={() => toggle(viewFull, setViewFull, qq.id)}
-                                    className="mt-0.5 shrink-0 rounded border bg-card px-1.5 py-0.5 text-[10.5px] text-primary hover:bg-surface-2"
+                                    onClick={() => setPreviewQ(qq)}
+                                    title="Xem trước câu hỏi (đề bài, đáp án, YCCĐ từng ý)"
+                                    className="mt-0.5 inline-flex shrink-0 items-center gap-1 rounded border bg-card px-1.5 py-0.5 text-[10.5px] font-semibold text-primary hover:bg-surface-2"
                                   >
-                                    {full ? "Thu gọn" : "Xem đầy đủ"}
+                                    <Eye className="h-3 w-3" />
+                                    Xem
                                   </button>
                                 </div>
                               </li>
@@ -1080,6 +1157,7 @@ function StepFrame({
           );
         })
       )}
+      <ViewQuestionDialog question={previewQ} onClose={() => setPreviewQ(null)} />
     </div>
   );
 }
@@ -1584,5 +1662,32 @@ function Kpi({ label, value }: { label: string; value: number }) {
         {label}
       </p>
     </div>
+  );
+}
+
+function IndetCheckbox({
+  checked,
+  indeterminate,
+  onChange,
+  title,
+}: {
+  checked: boolean;
+  indeterminate: boolean;
+  onChange: () => void;
+  title?: string;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = indeterminate && !checked;
+  }, [indeterminate, checked]);
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      checked={checked}
+      onChange={onChange}
+      title={title}
+      className="h-4 w-4 shrink-0 accent-[var(--color-primary)]"
+    />
   );
 }
