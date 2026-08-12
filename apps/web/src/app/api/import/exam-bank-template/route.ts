@@ -65,7 +65,7 @@ export async function GET() {
           ]),
           p([
             t(
-              "• Mã chuyên đề (phần đầu) PHẢI khớp mã trong mục lục môn học đã tạo. Thay các mã dưới đây bằng mã chuyên đề của bạn.",
+              "• Mã (phần đầu) PHẢI khớp mã YCCĐ trong khung năng lực đã tạo cho Môn + Khối. Thay các mã dưới đây bằng mã của bạn.",
             ),
           ]),
           p([t("")]),

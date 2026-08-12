@@ -18,6 +18,8 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { useAuthStore } from "@/features/auth/state/auth-store";
 import { useCampusStore } from "@/features/campus/state/campus-store";
+import type { BloomLevel } from "@/features/competencies/data/types";
+import { useCompetenciesStore } from "@/features/competencies/state/competencies-store";
 import { useGradesStore } from "@/features/grades/state/grades-store";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import { authHeaders } from "@/lib/api-client";
@@ -68,27 +70,26 @@ const nid = (p: string) => `${p}-${(idSeq++).toString(36)}-${Date.now().toString
 
 /** ParsedBankQuestion → editable AiEditValues (same shape as direct entry). */
 /**
- * Mã câu KHÔNG bắt buộc ghi độ khó. Khi thiếu, lấy từ node mục lục khớp mã:
- * khung YCCĐ upload lên đã đặt tên node bắt đầu bằng "a. / b. / c." (nhận
- * biết / thông hiểu / vận dụng), nên độ khó nằm sẵn ở đó — người soạn câu
- * hỏi không phải gõ lại. Không suy được thì giữ mặc định của parser.
+ * Mã câu KHÔNG bắt buộc ghi độ khó. Khi thiếu, lấy mức Bloom của chính YCCĐ
+ * khớp mã trong khung năng lực (1 nhận biết / 2 thông hiểu / 3 vận dụng) —
+ * khung đã mang sẵn thông tin này nên người soạn câu hỏi không phải gõ lại.
+ * Không suy được thì giữ mặc định của parser.
  */
 function withInferredDifficulty(
   q: ParsedBankQuestion,
-  codeIndex: Map<string, { id: string; name: string; code: string }>,
+  compIndex: Map<string, { bloomLevel?: BloomLevel | null }>,
 ): ParsedBankQuestion {
   if (q.difficultyFromCode) return q;
   const cpCode = q.rawCode.replace(/\.[a-c]$/i, "").toUpperCase();
-  const node =
-    codeIndex.get(cpCode) ?? codeIndex.get(q.chuyenDeCode.toUpperCase());
-  const m = /^\s*([abc])\s*[.)]/i.exec(node?.name ?? "");
-  if (!m) return q;
-  const byLetter: Record<string, ParsedBankQuestion["difficulty"]> = {
-    a: "easy",
-    b: "medium",
-    c: "hard",
+  const hit =
+    compIndex.get(cpCode) ?? compIndex.get(q.chuyenDeCode.toUpperCase());
+  const byBloom: Record<number, ParsedBankQuestion["difficulty"]> = {
+    1: "easy",
+    2: "medium",
+    3: "hard",
   };
-  return { ...q, difficulty: byLetter[m[1]!.toLowerCase()] ?? q.difficulty };
+  const d = hit?.bloomLevel ? byBloom[hit.bloomLevel] : undefined;
+  return d ? { ...q, difficulty: d } : q;
 }
 
 function parsedToEditValues(q: ParsedBankQuestion): AiEditValues {
@@ -126,7 +127,8 @@ function parsedToEditValues(q: ParsedBankQuestion): AiEditValues {
  *  editing to add a missing answer clears the warning. */
 function computeIssues(v: AiEditValues, matched: boolean): string[] {
   const out: string[] = [];
-  if (!matched) out.push("Mã chuyên đề chưa có trong mục lục Môn + Khối đã chọn.");
+  if (!matched)
+    out.push("Mã YCCĐ chưa có trong khung năng lực của Môn + Khối đã chọn.");
   if (!v.content?.trim()) out.push("Thiếu nội dung câu hỏi.");
   if (v.type === "mcq-single" || v.type === "mcq-multi") {
     if (!v.options || v.options.length < 2) out.push("Cần ít nhất 2 phương án.");
@@ -146,9 +148,12 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
   const grades = useGradesStore((s) => s.grades);
   const createQuestion = useQuestionsStore((s) => s.create);
   const activeCampusId = useCampusStore((s) => s.activeCampusId);
+  const competencies = useCompetenciesStore((s) => s.competencies);
 
   const [subjectId, setSubjectId] = useState("");
   const [gradeId, setGradeId] = useState("");
+  /** Mục lục lưu câu hỏi — CHỖ CẤT, tách khỏi mã YCCĐ dùng để gắn năng lực. */
+  const [storageTocId, setStorageTocId] = useState("");
   const [state, setState] = useState<State>({ kind: "idle" });
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -161,40 +166,57 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
     }
   }, [open]);
 
-  // code → { id, name } for the chosen Môn + Khối (mỗi khối có khung riêng).
-  // Khoá theo mã VIẾT HOA: người soạn gõ "si10.02.13" hay "SI10.02.13" đều
-  // là một mã, không có lý do bắt họ khớp hoa/thường.
-  const codeIndex = useMemo(() => {
-    const m = new Map<string, { id: string; name: string; code: string }>();
-    for (const n of tocNodes) {
-      if (n.subjectId === subjectId && n.gradeId === gradeId && n.code) {
-        m.set(n.code.toUpperCase(), { id: n.id, name: n.name, code: n.code });
+  /**
+   * Mã trong ngoặc vuông là mã của KHUNG YCCĐ (`competencies`), không phải của
+   * mục lục. Mục lục chỉ là kho lưu câu hỏi — người dùng tự chọn nơi lưu ở
+   * dưới. Khoá theo mã VIẾT HOA: "si10.02.13" hay "SI10.02.13" là một mã.
+   */
+  const compIndex = useMemo(() => {
+    const m = new Map<
+      string,
+      { id: string; title: string; code: string; bloomLevel?: BloomLevel | null }
+    >();
+    for (const c of competencies) {
+      if (c.subjectId === subjectId && c.gradeId === gradeId && c.code) {
+        m.set(c.code.toUpperCase(), {
+          id: c.id,
+          title: c.title,
+          code: c.code,
+          bloomLevel: c.bloomLevel,
+        });
       }
     }
     return m;
-  }, [tocNodes, subjectId, gradeId]);
+  }, [competencies, subjectId, gradeId]);
+
+  /** Mục lục của Môn + Khối — danh sách để chọn nơi lưu câu hỏi. */
+  const tocChoices = useMemo(
+    () =>
+      tocNodes.filter((n) => n.subjectId === subjectId && n.gradeId === gradeId),
+    [tocNodes, subjectId, gradeId],
+  );
 
   const entries = state.kind === "review" ? state.entries : [];
   const enriched = useMemo(
     () =>
       entries.map((e) => {
-        // Gắn vào node SÂU NHẤT khớp mã: thử CP (mã gồm cả .D05, bỏ độ khó)
-        // trước, không có thì lùi về CĐ. Nhờ vậy câu hỏi nằm ở CP nếu khung
-        // có chỉ báo tương ứng → thống kê & bốc theo CP.
+        // Gắn vào YCCĐ SÂU NHẤT khớp mã: thử mã đầy đủ (gồm .D05, bỏ độ khó)
+        // trước, không có thì lùi về mã chủ đề.
         const cpCode = e.rawCode.replace(/\.[a-c]$/i, "").toUpperCase();
         const match =
-          codeIndex.get(cpCode) ??
-          codeIndex.get(e.chuyenDeCode.toUpperCase()) ??
+          compIndex.get(cpCode) ??
+          compIndex.get(e.chuyenDeCode.toUpperCase()) ??
           null;
         return {
           ...e,
-          matchedNodeId: match?.id ?? null,
-          matchedNodeName: match?.name ?? null,
+          matchedCompId: match?.id ?? null,
+          matchedNodeName: match?.title ?? null,
           matchedCode: match?.code ?? null,
+          matchedBloom: match?.bloomLevel ?? null,
           issues: computeIssues(e.edit, !!match),
         };
       }),
-    [entries, codeIndex],
+    [entries, compIndex],
   );
   const validCount = enriched.filter((e) => e.issues.length === 0).length;
   const flaggedCount = enriched.length - validCount;
@@ -255,7 +277,7 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
       setState({
         kind: "review",
         entries: parsed.map((q) => ({
-          edit: parsedToEditValues(withInferredDifficulty(q, codeIndex)),
+          edit: parsedToEditValues(withInferredDifficulty(q, compIndex)),
           chuyenDeCode: q.chuyenDeCode,
           rawCode: q.rawCode,
         })),
@@ -303,7 +325,12 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
         explanation: v.explanation && v.explanation.trim() ? v.explanation : undefined,
         subjectId,
         gradeId,
-        tocNodeId: e.matchedNodeId,
+        // Mục lục = CHỖ CẤT câu hỏi, do người dùng chọn (có thể để trống).
+        tocNodeId: storageTocId || null,
+        // Mã trong file trỏ tới YCCĐ của khung năng lực → gắn thẳng vào câu
+        // hỏi, nhờ đó bước ① của "Tạo đề theo YCCĐ" đếm được ngay.
+        competencyIds: e.matchedCompId ? [e.matchedCompId] : undefined,
+        bloomLevel: e.matchedBloom ?? undefined,
         difficulty: v.difficulty,
         tags: [] as string[],
         kho: target,
@@ -379,7 +406,8 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
             <p className="text-meta mt-0.5">
               Tải file .docx theo mẫu (mã [SI10.02.2.D05.a]). Hệ tự nhận chuyên
               đề, dạng câu, độ khó, đáp án (gạch chân) → xem lại, chỉnh sửa rồi
-              duyệt để lưu vào kho theo từng chuyên đề.
+              duyệt để lưu vào kho. Mã trong ngoặc vuông là mã YCCĐ của khung
+              năng lực; mục lục lưu câu hỏi chọn riêng bên dưới.
             </p>
           </div>
         </header>
@@ -408,9 +436,41 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
                 ))}
               </Select>
               <p className="text-[11px] text-muted-foreground">
-                Chọn đúng khối đã tạo mục lục cho đề này.
+                Chọn đúng khối đã tạo khung YCCĐ cho đề này.
               </p>
             </div>
+          </div>
+
+          {/* Mã trong file gắn câu hỏi vào YCCĐ (năng lực). Mục lục là việc
+              khác: chỗ CẤT câu hỏi trong kho, do người dùng chọn. */}
+          <div className="space-y-1.5">
+            <Label className="text-[13px] font-medium text-foreground/80">
+              Mục lục lưu câu hỏi{" "}
+              <span className="font-normal text-muted-foreground">(tuỳ chọn)</span>
+            </Label>
+            <Select
+              value={storageTocId}
+              onChange={(e) => setStorageTocId(e.target.value)}
+              disabled={!subjectId || !gradeId}
+            >
+              <option value="">— Không gán mục lục —</option>
+              {tocChoices.map((n) => (
+                <option key={n.id} value={n.id}>
+                  {n.code ? `${n.code} · ` : ""}
+                  {n.name}
+                </option>
+              ))}
+            </Select>
+            <p className="text-[11px] text-muted-foreground">
+              Nơi cất câu hỏi trong kho. Việc gắn <b>năng lực</b> đã lấy theo mã
+              YCCĐ trong file, không liên quan tới mục lục.
+              {subjectId && gradeId && tocChoices.length === 0 && (
+                <span className="text-amber-700">
+                  {" "}
+                  Môn + Khối này chưa có mục lục nào.
+                </span>
+              )}
+            </p>
           </div>
 
           {!reviewing && state.kind !== "loading" && (
@@ -570,7 +630,7 @@ function ReviewCard({
 }: {
   index: number;
   entry: ReviewEntry & {
-    matchedNodeId: string | null;
+    matchedCompId: string | null;
     matchedNodeName: string | null;
     matchedCode?: string | null;
     issues: string[];
@@ -604,7 +664,7 @@ function ReviewCard({
           </span>
         ) : (
           <span className="rounded bg-rose-100 px-1.5 py-0.5 font-semibold text-rose-700">
-            {entry.chuyenDeCode} · không khớp mục lục
+            {entry.chuyenDeCode} · không khớp khung YCCĐ
           </span>
         )}
         <div className="ml-auto flex items-center gap-1.5">
