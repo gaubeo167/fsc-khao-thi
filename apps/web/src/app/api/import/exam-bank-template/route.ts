@@ -111,10 +111,21 @@ export async function GET() {
           p([t("<Key=3>")]),
           p([t("")]),
 
-          // E — tự luận
+          // E — tự luận (kèm lời giải: cơ sở cho chấm theo rubric sau này)
           p([
             t("[SI10.01.1.E01.c] ", { bold: true }),
             t("Trình bày vai trò của sinh học đối với phát triển bền vững."),
+          ]),
+          p([t("Lời giải:", { bold: true })]),
+          p([
+            t(
+              "- Sinh học cung cấp cơ sở khoa học cho bảo tồn đa dạng sinh học.",
+            ),
+          ]),
+          p([
+            t(
+              "- Ứng dụng công nghệ sinh học giúp tăng năng suất mà giảm tác động môi trường.",
+            ),
           ]),
         ],
       },

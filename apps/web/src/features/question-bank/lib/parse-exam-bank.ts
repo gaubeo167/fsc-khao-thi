@@ -51,6 +51,9 @@ export interface ParsedBankQuestion {
   subQuestions: Array<{ statement: string; correctAnswer: boolean }>;
   /** short-answer accepted answers (from <Key=…>). */
   acceptedAnswers: string[];
+  /** Lời giải / hướng dẫn giải / đáp án viết dưới câu hỏi. Với câu tự luận
+   *  đây là đáp án mẫu — về sau làm cơ sở cho chấm AI theo rubric. */
+  explanation: string;
   /** Per-question issues the reviewer must fix (missing answer, etc.). */
   warnings: string[];
 }
@@ -68,6 +71,10 @@ const BAD_CODE_RE = /^\[\s*[A-Za-z0-9.\s]+\]/;
 const OPTION_RE = /^([A-Z])[.)]\s*(.*)$/; // A. …  /  B) …
 const SUBITEM_RE = /^([a-d])\)\s*(.*)$/; // a) …
 const KEY_RE = /<Key\s*=\s*([^>]*)>/i;
+/** Mở đầu phần lời giải viết dưới câu hỏi (hay gặp nhất ở câu tự luận).
+ *  Mọi dòng sau đó thuộc về lời giải, tới khi gặp câu kế tiếp. */
+const EXPLANATION_RE =
+  /^(?:\+\s*)?(lời giải|hướng dẫn giải|hướng dẫn chấm|đáp án(?:\s*mẫu)?|giải thích|gợi ý(?:\s*trả lời)?)\s*[:.]?\s*(.*)$/i;
 
 const DIFFICULTY: Record<string, BankDifficulty> = {
   a: "easy",
@@ -109,14 +116,21 @@ export function parseExamBank(marked: string): ExamBankParseResult {
   const warnings: string[] = [];
   let cur: ParsedBankQuestion | null = null;
   const contentLines: string[] = [];
+  const explanationLines: string[] = [];
+  // Từ khi gặp "Lời giải:" tới hết câu, mọi dòng thuộc lời giải chứ không
+  // phải đề bài — kể cả dòng nhìn giống phương án (A. …) trong bài giải.
+  let inExplanation = false;
 
   const flush = () => {
     if (!cur) return;
     cur.content = stripMarkers(contentLines.join("\n")).trim();
+    cur.explanation = stripMarkers(explanationLines.join("\n")).trim();
     finalizeQuestion(cur);
     questions.push(cur);
     cur = null;
     contentLines.length = 0;
+    explanationLines.length = 0;
+    inExplanation = false;
   };
 
   for (const line of lines) {
@@ -145,8 +159,10 @@ export function parseExamBank(marked: string): ExamBankParseResult {
         options: [],
         subQuestions: [],
         acceptedAnswers: [],
+        explanation: "",
         warnings: [],
       };
+      inExplanation = false;
       if (code[5]!.trim()) contentLines.push(code[5]!);
       continue;
     }
@@ -170,10 +186,23 @@ export function parseExamBank(marked: string): ExamBankParseResult {
     const underlined = hasUnderline(line);
     const clean = stripMarkers(line);
 
-    // Short-answer key.
+    // Short-answer key — xét TRƯỚC lời giải để `<Key=…>` viết lẫn trong
+    // phần lời giải vẫn được nhận là đáp án chấm máy.
     const key = KEY_RE.exec(clean);
     if (key && cur.typeLetter === "S") {
       cur.acceptedAnswers.push(key[1]!.trim());
+      continue;
+    }
+
+    // "Lời giải: …" / "Hướng dẫn giải:" / "Đáp án:" — mở phần lời giải.
+    const expl = EXPLANATION_RE.exec(clean);
+    if (expl) {
+      inExplanation = true;
+      if (expl[2]!.trim()) explanationLines.push(expl[2]!);
+      continue;
+    }
+    if (inExplanation) {
+      explanationLines.push(line);
       continue;
     }
 

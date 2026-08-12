@@ -48,7 +48,7 @@ type State =
   | { kind: "idle" }
   | { kind: "loading"; fileName: string }
   | { kind: "review"; entries: ReviewEntry[] }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string; warnings?: string[]; preview?: string[] };
 
 const TYPE_LABEL: Record<string, string> = {
   "mcq-single": "Trắc nghiệm (1 đáp án)",
@@ -72,6 +72,9 @@ function parsedToEditValues(q: ParsedBankQuestion): AiEditValues {
     type: q.qType,
     content: q.content,
     difficulty: q.difficulty,
+    // Lời giải / hướng dẫn chấm viết dưới câu hỏi. Với câu tự luận đây là
+    // đáp án mẫu — giữ lại làm cơ sở cho chấm AI theo rubric sau này.
+    explanation: q.explanation || undefined,
   };
   if (q.qType === "mcq-single" || q.qType === "mcq-multi") {
     base.options = q.options.map((o) => ({
@@ -191,7 +194,13 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
       // or non-JSON body, which res.json() turns into the unhelpful
       // "Unexpected end of JSON input".
       const raw = await res.text();
-      let data: { questions?: ParsedBankQuestion[]; message?: string; detail?: string } = {};
+      let data: {
+        questions?: ParsedBankQuestion[];
+        message?: string;
+        detail?: string;
+        warnings?: string[];
+        preview?: string[];
+      } = {};
       try {
         data = raw ? JSON.parse(raw) : {};
       } catch {
@@ -209,6 +218,8 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
           message: `${data.message ?? `Lỗi máy chủ (mã ${res.status}).`}${
             data.detail ? ` — Chi tiết: ${data.detail}` : ""
           }`,
+          warnings: data.warnings,
+          preview: data.preview,
         });
         return;
       }
@@ -421,6 +432,25 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
                 <p className="text-meta mt-0.5 leading-relaxed text-destructive-text/80">
                   {state.message}
                 </p>
+                {state.warnings && state.warnings.length > 0 && (
+                  <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-[12px] text-destructive-text/80">
+                    {state.warnings.slice(0, 5).map((w, i) => (
+                      <li key={i}>{w}</li>
+                    ))}
+                  </ul>
+                )}
+                {/* Đối chiếu file Word với đúng thứ server đọc được — mã câu
+                    nằm trong bảng / hộp văn bản / ảnh chụp sẽ lộ ra ngay. */}
+                {state.preview && state.preview.length > 0 && (
+                  <details className="mt-2">
+                    <summary className="cursor-pointer text-[12px] font-semibold">
+                      Xem nội dung server đọc được ({state.preview.length} dòng đầu)
+                    </summary>
+                    <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-card/70 p-2 text-[11.5px] leading-relaxed text-foreground/80">
+                      {state.preview.join("\n")}
+                    </pre>
+                  </details>
+                )}
               </div>
             </div>
           )}
@@ -674,6 +704,12 @@ function FormatGuide() {
         <li>
           • Đáp án đúng: <b>gạch chân</b> (D nhiều gạch chân → chọn nhiều đáp án; F gạch
           chân = Đúng). Trả lời ngắn dùng <code className="rounded bg-muted px-1">&lt;Key=…&gt;</code>.
+        </li>
+        <li>
+          • Lời giải / đáp án tự luận: mở đầu bằng{" "}
+          <b>Lời giải:</b> · <b>Hướng dẫn giải:</b> · <b>Đáp án:</b> · <b>Giải thích:</b> —
+          mọi dòng sau đó tới câu kế tiếp được lưu làm lời giải (cơ sở cho chấm AI
+          theo rubric).
         </li>
         <li>• Câu có ảnh: chèn ảnh trong Word như bình thường, hệ giữ nguyên ảnh.</li>
       </ul>

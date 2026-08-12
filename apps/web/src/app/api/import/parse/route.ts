@@ -64,8 +64,26 @@ export async function POST(request: Request) {
   }
 
   const { questions, warnings } = parseImportText(text);
+  // Hai đường nhập khác nhau, hai định dạng khác nhau: "Import từ Word" đọc
+  // mẫu FSC (`# Câu N` + `Dạng:`), còn "Upload đề theo mã" đọc mẫu mã chuyên
+  // đề + đáp án gạch chân. Tải nhầm mẫu vào đây chỉ ra "không trích xuất được
+  // câu hỏi nào" — vô nghĩa với người dùng, nên chỉ thẳng sang nút đúng.
+  if (questions.length === 0 && EXAM_BANK_CODE_RE.test(text)) {
+    return NextResponse.json(
+      {
+        error: "wrong_template",
+        message:
+          'File này soạn theo mẫu mã chuyên đề (ví dụ [SI10.02.2.D05.a]). Đóng hộp thoại này và dùng nút "Upload đề theo mã" ở màn Ngân hàng câu hỏi — nút đó mới đọc được mã chuyên đề và đáp án gạch chân.',
+      },
+      { status: 422 },
+    );
+  }
   return NextResponse.json({ questions, warnings, count: questions.length });
 }
+
+/** Dòng mở đầu câu của mẫu "Upload đề theo mã", vd `[SI10.02.2.D05.a] …`. */
+const EXAM_BANK_CODE_RE =
+  /^\s*\[\s*[A-Za-z]+\d+(?:\.\d+)+\.[DFSE]\d+\.[abc]\s*\]/m;
 
 /**
  * Open the .docx, inline OMath as $...$ LaTeX text, then ask mammoth

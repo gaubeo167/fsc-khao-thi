@@ -100,16 +100,46 @@ async function handle(req: Request) {
 
   const { questions, warnings } = parseExamBank(marked);
   if (questions.length === 0) {
+    // Chiều ngược của cảnh báo trong /api/import/parse: file soạn theo mẫu
+    // FSC (`# Câu N`) tải nhầm vào đây thì chỉ sang đúng nút thay vì báo
+    // chung chung "không tìm thấy câu hỏi nào".
+    const looksLikeFscTemplate = /^\s*(#\s*Câu\s*\d|===\s*CÂU\s*\d)/im.test(marked);
+    // Word KHÔNG xuất được chữ nằm trong hộp văn bản (text box) / hình vẽ /
+    // ảnh chụp — file nhìn đầy chữ nhưng server đọc ra gần như rỗng. Đây là
+    // ngõ cụt hay gặp nhất, nên gọi tên thẳng thay vì báo "sai mẫu".
+    const extractedTooLittle = marked.replace(/\s/g, "").length < 40;
     return NextResponse.json(
       {
-        error: "no_questions",
-        message:
-          "Không tìm thấy câu hỏi nào. File cần theo mẫu, mỗi câu bắt đầu bằng mã dạng [SI10.02.2.D05.a].",
+        error: looksLikeFscTemplate
+          ? "wrong_template"
+          : extractedTooLittle
+            ? "no_text"
+            : "no_questions",
+        message: looksLikeFscTemplate
+          ? 'File này soạn theo mẫu FSC (# Câu 1 · Dạng: …). Đóng hộp thoại này và dùng nút "Import từ Word" ở màn Ngân hàng câu hỏi.'
+          : extractedTooLittle
+            ? "Không đọc được chữ nào trong file. Thường do nội dung nằm trong hộp văn bản (text box), khung hình vẽ hoặc ảnh chụp — Word không xuất được các phần này. Hãy dán nội dung ra đoạn văn thường rồi lưu lại .docx."
+            : "Không tìm thấy câu hỏi nào. File cần theo mẫu, mỗi câu bắt đầu bằng mã dạng [SI10.02.2.D05.a].",
         warnings,
+        // Vài dòng đầu server ĐỌC ĐƯỢC từ file. Không có cái này thì lỗi là
+        // ngõ cụt: người dùng nhìn file thấy mã đúng, còn server lại đọc ra
+        // thứ khác (bảng, hộp văn bản, ảnh chụp, mã sai dấu…) mà không ai
+        // biết. Hiển thị luôn trong hộp thoại.
+        preview: previewLines(marked),
       },
       { status: 422 },
     );
   }
 
   return NextResponse.json({ questions, warnings, count: questions.length });
+}
+
+/** 12 dòng đầu có nội dung, cắt ngắn — đủ để thấy mã câu có tới server không. */
+function previewLines(marked: string): string[] {
+  return marked
+    .split(/\r?\n/)
+    .map((l) => l.replace(/⟦\/?U⟧/g, "").trim())
+    .filter(Boolean)
+    .slice(0, 12)
+    .map((l) => (l.length > 120 ? `${l.slice(0, 120)}…` : l));
 }
