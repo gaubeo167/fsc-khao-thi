@@ -166,6 +166,94 @@ export function generateYccdExams(input: YccdDrawInput): DraftExam[] {
   return exams;
 }
 
+/**
+ * Materialize-time draw for a YCCĐ package, **without needing competencies**.
+ *
+ * The wizard-time `generateYccdExams` places each question by (Bài × phần ×
+ * Bloom) via `resolvers` (built from the competency tree). At ca-thi time the
+ * live question docs may not carry persisted `competencyIds` (chỉ có `tocNodeId`),
+ * so we can't rebuild those resolvers. But SECTIONS (Phần I/II) and per-question
+ * POINTS only depend on a question's PART, and a question's part is derived from
+ * its `type` (`partIdForType`) — always available on the doc. So here we draw
+ * `targets[partId]` questions per part from the picked pool, group into sections
+ * by `part.label`, and let scoring assign `part.pointsPerQuestion`.
+ *
+ * Bloom/topic distribution within a part is NOT re-enforced here (that needs the
+ * competency resolvers / durable `competencyIds`); the teacher already curated
+ * the frame + matrix, so the picked pool is the intended set.
+ */
+export function generateYccdFormsByPart(input: {
+  /** Candidate questions (blueprint's picked frame). */
+  pool: Question[];
+  /** Ordered parts (Phần I/II/…) with their questionTypes + labels. */
+  parts: YccdPart[];
+  /** partId → số câu cần bốc cho phần đó (Σ ô ma trận của phần). */
+  targets: Record<string, number>;
+  n: number;
+  seed?: number;
+  orderStrategy?: ExamOrderStrategy;
+}): DraftExam[] {
+  const { pool, parts, targets, n, seed, orderStrategy = "by-section" } = input;
+  const byId = new Map(pool.map((q) => [q.id, q] as const));
+  const contentOf = makeContentOf(byId);
+
+  // Candidate ids per part (via question type), id-sorted for stable draws.
+  const byPartPool = new Map<string, string[]>();
+  for (const q of pool) {
+    const pid = partIdForType(parts, q.type);
+    if (!pid) continue;
+    (byPartPool.get(pid) ?? byPartPool.set(pid, []).get(pid)!).push(q.id);
+  }
+  for (const ids of byPartPool.values()) ids.sort((a, b) => a.localeCompare(b));
+
+  const baseSeed = seed ?? Date.now();
+  const exams: DraftExam[] = [];
+  for (let i = 0; i < n; i++) {
+    const rng = mulberry32(baseSeed + i);
+    const taken = new Set<string>();
+    const takenContent = new Set<string>();
+    const sections: DraftSection[] = [];
+    for (const part of parts) {
+      const target = targets[part.id] ?? 0;
+      if (target <= 0) continue;
+      const drawn = drawN(
+        byPartPool.get(part.id) ?? [],
+        target,
+        taken,
+        takenContent,
+        contentOf,
+        rng,
+      );
+      if (drawn.length === 0) continue;
+      sections.push({
+        topicId: part.id,
+        name: part.label,
+        questionIds: shuffle(drawn, rng),
+      });
+    }
+    const grouped = sections.flatMap((s) => s.questionIds);
+    const questionIds =
+      orderStrategy === "shuffle-all" ? shuffle(grouped, rng) : grouped;
+    exams.push({ questionIds, sections });
+  }
+  return exams;
+}
+
+/** Σ ô ma trận theo phần → số câu mỗi phần (dùng cho generateYccdFormsByPart). */
+export function partTargetsOf(matrix: YccdMatrix): Record<string, number> {
+  const targets: Record<string, number> = {};
+  for (const cell of matrix.cells)
+    targets[cell.partId] = (targets[cell.partId] ?? 0) + cell.count;
+  return targets;
+}
+
+/** Điểm mỗi câu theo phần (partId → điểm), suy từ yccdMatrix.parts. */
+export function pointsByPartOf(matrix: YccdMatrix): Record<string, number> {
+  const pts: Record<string, number> = {};
+  for (const p of matrix.parts) pts[p.id] = p.pointsPerQuestion ?? 0;
+  return pts;
+}
+
 // ───────────────────────── validation / invariants ──────────────────────
 export interface YccdShortfall {
   topicId: string;

@@ -10,9 +10,16 @@
  */
 
 import { generateExams } from "@/features/exams/lib/generate";
-import type {
-  ExamBlueprint,
-  ExamPackage,
+import {
+  generateYccdFormsByPart,
+  partIdForType,
+  partTargetsOf,
+  pointsByPartOf,
+} from "@/features/exams/lib/generate-yccd";
+import {
+  isYccdPackage,
+  type ExamBlueprint,
+  type ExamPackage,
 } from "@/features/exams/data/types";
 import type {
   ScoringConfig,
@@ -90,9 +97,20 @@ export function materializeExamForm(input: MaterializeInput): ExamForm {
   // Build lookup by id once.
   const byId = new Map(questionPool.map((q) => [q.id, q]));
 
-  // Reuse the existing generator to pick question ids per variant —
-  // it already handles per-paper uniqueness + difficulty matrix.
-  const drafts = generateExams(blueprint, pkg, byId, variantCount, orderStrategy);
+  // YCCĐ packages carry a MOET matrix + scoring policy on the package itself;
+  // the legacy generateExams reads pkg.matrix (empty for YCCĐ) → nothing. Draw
+  // by PART instead (sections = Phần I/II, points = điểm/câu theo phần). Parts
+  // derive from question type, so this needs NO competency backfill.
+  const yccd = isYccdPackage(pkg) ? pkg : null;
+  const drafts = yccd
+    ? generateYccdFormsByPart({
+        pool: questionPool,
+        parts: yccd.yccdMatrix.parts,
+        targets: partTargetsOf(yccd.yccdMatrix),
+        n: variantCount,
+        orderStrategy,
+      })
+    : generateExams(blueprint, pkg, byId, variantCount, orderStrategy);
 
   // Materialize: clone each picked Question into a snapshot.
   const variants: ExamFormVariant[] = drafts.map((draft, vIdx) => {
@@ -116,7 +134,11 @@ export function materializeExamForm(input: MaterializeInput): ExamForm {
       snapshots.push(freezeQuestion(live, now, section));
     }
     const variantId = `${formId}-v${String(vIdx + 1).padStart(3, "0")}`;
-    const perQuestion = computePerQuestionScoring(snapshots, scoring);
+    // YCCĐ: điểm mỗi câu theo PHẦN (chuẩn của bộ đề) — bỏ qua ScoringConfig
+    // "chia đều/độ khó/thủ công" của ca thi để không đá nhau.
+    const perQuestion = yccd
+      ? computeYccdPerQuestion(snapshots, yccd)
+      : computePerQuestionScoring(snapshots, scoring);
     return {
       variantId,
       name: `Đề ${String(vIdx + 1).padStart(3, "0")}`,
@@ -131,7 +153,7 @@ export function materializeExamForm(input: MaterializeInput): ExamForm {
     packageId: pkg.id,
     blueprintId: blueprint.id,
     campusId,
-    maxScore: scoring.maxScore,
+    maxScore: yccd ? yccd.scoringPolicy.maxScore : scoring.maxScore,
     durationMinutes: pkg.duration || blueprint.duration,
     variants,
     orderStrategy,
@@ -187,6 +209,29 @@ function freezeQuestion(
  *
  * Returned map is keyed by snapshotId.
  */
+/**
+ * YCCĐ per-question scoring: mỗi câu nhận ĐIỂM TỐI ĐA của PHẦN nó thuộc về
+ * (điểm/câu theo phần đã cài ở bước ④, đóng băng trên `yccdMatrix.parts`).
+ * Câu không khớp phần nào → 0. Tổng khớp `scoringPolicy.maxScore` khi mỗi phần
+ * bốc đủ chỉ tiêu (maxScore = Σ ô × điểm/phần).
+ *
+ * Lưu ý: đây là điểm TỐI ĐA mỗi câu. Chấm từng phần theo MOET (Đúng–Sai lũy
+ * tiến, mcq-multi từng phần) áp ở KHÂU CHẤM dựa trên `scoringPolicy` — bước sau.
+ */
+function computeYccdPerQuestion(
+  snapshots: QuestionSnapshot[],
+  pkg: ExamPackage & { yccdMatrix: NonNullable<ExamPackage["yccdMatrix"]> },
+): Record<string, number> {
+  const parts = pkg.yccdMatrix.parts;
+  const pts = pointsByPartOf(pkg.yccdMatrix);
+  const out: Record<string, number> = {};
+  for (const snap of snapshots) {
+    const pid = partIdForType(parts, snap.type);
+    out[snap.snapshotId] = pid ? round2(pts[pid] ?? 0) : 0;
+  }
+  return out;
+}
+
 function computePerQuestionScoring(
   snapshots: QuestionSnapshot[],
   scoring: ScoringConfig,

@@ -66,9 +66,10 @@ import { useUsersStore } from "@/features/admin/users/users-store";
 import { useBlueprintsStore } from "@/features/exams/state/blueprints-store";
 import { useGeneratedStore } from "@/features/exams/state/generated-store";
 import { usePackagesStore } from "@/features/exams/state/packages-store";
-import type {
-  ExamBlueprint,
-  ExamPackage,
+import {
+  isYccdPackage,
+  type ExamBlueprint,
+  type ExamPackage,
 } from "@/features/exams/data/types";
 import { useQuestionsStore } from "@/features/question-bank/state/questions-store";
 import { materializeExamForm } from "@/features/exam-forms/lib/materialize";
@@ -1474,6 +1475,10 @@ function Step2Package({
   function pickPackage(packageId: string) {
     const p = packages.find((x) => x.id === packageId);
     const bp = p ? blueprints.find((b) => b.id === p.blueprintId) : null;
+    // Đề YCCĐ đã có thang điểm chuẩn (tổng + điểm/câu theo phần). Khoá tổng
+    // điểm ca thi theo đúng chuẩn đó để "Thang điểm bộ đề" không đá nhau —
+    // materialize sẽ bỏ qua mode chia đều/độ khó cho đề YCCĐ.
+    const yccdScore = p && isYccdPackage(p) ? p.scoringPolicy.maxScore : null;
     setState((s) => ({
       ...s,
       packageId,
@@ -1482,6 +1487,10 @@ function Step2Package({
       // regardless of what the user picked in step 1.
       subjectId: bp?.subjectId ?? s.subjectId,
       gradeId: bp?.gradeId ?? s.gradeId,
+      scoring:
+        yccdScore != null
+          ? { ...s.scoring, mode: "even" as const, maxScore: yccdScore }
+          : s.scoring,
     }));
   }
 
@@ -1530,6 +1539,9 @@ function ScoringPanel({
 
   const pkg = packages.find((p) => p.id === state.packageId);
   const bp = pkg ? blueprints.find((b) => b.id === pkg.blueprintId) : null;
+  // Đề YCCĐ có thang điểm chuẩn riêng → ca thi khoá theo đề, khoá phần
+  // "Thang điểm bộ đề" bên dưới (chỉ hiển thị, không cho chỉnh).
+  const yccd = pkg && isYccdPackage(pkg) ? pkg : null;
   // Generated exams (đề 001 / 002 …) for this package. The user wants
   // to set điểm per đề so each variant must show only its own
   // questions. Falls back to the blueprint pool if no đề has been
@@ -1715,6 +1727,39 @@ function ScoringPanel({
         )}
       </div>
 
+      {yccd ? (
+        <div className="rounded-lg border border-primary/40 bg-primary/5 p-3">
+          <p className="text-[12.5px] font-semibold text-foreground">
+            🔒 Đề YCCĐ đã có thang điểm chuẩn — ca thi chấm theo đúng cấu hình
+            của bộ đề (không dùng thang điểm chia đều/độ khó/thủ công).
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-[12px]">
+            <span className="rounded-md border bg-card px-2 py-1 font-semibold">
+              Tổng điểm: {formatScore(yccd.scoringPolicy.maxScore)} đ
+            </span>
+            {yccd.yccdMatrix.parts.map((p) => (
+              <span key={p.id} className="rounded-md border bg-card px-2 py-1">
+                {p.label}:{" "}
+                <b>{formatScore(p.pointsPerQuestion ?? 0)} đ/câu</b>
+              </span>
+            ))}
+          </div>
+          <p className="mt-2 text-[11.5px] text-muted-foreground">
+            Cách chấm MOET:{" "}
+            {yccd.scoringPolicy.mcqMulti === "partial"
+              ? "nhiều đáp án chấm từng phần"
+              : "nhiều đáp án chấm toàn phần"}
+            {" · "}
+            {yccd.scoringPolicy.ds === "graduated"
+              ? "Đúng–Sai lũy tiến theo số ý đúng"
+              : yccd.scoringPolicy.ds === "weighted"
+                ? "Đúng–Sai theo trọng số ý"
+                : "Đúng–Sai toàn phần"}
+            . Tên phần (Phần I/II…) + điểm mỗi câu lấy nguyên từ bước ④ khi tạo đề.
+          </p>
+        </div>
+      ) : (
+        <>
       {/* Variant picker — when the package has generated đề, the user
           picks each one and sets điểm for it. Câu trùng giữa các đề tự
           dùng chung điểm (perQuestion là 1 map shared) — admin chỉ cần
@@ -2096,6 +2141,8 @@ function ScoringPanel({
           </div>
         )}
       </div>
+        </>
+      )}
       <ViewQuestionDialog
         question={viewing}
         onClose={() => setViewing(null)}
