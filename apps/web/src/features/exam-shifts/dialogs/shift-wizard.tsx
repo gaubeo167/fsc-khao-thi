@@ -406,11 +406,14 @@ export function ShiftWizard({
     return packages.filter((p) => {
       if (p.status !== "approved") return false;
       // Đã lưu trữ = rút khỏi lưu thông. Ca thi mới không được chọn nữa (ca
-      // cũ vẫn giữ nguyên tham chiếu). Khung đề bị lưu trữ cũng chặn theo.
+      // cũ vẫn giữ nguyên tham chiếu).
+      // CHỈ xét gói đề, KHÔNG xét khung đề: lưu trữ khung là dọn dẹp khâu
+      // soạn thảo (khung vẫn đọc được), gói đề đã duyệt + đã sinh mã đề vẫn
+      // dùng bình thường. Chặn theo khung sẽ giết oan gói đề đang sống —
+      // đúng lỗi PKG-0036 biến mất sau khi admin lưu trữ BP-0040.
       if (p.archivedAt) return false;
       const bp = blueprints.find((b) => b.id === p.blueprintId);
       if (!bp) return false;
-      if (bp.archivedAt) return false;
       if (stateCampusId && norm(bp.campusId) !== stateCampusId) return false;
       if (stateGradeId && norm(bp.gradeId) !== stateGradeId) return false;
       if (stateSubjectId && norm(bp.subjectId) !== stateSubjectId) return false;
@@ -427,7 +430,6 @@ export function ShiftWizard({
       if (p.archivedAt) return false;
       const bp = blueprints.find((b) => b.id === p.blueprintId);
       if (!bp) return false;
-      if (bp.archivedAt) return false;
       if (stateCampusId && norm(bp.campusId) !== stateCampusId) return false;
       if (stateGradeId && norm(bp.gradeId) !== stateGradeId) return false;
       if (stateSubjectId && norm(bp.subjectId) !== stateSubjectId) return false;
