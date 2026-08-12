@@ -1,10 +1,11 @@
 "use client";
 
-import { Copy, Eye, PencilLine, RotateCcw, Trash2 } from "lucide-react";
-import { memo } from "react";
+import { Copy, Eye, PencilLine, RotateCcw, Target, Trash2 } from "lucide-react";
+import { memo, useMemo } from "react";
 
 import { IconButton } from "@/components/ui/icon-button";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { useCompetenciesStore } from "@/features/competencies/state/competencies-store";
 import { useGradesStore } from "@/features/grades/state/grades-store";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import { cn } from "@/lib/utils";
@@ -56,6 +57,25 @@ function QuestionCardImpl({
   const subject = subjects.find((s) => s.id === question.subjectId);
   const grade = grades.find((g) => g.id === question.gradeId);
 
+  // Mã YCCĐ đã gán (mức câu + từng ý / phương án) — hiện badge nếu có.
+  const competencies = useCompetenciesStore((s) => s.competencies);
+  const yccdCodes = useMemo(() => {
+    const ids = new Set<string>();
+    for (const id of question.competencyIds ?? []) ids.add(id);
+    if (question.type === "multi-tf")
+      for (const s of question.subQuestions ?? [])
+        if (s.competencyId) ids.add(s.competencyId);
+    if (question.type === "mcq-multi" || question.type === "mcq-single")
+      for (const o of question.options ?? [])
+        if (o.competencyId) ids.add(o.competencyId);
+    const codes: string[] = [];
+    for (const id of ids) {
+      const c = competencies.find((x) => x.id === id);
+      if (c?.code) codes.push(c.code);
+    }
+    return codes.sort();
+  }, [question, competencies]);
+
   return (
     <article
       className={cn(
@@ -78,6 +98,18 @@ function QuestionCardImpl({
         >
           {meta.shortName}
         </span>
+        {yccdCodes.length > 0 && (
+          <span
+            className="inline-flex items-center gap-1 rounded-md bg-teal-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-teal-700"
+            title={`Yêu cầu cần đạt: ${yccdCodes.join(", ")}`}
+          >
+            <Target className="h-3 w-3" strokeWidth={2} />
+            YCCĐ{" "}
+            {yccdCodes.length === 1
+              ? yccdCodes[0]
+              : `${yccdCodes[0]} +${yccdCodes.length - 1}`}
+          </span>
+        )}
 
         <span className="ml-auto font-mono text-[11px] text-muted-foreground">
           ID: {question.id}

@@ -609,6 +609,7 @@ export function YccdWizard() {
                 }
                 countByTopic={countByTopic}
                 countByOutcome={countByOutcome}
+                poolByComp={poolByComp}
                 query={scopeQuery}
                 onQuery={setScopeQuery}
               />
@@ -739,6 +740,7 @@ function StepScope({
   onToggleTopicExpand,
   countByTopic,
   countByOutcome,
+  poolByComp,
   query,
   onQuery,
 }: {
@@ -755,6 +757,7 @@ function StepScope({
   onToggleTopicExpand: (id: string) => void;
   countByTopic: Record<string, number>;
   countByOutcome: Record<string, number>;
+  poolByComp: Record<string, Question[]>;
   query: string;
   onQuery: (q: string) => void;
 }) {
@@ -774,7 +777,8 @@ function StepScope({
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-[12.5px] text-muted-foreground">
           Chọn <span className="font-semibold">từng YCCĐ</span> (mở rộng Bài) hoặc
-          tích ô Bài để chọn cả nhóm. Mỗi YCCĐ hiện mức Bloom + số câu trong kho.
+          tích ô Bài để chọn cả nhóm. Mỗi YCCĐ hiện mức Bloom, số câu trong kho
+          và <span className="font-semibold">số câu theo từng dạng</span>.
         </p>
         <div className="relative ml-auto min-w-[240px] flex-1 max-w-sm">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -897,6 +901,13 @@ function StepScope({
                                       <span className="min-w-0 flex-1 truncate text-foreground/80">
                                         {o.title}
                                       </span>
+                                      {oc > 0 && (
+                                        <span className="shrink-0">
+                                          <TypeBadges
+                                            breakdown={typeBreakdownOf(poolByComp[o.id] ?? [])}
+                                          />
+                                        </span>
+                                      )}
                                       <span
                                         className={cn(
                                           "shrink-0 rounded px-1 text-[9.5px] font-semibold",
@@ -920,8 +931,18 @@ function StepScope({
                                       onChange={() => onToggleComp(t.id)}
                                       className="h-3.5 w-3.5 shrink-0 accent-[var(--color-primary)]"
                                     />
-                                    <span className="flex-1 italic text-muted-foreground">
+                                    <span className="min-w-0 flex-1 truncate italic text-muted-foreground">
                                       Câu chung của Bài (chưa gắn YCCĐ cụ thể)
+                                    </span>
+                                    {(poolByComp[t.id] ?? []).length > 0 && (
+                                      <span className="shrink-0">
+                                        <TypeBadges
+                                          breakdown={typeBreakdownOf(poolByComp[t.id] ?? [])}
+                                        />
+                                      </span>
+                                    )}
+                                    <span className="shrink-0 rounded bg-emerald-50 px-1 text-[9.5px] font-semibold text-emerald-700">
+                                      {(poolByComp[t.id] ?? []).length} câu
                                     </span>
                                   </label>
                                 </li>
@@ -966,6 +987,36 @@ const PART_SHORT: Record<string, string> = {
   other: "Khác",
 };
 
+/** Số câu theo dạng (cấu phần) trong một nhóm câu hỏi. */
+function typeBreakdownOf(qs: Question[]): Record<string, number> {
+  const by: Record<string, number> = {};
+  for (const qq of qs) {
+    const part = MOET_DEFAULT_PARTS.find((p) => p.questionTypes.includes(qq.type));
+    const id = part?.id ?? "other";
+    by[id] = (by[id] ?? 0) + 1;
+  }
+  return by;
+}
+
+/** Các badge "dạng câu: số câu" — dùng chung ở bước ① và ②. */
+function TypeBadges({ breakdown }: { breakdown: Record<string, number> }) {
+  const entries = Object.entries(breakdown).sort();
+  if (entries.length === 0) return null;
+  return (
+    <span className="inline-flex flex-wrap gap-1 align-middle">
+      {entries.map(([partId, c]) => (
+        <span
+          key={partId}
+          className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600"
+          title="Số câu theo dạng"
+        >
+          {PART_SHORT[partId] ?? partId}: {c}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 function StepFrame({
   rows,
   outcomesOf,
@@ -996,16 +1047,6 @@ function StepFrame({
   // Only the YCCĐ / topic-level buckets selected in step ①.
   const selOutcomes = (topicId: string) =>
     outcomesOf(topicId).filter((o) => selected.has(o.id));
-  // Số câu theo dạng (cấu phần) trong một YCCĐ.
-  const typeBreakdown = (qs: Question[]) => {
-    const by: Record<string, number> = {};
-    for (const qq of qs) {
-      const part = MOET_DEFAULT_PARTS.find((p) => p.questionTypes.includes(qq.type));
-      const id = part?.id ?? "other";
-      by[id] = (by[id] ?? 0) + 1;
-    }
-    return by;
-  };
 
   const totalAvail = rows.reduce((s, r) => {
     let c = selected.has(r.topicId) ? (poolByComp[r.topicId] ?? []).length : 0;
@@ -1083,18 +1124,8 @@ function StepFrame({
                         )}
                         <span className="min-w-[140px] flex-1 text-[12.5px]">
                           {g.label}
-                          <span className="ml-1 inline-flex flex-wrap gap-1 align-middle">
-                            {Object.entries(typeBreakdown(g.questions))
-                              .sort()
-                              .map(([partId, c]) => (
-                                <span
-                                  key={partId}
-                                  className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600"
-                                  title="Số câu theo dạng"
-                                >
-                                  {PART_SHORT[partId] ?? partId}: {c}
-                                </span>
-                              ))}
+                          <span className="ml-1">
+                            <TypeBadges breakdown={typeBreakdownOf(g.questions)} />
                           </span>
                         </span>
                         <span className="text-[11px] text-muted-foreground">Vào khung:</span>
