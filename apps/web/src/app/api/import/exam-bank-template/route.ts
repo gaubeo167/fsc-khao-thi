@@ -1,7 +1,7 @@
 /**
  * GET /api/import/exam-bank-template — generates a sample .docx for the
  * question-bank upload feature, in the FSC "đề mẫu" format: each question
- * prefixed with [mãChuyênĐề.Loại+số.độKhó], correct answers UNDERLINED,
+ * prefixed with [mãChuyênĐề.Loại+số] (độ khó tuỳ chọn), correct answers UNDERLINED,
  * short-answer keys as <Key=…>.
  */
 import {
@@ -42,7 +42,7 @@ export async function GET() {
           p([t("HƯỚNG DẪN:", { bold: true })]),
           p([
             t(
-              "• Mỗi câu bắt đầu bằng mã trong ngoặc vuông: [mãChuyênĐề.Loại+số.độKhó]. Ví dụ [SI10.02.2.D05.a].",
+              "• Mỗi câu bắt đầu bằng mã trong ngoặc vuông: [mãChuyênĐề.Loại+số]. Ví dụ [SI10.02.2.D05].",
             ),
           ]),
           p([
@@ -51,7 +51,7 @@ export async function GET() {
             ),
           ]),
           p([
-            t("• Độ khó: a = Nhận biết, b = Thông hiểu, c = Vận dụng."),
+            t("• Độ khó: KHÔNG cần ghi — hệ lấy theo mã trong khung YCCĐ (a = Nhận biết, b = Thông hiểu, c = Vận dụng). Muốn đè thì ghi ở cuối mã: [SI10.02.2.D05.a]."),
           ]),
           p([
             t("• Đáp án ĐÚNG được "),
@@ -72,7 +72,7 @@ export async function GET() {
 
           // D — trắc nghiệm 1 đáp án
           p([
-            t("[SI10.02.2.D01.a] ", { bold: true }),
+            t("[SI10.02.2.D01] ", { bold: true }),
             t("Loại nucleotide nào sau đây KHÔNG có trong phân tử DNA?"),
           ]),
           p([t("A. Adenine.")]),
@@ -83,7 +83,7 @@ export async function GET() {
 
           // D — trắc nghiệm nhiều đáp án (≥2 gạch chân)
           p([
-            t("[SI10.02.2.D02.b] ", { bold: true }),
+            t("[SI10.02.2.D02] ", { bold: true }),
             t("Những chất nào sau đây là carbohydrate? (chọn nhiều đáp án)"),
           ]),
           p([t("A. "), t("Glucose.", { underline: true })]),
@@ -94,7 +94,7 @@ export async function GET() {
 
           // F — đúng/sai
           p([
-            t("[SI10.02.1.F01.b] ", { bold: true }),
+            t("[SI10.02.1.F01] ", { bold: true }),
             t("Cho các nhận định về nước trong tế bào, đúng hay sai?"),
           ]),
           p([t("a) "), t("Nước là dung môi hòa tan nhiều chất trong tế bào.", { underline: true })]),
@@ -105,7 +105,7 @@ export async function GET() {
 
           // S — trả lời ngắn
           p([
-            t("[SI10.01.1.S01.b] ", { bold: true }),
+            t("[SI10.01.1.S01] ", { bold: true }),
             t("Có bao nhiêu cấp độ tổ chức sống cơ bản trong ví dụ đã cho?"),
           ]),
           p([t("<Key=3>")]),
@@ -113,7 +113,7 @@ export async function GET() {
 
           // E — tự luận (kèm lời giải: cơ sở cho chấm theo rubric sau này)
           p([
-            t("[SI10.01.1.E01.c] ", { bold: true }),
+            t("[SI10.01.1.E01.c] " /* .c = đè độ khó, tuỳ chọn */, { bold: true }),
             t("Trình bày vai trò của sinh học đối với phát triển bền vững."),
           ]),
           p([t("Lời giải:", { bold: true })]),

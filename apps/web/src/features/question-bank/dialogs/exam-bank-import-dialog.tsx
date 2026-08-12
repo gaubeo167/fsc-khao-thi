@@ -67,6 +67,30 @@ let idSeq = 0;
 const nid = (p: string) => `${p}-${(idSeq++).toString(36)}-${Date.now().toString(36)}`;
 
 /** ParsedBankQuestion → editable AiEditValues (same shape as direct entry). */
+/**
+ * Mã câu KHÔNG bắt buộc ghi độ khó. Khi thiếu, lấy từ node mục lục khớp mã:
+ * khung YCCĐ upload lên đã đặt tên node bắt đầu bằng "a. / b. / c." (nhận
+ * biết / thông hiểu / vận dụng), nên độ khó nằm sẵn ở đó — người soạn câu
+ * hỏi không phải gõ lại. Không suy được thì giữ mặc định của parser.
+ */
+function withInferredDifficulty(
+  q: ParsedBankQuestion,
+  codeIndex: Map<string, { id: string; name: string; code: string }>,
+): ParsedBankQuestion {
+  if (q.difficultyFromCode) return q;
+  const cpCode = q.rawCode.replace(/\.[a-c]$/i, "").toUpperCase();
+  const node =
+    codeIndex.get(cpCode) ?? codeIndex.get(q.chuyenDeCode.toUpperCase());
+  const m = /^\s*([abc])\s*[.)]/i.exec(node?.name ?? "");
+  if (!m) return q;
+  const byLetter: Record<string, ParsedBankQuestion["difficulty"]> = {
+    a: "easy",
+    b: "medium",
+    c: "hard",
+  };
+  return { ...q, difficulty: byLetter[m[1]!.toLowerCase()] ?? q.difficulty };
+}
+
 function parsedToEditValues(q: ParsedBankQuestion): AiEditValues {
   const base: AiEditValues = {
     type: q.qType,
@@ -138,11 +162,13 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
   }, [open]);
 
   // code → { id, name } for the chosen Môn + Khối (mỗi khối có khung riêng).
+  // Khoá theo mã VIẾT HOA: người soạn gõ "si10.02.13" hay "SI10.02.13" đều
+  // là một mã, không có lý do bắt họ khớp hoa/thường.
   const codeIndex = useMemo(() => {
     const m = new Map<string, { id: string; name: string; code: string }>();
     for (const n of tocNodes) {
       if (n.subjectId === subjectId && n.gradeId === gradeId && n.code) {
-        m.set(n.code, { id: n.id, name: n.name, code: n.code });
+        m.set(n.code.toUpperCase(), { id: n.id, name: n.name, code: n.code });
       }
     }
     return m;
@@ -155,9 +181,11 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
         // Gắn vào node SÂU NHẤT khớp mã: thử CP (mã gồm cả .D05, bỏ độ khó)
         // trước, không có thì lùi về CĐ. Nhờ vậy câu hỏi nằm ở CP nếu khung
         // có chỉ báo tương ứng → thống kê & bốc theo CP.
-        const cpCode = e.rawCode.replace(/\.[a-c]$/i, "");
+        const cpCode = e.rawCode.replace(/\.[a-c]$/i, "").toUpperCase();
         const match =
-          codeIndex.get(cpCode) ?? codeIndex.get(e.chuyenDeCode) ?? null;
+          codeIndex.get(cpCode) ??
+          codeIndex.get(e.chuyenDeCode.toUpperCase()) ??
+          null;
         return {
           ...e,
           matchedNodeId: match?.id ?? null,
@@ -227,7 +255,7 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
       setState({
         kind: "review",
         entries: parsed.map((q) => ({
-          edit: parsedToEditValues(q),
+          edit: parsedToEditValues(withInferredDifficulty(q, codeIndex)),
           chuyenDeCode: q.chuyenDeCode,
           rawCode: q.rawCode,
         })),
@@ -692,14 +720,17 @@ function FormatGuide() {
       <p className="mb-1 font-semibold text-foreground/85">Quy ước file mẫu</p>
       <ul className="space-y-0.5 text-foreground/75">
         <li>
-          • Mỗi câu bắt đầu bằng mã <code className="rounded bg-muted px-1">[SI10.02.2.D05.a]</code> ={" "}
-          <b>[mã chuyên đề].[Loại+số].[độ khó]</b>.
+          • Mỗi câu bắt đầu bằng mã <code className="rounded bg-muted px-1">[SI10.02.2.D05]</code> ={" "}
+          <b>[mã chuyên đề].[Loại+số]</b>.
         </li>
         <li>
           • Loại: <b>D</b>=Trắc nghiệm, <b>F</b>=Đúng/Sai, <b>S</b>=Trả lời ngắn, <b>E</b>=Tự luận.
         </li>
         <li>
-          • Độ khó: <b>a</b>=Nhận biết, <b>b</b>=Thông hiểu, <b>c</b>=Vận dụng.
+          • Độ khó: <b>không cần ghi</b> — hệ lấy theo mã trong khung YCCĐ (tên
+          YCCĐ mở đầu bằng <b>a</b>=Nhận biết, <b>b</b>=Thông hiểu, <b>c</b>=Vận dụng).
+          Muốn đè thì ghi thêm ở cuối mã:{" "}
+          <code className="rounded bg-muted px-1">[SI10.02.2.D05.a]</code>.
         </li>
         <li>
           • Đáp án đúng: <b>gạch chân</b> (D nhiều gạch chân → chọn nhiều đáp án; F gạch

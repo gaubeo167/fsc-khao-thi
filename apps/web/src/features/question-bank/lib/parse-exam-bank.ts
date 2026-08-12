@@ -54,6 +54,9 @@ export interface ParsedBankQuestion {
   /** Lời giải / hướng dẫn giải / đáp án viết dưới câu hỏi. Với câu tự luận
    *  đây là đáp án mẫu — về sau làm cơ sở cho chấm AI theo rubric. */
   explanation: string;
+  /** `false` khi mã KHÔNG ghi độ khó — `difficulty` chỉ là mặc định, phía
+   *  client nên suy lại từ tiền tố "a./b./c." của node mục lục khớp mã. */
+  difficultyFromCode: boolean;
   /** Per-question issues the reviewer must fix (missing answer, etc.). */
   warnings: string[];
 }
@@ -64,8 +67,14 @@ export interface ExamBankParseResult {
   warnings: string[];
 }
 
+// Độ khó (.a/.b/.c) là TUỲ CHỌN: mã chuyên đề trong mục lục đã mang sẵn
+// tiền tố "a. / b. / c." nên độ khó suy ra được từ node khớp — bắt người
+// soạn gõ thêm chỉ tổ làm hỏng cả file vì một dấu chấm. Chữ loại nhận cả
+// chữ thường (d01 = D01).
 const CODE_RE =
-  /^\[\s*([A-Za-z]+\d+(?:\.\d+)+)\.([DFSE])(\d+)\.([abc])\s*\]\s*(.*)$/;
+  /^\[\s*([A-Za-z]+\d+(?:\.\d+)+)\.([DFSEdfse])(\d+)(?:\.([abcABC]))?\s*\]\s*(.*)$/;
+/** "Câu 12." viết ngay sau mã — nhãn của đề gốc, không phải nội dung. */
+const LEADING_CAU_RE = /^Câu\s*\d+\s*[.:)]?\s*/i;
 // A bracket that looks like an attempt at a code but doesn't match.
 const BAD_CODE_RE = /^\[\s*[A-Za-z0-9.\s]+\]/;
 const OPTION_RE = /^([A-Z])[.)]\s*(.*)$/; // A. …  /  B) …
@@ -138,15 +147,17 @@ export function parseExamBank(marked: string): ExamBankParseResult {
     if (code) {
       flush();
       const chuyenDeCode = code[1]!;
-      const typeLetter = code[2] as "D" | "F" | "S" | "E";
+      const typeLetter = code[2]!.toUpperCase() as "D" | "F" | "S" | "E";
       const seq = code[3]!;
-      const difficulty = DIFFICULTY[code[4]!]!;
+      const diffLetter = code[4]?.toLowerCase();
       cur = {
-        rawCode: `${chuyenDeCode}.${typeLetter}${seq}.${code[4]}`,
+        rawCode: `${chuyenDeCode}.${typeLetter}${seq}${diffLetter ? `.${diffLetter}` : ""}`,
         chuyenDeCode,
         typeLetter,
         seq,
-        difficulty,
+        // Không ghi độ khó → tạm "thông hiểu"; client suy lại từ mục lục.
+        difficulty: diffLetter ? DIFFICULTY[diffLetter]! : "medium",
+        difficultyFromCode: Boolean(diffLetter),
         qType:
           typeLetter === "F"
             ? "multi-tf"
@@ -163,7 +174,10 @@ export function parseExamBank(marked: string): ExamBankParseResult {
         warnings: [],
       };
       inExplanation = false;
-      if (code[5]!.trim()) contentLines.push(code[5]!);
+      // Bỏ nhãn "Câu 5." dính ngay sau mã — số thứ tự của đề gốc, không
+      // phải nội dung câu hỏi trong kho.
+      const rest = code[5]!.replace(LEADING_CAU_RE, "");
+      if (rest.trim()) contentLines.push(rest);
       continue;
     }
 
