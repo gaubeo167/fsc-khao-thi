@@ -987,15 +987,35 @@ const PART_SHORT: Record<string, string> = {
   other: "Khác",
 };
 
+/** Cấu phần (dạng câu) của một câu hỏi theo MOET; "other" nếu không khớp. */
+function partIdOf(q: Question): string {
+  return MOET_DEFAULT_PARTS.find((p) => p.questionTypes.includes(q.type))?.id ?? "other";
+}
+
 /** Số câu theo dạng (cấu phần) trong một nhóm câu hỏi. */
 function typeBreakdownOf(qs: Question[]): Record<string, number> {
   const by: Record<string, number> = {};
   for (const qq of qs) {
-    const part = MOET_DEFAULT_PARTS.find((p) => p.questionTypes.includes(qq.type));
-    const id = part?.id ?? "other";
+    const id = partIdOf(qq);
     by[id] = (by[id] ?? 0) + 1;
   }
   return by;
+}
+
+/**
+ * Chia một nhóm câu hỏi thành các cấu phần (dạng câu), sắp theo thứ tự MOET,
+ * mỗi cấu phần sắp theo id để "giữ N câu đầu" luôn tất định.
+ */
+function partitionByPart(qs: Question[]): { partId: string; questions: Question[] }[] {
+  const map: Record<string, Question[]> = {};
+  for (const qq of qs) (map[partIdOf(qq)] ??= []).push(qq);
+  const order = [...MOET_DEFAULT_PARTS.map((p) => p.id), "other"];
+  return Object.entries(map)
+    .sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]))
+    .map(([partId, questions]) => ({
+      partId,
+      questions: [...questions].sort((x, y) => x.id.localeCompare(y.id)),
+    }));
 }
 
 /** Các badge "dạng câu: số câu" — dùng chung ở bước ① và ②. */
@@ -1103,58 +1123,81 @@ function StepFrame({
                   const n = keptCount(g.questions);
                   const exp = expanded.has(g.id);
                   const bloom = g.bloom ? bloomMeta(g.bloom) : null;
+                  const partsOfGroup = partitionByPart(g.questions);
                   return (
                     <li key={g.id}>
-                      <div className="flex flex-wrap items-center gap-2 px-3 py-2">
-                        {g.code && (
-                          <span className="shrink-0 rounded bg-slate-100 px-1 font-mono text-[10px] text-slate-600">
-                            {g.code}
-                          </span>
-                        )}
-                        {bloom && (
-                          <span
-                            className={cn(
-                              "shrink-0 rounded px-1 text-[9.5px] font-semibold",
-                              bloom.chipBg,
-                              bloom.chipFg,
-                            )}
-                          >
-                            {bloom.short}
-                          </span>
-                        )}
-                        <span className="min-w-[140px] flex-1 text-[12.5px]">
-                          {g.label}
-                          <span className="ml-1">
-                            <TypeBadges breakdown={typeBreakdownOf(g.questions)} />
-                          </span>
-                        </span>
-                        <span className="text-[11px] text-muted-foreground">Vào khung:</span>
-                        <input
-                          type="number"
-                          min={0}
-                          max={total}
-                          value={n}
-                          onChange={(e) =>
-                            onSetFrameCount(
-                              g.questions,
-                              Math.max(0, Math.min(total, Number(e.target.value) || 0)),
-                            )
-                          }
-                          className="h-8 w-16 rounded-md border bg-card px-2 text-center text-[12.5px]"
-                        />
-                        <span className="text-[11px] font-semibold text-emerald-700">/{total}</span>
-                        <button
-                          type="button"
-                          onClick={() => toggle(expanded, setExpanded, g.id)}
-                          className="inline-flex items-center gap-1 rounded-md border bg-card px-2 py-1 text-[11.5px] text-primary hover:bg-surface-2"
-                        >
-                          {exp ? (
-                            <ChevronDown className="h-3.5 w-3.5" />
-                          ) : (
-                            <ChevronRight className="h-3.5 w-3.5" />
+                      <div className="px-3 py-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {g.code && (
+                            <span className="shrink-0 rounded bg-slate-100 px-1 font-mono text-[10px] text-slate-600">
+                              {g.code}
+                            </span>
                           )}
-                          Xem {total} câu
-                        </button>
+                          {bloom && (
+                            <span
+                              className={cn(
+                                "shrink-0 rounded px-1 text-[9.5px] font-semibold",
+                                bloom.chipBg,
+                                bloom.chipFg,
+                              )}
+                            >
+                              {bloom.short}
+                            </span>
+                          )}
+                          <span className="min-w-[140px] flex-1 text-[12.5px] font-medium">
+                            {g.label}
+                          </span>
+                          <span className="shrink-0 text-[11px] text-muted-foreground">
+                            Đã chọn{" "}
+                            <span className="font-semibold text-foreground">{n}</span>/{total}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => toggle(expanded, setExpanded, g.id)}
+                            className="inline-flex shrink-0 items-center gap-1 rounded-md border bg-card px-2 py-1 text-[11.5px] text-primary hover:bg-surface-2"
+                          >
+                            {exp ? (
+                              <ChevronDown className="h-3.5 w-3.5" />
+                            ) : (
+                              <ChevronRight className="h-3.5 w-3.5" />
+                            )}
+                            Xem {total} câu
+                          </button>
+                        </div>
+                        {/* Nhập số câu VÀO KHUNG theo TỪNG DẠNG của YCCĐ này. */}
+                        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 pl-0.5">
+                          {partsOfGroup.map(({ partId, questions }) => {
+                            const kept = keptCount(questions);
+                            const cap = questions.length;
+                            return (
+                              <div key={partId} className="flex items-center gap-1.5">
+                                <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                                  {PART_SHORT[partId] ?? partId}
+                                </span>
+                                <span className="text-[11px] text-muted-foreground">
+                                  Vào khung:
+                                </span>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={cap}
+                                  value={kept}
+                                  onChange={(e) =>
+                                    onSetFrameCount(
+                                      questions,
+                                      Math.max(0, Math.min(cap, Number(e.target.value) || 0)),
+                                    )
+                                  }
+                                  title={`Có ${cap} câu dạng ${PART_SHORT[partId] ?? partId} — chọn tối đa ${cap}`}
+                                  className="h-7 w-14 rounded-md border bg-card px-2 text-center text-[12.5px] tabular-nums"
+                                />
+                                <span className="text-[11px] font-semibold text-emerald-700">
+                                  /{cap}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
                       {exp && (
                         <ul className="space-y-1 border-t bg-surface-2/30 px-3 py-2">
