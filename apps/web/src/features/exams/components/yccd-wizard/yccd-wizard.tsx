@@ -429,7 +429,12 @@ export function YccdWizard({
   }
 
   // Auto-clamp any cell that now exceeds inventory (e.g. after un-ticking).
+  // QUAN TRỌNG (chế độ SỬA): khi vừa nạp lại đề, `cells` được set TRƯỚC khi
+  // `pool`/phạm vi kịp tải → `inventory` tạm thời rỗng. Nếu clamp chạy lúc này
+  // sẽ xoá sạch ô ma trận vừa khôi phục (chỉ clamp xuống, không hồi lại). Vì
+  // vậy hoãn clamp cho tới khi scopedPool đã dựng xong.
   useEffect(() => {
+    if (editing && scopedPool.length === 0) return;
     setCells((prev) => {
       let changed = false;
       const next = { ...prev };
@@ -442,7 +447,8 @@ export function YccdWizard({
       }
       return changed ? next : prev;
     });
-  }, [inventory]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inventory, editing, scopedPool.length]);
 
   // A Bài is a matrix row if ≥1 of its YCCĐ (or its topic-level bucket) is
   // selected.
