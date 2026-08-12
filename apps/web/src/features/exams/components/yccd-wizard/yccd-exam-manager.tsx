@@ -6,12 +6,14 @@ import {
   Copy,
   Lock,
   PencilLine,
+  PlayCircle,
   Plus,
   RotateCcw,
   Search,
   Trash2,
   X,
 } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 
 import { useAuthStore } from "@/features/auth/state/auth-store";
@@ -28,6 +30,14 @@ import { useBlueprintsStore } from "../../state/blueprints-store";
 import { useGeneratedStore } from "../../state/generated-store";
 import { usePackagesStore } from "../../state/packages-store";
 import { YccdWizard } from "./yccd-wizard";
+
+const TrialExamDialog = dynamic(
+  () =>
+    import("@/features/exams/dialogs/trial-exam-dialog").then(
+      (m) => m.TrialExamDialog,
+    ),
+  { ssr: false },
+);
 
 type Mode = { view: "list" } | { view: "create" } | { view: "edit"; pkg: ExamPackage };
 
@@ -107,6 +117,7 @@ export function YccdExamManager() {
   const [query, setQuery] = useState("");
   const [showArchived, setShowArchived] = useState(false);
   const [tab, setTab] = useState<"packages" | "generated">("packages");
+  const [trialing, setTrialing] = useState<GeneratedExam | null>(null);
   const removeGenerated = useGeneratedStore((s) => s.remove);
 
   const rows = useMemo(() => {
@@ -219,6 +230,15 @@ export function YccdExamManager() {
           onDelete={(id) => removeGenerated(id)}
           onDeleteAll={(pkgId) => removeGeneratedByPackage(pkgId)}
           onEdit={(p) => setMode({ view: "edit", pkg: p })}
+          onTrial={setTrialing}
+        />
+        <TrialExamDialog
+          exam={trialing}
+          onClose={() => setTrialing(null)}
+          onDelete={(g) => {
+            setTrialing(null);
+            removeGenerated(g.id);
+          }}
         />
       </div>
     );
@@ -495,6 +515,7 @@ function YccdGeneratedView({
   onDelete,
   onDeleteAll,
   onEdit,
+  onTrial,
 }: {
   rows: ExamPackage[];
   generated: GeneratedExam[];
@@ -502,6 +523,7 @@ function YccdGeneratedView({
   onDelete: (id: string) => void;
   onDeleteAll: (packageId: string) => void;
   onEdit: (p: ExamPackage) => void;
+  onTrial: (g: GeneratedExam) => void;
 }) {
   const byPackage = new Map<string, GeneratedExam[]>();
   for (const g of generated) {
@@ -564,13 +586,21 @@ function YccdGeneratedView({
                 <span className="text-muted-foreground">
                   {g.questionIds.length} câu · ⏱ {g.duration} phút
                 </span>
+                <button
+                  type="button"
+                  onClick={() => onTrial(g)}
+                  title="Làm thử đề này như học sinh (câu trả lời không lưu)"
+                  className="ml-auto inline-flex items-center gap-1 rounded-md border border-primary/50 bg-primary/5 px-2 py-1 text-[11.5px] font-semibold text-primary hover:bg-primary/10"
+                >
+                  <PlayCircle className="h-3.5 w-3.5" /> Thi thử
+                </button>
                 {canManage && (
                   <button
                     type="button"
                     onClick={() => {
                       if (confirm(`Xoá mã đề "${g.name}"?`)) onDelete(g.id);
                     }}
-                    className="ml-auto inline-flex items-center gap-1 rounded-md border bg-card px-2 py-1 text-[11.5px] font-medium text-rose-600 hover:bg-rose-50"
+                    className="inline-flex items-center gap-1 rounded-md border bg-card px-2 py-1 text-[11.5px] font-medium text-rose-600 hover:bg-rose-50"
                   >
                     <Trash2 className="h-3.5 w-3.5" /> Xoá
                   </button>
