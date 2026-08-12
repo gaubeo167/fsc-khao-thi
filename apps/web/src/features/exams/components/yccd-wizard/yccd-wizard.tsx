@@ -36,6 +36,7 @@ import { cn } from "@/lib/utils";
 import {
   DEFAULT_DS_GRADUATED,
   MOET_DEFAULT_PARTS,
+  type ExamPackage,
   type ScoringPolicy,
   type YccdMatrix,
   type YccdPart,
@@ -68,7 +69,15 @@ const DEFAULT_POINTS: Record<string, number> = {
   tl: 1,
 };
 
-export function YccdWizard() {
+export function YccdWizard({
+  editing = null,
+  onExit,
+}: {
+  /** Sửa đề YCCĐ đã tạo — nạp lại toàn bộ 6 bước. null = tạo mới. */
+  editing?: ExamPackage | null;
+  /** Quay lại danh sách đề. */
+  onExit?: () => void;
+} = {}) {
   const subjects = useSubjectsStore((s) => s.subjects);
   const tocNodes = useSubjectsStore((s) => s.tocNodes);
   const gradeList = useGradesStore((s) => s.grades);
@@ -77,8 +86,13 @@ export function YccdWizard() {
   const allQuestions = useQuestionsStore((s) => s.questions);
   const session = useAuthStore((s) => s.session);
   const createBlueprint = useBlueprintsStore((s) => s.create);
+  const updateBlueprint = useBlueprintsStore((s) => s.update);
+  const blueprintsAll = useBlueprintsStore((s) => s.blueprints);
   const createPackage = usePackagesStore((s) => s.create);
+  const updatePackage = usePackagesStore((s) => s.update);
   const addBatch = useGeneratedStore((s) => s.addBatch);
+  const generatedAll = useGeneratedStore((s) => s.generated);
+  const removeGeneratedByPackage = useGeneratedStore((s) => s.removeByPackage);
   const partConfigs = usePartConfigsStore((s) => s.configs);
   const partConfigsHydrated = usePartConfigsStore((s) => s.hydrated);
   const upsertPartConfig = usePartConfigsStore((s) => s.upsert);
@@ -125,13 +139,59 @@ export function YccdWizard() {
   const getPoints = (partId: string) =>
     pointsByPart[partId] ?? DEFAULT_POINTS[partId] ?? 0.25;
 
-  // Reset downstream state when scope changes.
+  // Reset downstream state when scope changes. Bỏ qua ở chế độ SỬA — state
+  // đã được nạp từ đề đang sửa, không được xoá.
   useEffect(() => {
+    if (editing) return;
     setSelected(new Set());
     setExcludeIds(new Set());
     setCells({});
     setStep(1);
-  }, [subjectId, gradeId]);
+  }, [subjectId, gradeId, editing]);
+
+  // Chế độ SỬA: nạp lại toàn bộ 6 bước từ đề đã tạo (blueprint + yccdMatrix +
+  // scoringPolicy + yccdDraft) MỘT LẦN khi blueprint sẵn sàng. Môn/Khối bị
+  // khoá nên các effect theo scope ở trên không chạy lại sau khi nạp.
+  const editHydratedRef = useRef(false);
+  useEffect(() => {
+    if (!editing || editHydratedRef.current) return;
+    const bp = blueprintsAll.find((b) => b.id === editing.blueprintId);
+    if (!bp) return; // chờ blueprint hydrate
+    editHydratedRef.current = true;
+    const m = editing.yccdMatrix;
+    const sp = editing.scoringPolicy;
+    const draft = editing.yccdDraft;
+    setSubjectId(bp.subjectId);
+    setGradeId(bp.gradeId);
+    setPkgName(editing.name);
+    setDuration(editing.duration || bp.duration || 45);
+    if (m) {
+      setParts(m.parts.map((p) => ({ ...p, questionTypes: [...p.questionTypes] })));
+      const pbp: Record<string, number> = {};
+      for (const p of m.parts) if (p.pointsPerQuestion != null) pbp[p.id] = p.pointsPerQuestion;
+      setPointsByPart(pbp);
+      const cs: Record<string, number> = {};
+      for (const c of m.cells) cs[cellKey(c.topicId, c.partId, c.bloom)] = c.count;
+      setCells(cs);
+    }
+    if (sp) {
+      setMcqMultiMode(sp.mcqMulti);
+      setDsMode(sp.ds);
+      setDsTable(sp.dsGraduatedTable ?? { ...DEFAULT_DS_GRADUATED });
+    }
+    if (draft) {
+      // Đề mới: nạp chính xác lựa chọn thô đã lưu.
+      setSelected(new Set(draft.selectedIds));
+      setExcludeIds(new Set(draft.excludeIds));
+    }
+    // Đề cũ (chưa có yccdDraft): scope được dựng lại từ blueprint ở effect
+    // riêng bên dưới (cần `pool` đã sẵn sàng).
+    setOrderStrategy(draft?.orderStrategy ?? "by-section");
+    setVariantCount(
+      draft?.variantCount ??
+        Math.max(1, generatedAll.filter((g) => g.packageId === editing.id).length || 4),
+    );
+  }, [editing, blueprintsAll, generatedAll]);
 
   // Nạp cấu hình phần đã lưu cho (Môn + Khối) MỘT LẦN mỗi phạm vi — tên phần,
   // dạng câu, điểm/câu, cách chấm, thứ tự, thời gian. Không có bản lưu → mặc
@@ -139,6 +199,7 @@ export function YccdWizard() {
   // và chờ store hydrate trước khi commit mặc định (tránh ghi đè bản lưu tới muộn).
   const appliedConfigKeyRef = useRef<string | null>(null);
   useEffect(() => {
+    if (editing) return; // chế độ SỬA nạp cấu hình từ chính đề, không từ template
     if (!subjectId) return;
     const key = `${subjectId}|${gradeId}`;
     if (appliedConfigKeyRef.current === key) return;
@@ -274,6 +335,36 @@ export function YccdWizard() {
       }),
     [pool, selected],
   );
+
+  // Đề CŨ (chưa có yccdDraft): dựng lại phạm vi ① từ câu đã chốt trong
+  // blueprint — YCCĐ/Bài của các câu picked = selected; câu cùng scope nhưng
+  // không picked = excludeIds. Chạy MỘT LẦN khi `pool` sẵn sàng.
+  const scopeReconstructedRef = useRef(false);
+  useEffect(() => {
+    if (!editing || editing.yccdDraft) return;
+    if (!editHydratedRef.current || scopeReconstructedRef.current) return;
+    if (!subjectId || pool.length === 0) return;
+    const bp = blueprintsAll.find((b) => b.id === editing.blueprintId);
+    if (!bp) return;
+    const pickedIds = new Set(bp.topics.flatMap((t) => t.pickedQuestionIds));
+    const sel = new Set<string>();
+    for (const q of pool) {
+      if (!pickedIds.has(q.id)) continue;
+      const c = q.competencyIds?.[0];
+      if (!c) continue;
+      sel.add(c);
+      const t = resolvers.topicOf[c];
+      if (t) sel.add(t);
+    }
+    const excl = new Set<string>();
+    for (const q of pool) {
+      const c = q.competencyIds?.[0];
+      if (c && sel.has(c) && !pickedIds.has(q.id)) excl.add(q.id);
+    }
+    setSelected(sel);
+    setExcludeIds(excl);
+    scopeReconstructedRef.current = true;
+  }, [editing, subjectId, pool, resolvers, blueprintsAll]);
 
   // Cấu phần đề tự suy theo LOẠI CÂU có trong khung — chỉ hiện phần nào thực
   // sự có câu, không bắt người dùng bật/tắt tay.
@@ -463,40 +554,66 @@ export function YccdWizard() {
       if (tId) (byTopic[tId] ??= []).push(q.id);
     }
     const name = pkgName.trim() || `Đề YCCĐ ${subject?.name ?? ""} ${grade?.name ?? ""}`.trim();
-    const bp = createBlueprint({
-      name,
-      subjectId,
-      gradeId,
-      duration,
-      campusId,
-      ownerId: session.userId,
-      ownerName: session.name ?? "—",
-      topics: rows.map((r) => ({
-        id: r.topicId,
-        name: r.topicName,
-        pickedQuestionIds: byTopic[r.topicId] ?? [],
-      })),
-    });
-    const pkg = createPackage({
-      name,
-      blueprintId: bp.id,
-      duration,
-      campusId,
-      ownerId: session.userId,
-      ownerName: session.name ?? "—",
-      matrix: [],
-      yccdMatrix,
-      scoringPolicy,
-      status: session.role === "teacher" ? "pending" : "approved",
-    });
+    const topics = rows.map((r) => ({
+      id: r.topicId,
+      name: r.topicName,
+      pickedQuestionIds: byTopic[r.topicId] ?? [],
+    }));
+    const yccdDraft = {
+      selectedIds: [...selected],
+      excludeIds: [...excludeIds],
+      orderStrategy,
+      variantCount,
+    };
+    const status = session.role === "teacher" ? ("pending" as const) : ("approved" as const);
+    let pkgId: string;
+    if (editing) {
+      // SỬA tại chỗ: cập nhật blueprint + package + sinh lại mã đề.
+      updateBlueprint(editing.blueprintId, { name, duration, topics });
+      updatePackage(editing.id, {
+        name,
+        duration,
+        yccdMatrix,
+        scoringPolicy,
+        yccdDraft,
+        status,
+      });
+      removeGeneratedByPackage(editing.id);
+      pkgId = editing.id;
+    } else {
+      const bp = createBlueprint({
+        name,
+        subjectId,
+        gradeId,
+        duration,
+        campusId,
+        ownerId: session.userId,
+        ownerName: session.name ?? "—",
+        topics,
+      });
+      const pkg = createPackage({
+        name,
+        blueprintId: bp.id,
+        duration,
+        campusId,
+        ownerId: session.userId,
+        ownerName: session.name ?? "—",
+        matrix: [],
+        yccdMatrix,
+        scoringPolicy,
+        yccdDraft,
+        status,
+      });
+      pkgId = pkg.id;
+    }
     addBatch(
-      drafts.map((d) => ({ packageId: pkg.id, questionIds: d.questionIds, duration })),
+      drafts.map((d) => ({ packageId: pkgId, questionIds: d.questionIds, duration })),
       (i) => `${name} · Đề ${String(i).padStart(3, "0")}`,
     );
     // Ghi lại cấu hình phần làm mặc định cho Môn+Khối (khoá theo cài đặt cho
     // ca thi sau này; Package cũng đã ôm bản sao qua yccdMatrix.parts).
     saveConfig();
-    setSavedPkgId(pkg.id);
+    setSavedPkgId(pkgId);
   }
 
   // Các dạng câu thực sự có trong phạm vi đã chọn — để gợi ý "kho trống".
@@ -557,6 +674,23 @@ export function YccdWizard() {
 
   return (
     <div className="space-y-4">
+      {onExit && (
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onExit}
+            className="inline-flex items-center gap-1 rounded-md border bg-card px-2.5 py-1 text-[12.5px] font-medium text-muted-foreground hover:bg-surface-2"
+          >
+            ← Danh sách đề
+          </button>
+          {editing && (
+            <span className="rounded-md bg-amber-50 px-2 py-1 text-[11.5px] font-semibold text-amber-700">
+              Đang sửa: {editing.name}
+              {(editing.version ?? 1) > 1 ? ` · v${editing.version}` : ""}
+            </span>
+          )}
+        </div>
+      )}
       {/* Context bar */}
       <div className="flex flex-wrap items-end gap-4 rounded-xl border bg-card px-4 py-3">
         <label className="flex flex-col gap-1">
@@ -566,6 +700,7 @@ export function YccdWizard() {
           <Select
             value={subjectId}
             onChange={(e) => setSubjectId(e.target.value)}
+            disabled={!!editing}
             className="h-9 min-w-[200px]"
           >
             <option value="">— Chọn môn —</option>
@@ -583,6 +718,7 @@ export function YccdWizard() {
           <Select
             value={gradeId}
             onChange={(e) => setGradeId(e.target.value)}
+            disabled={!!editing}
             className="h-9 min-w-[110px]"
           >
             {gradeList.map((g) => (

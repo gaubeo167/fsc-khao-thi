@@ -1496,6 +1496,8 @@ function Step2Package({
 
   const subjName = subjects.find((s) => s.id === state.subjectId)?.name ?? "—";
   const gradeName = grades.find((g) => g.id === state.gradeId)?.name ?? "—";
+  const yccdPackages = packages.filter((p) => isYccdPackage(p));
+  const frameworkPackages = packages.filter((p) => !isYccdPackage(p));
   return (
     <div className="space-y-4">
       <p className="text-[12px] text-muted-foreground">
@@ -1504,16 +1506,48 @@ function Step2Package({
         <span className="font-semibold">{gradeName}</span> đã chọn ở bước 1.
       </p>
 
-      <PackageList
-        title={`Gói đã duyệt cho ${subjName} · ${gradeName} (${packages.length})`}
-        highlighted
-        packages={packages}
-        state={state}
-        blueprints={blueprints}
-        subjects={subjects}
-        grades={grades}
-        pickPackage={pickPackage}
-      />
+      {/* Chọn bộ đề theo Khung đề HOẶC theo YCCĐ. Đề YCCĐ chấm theo thang
+          điểm chuẩn riêng của đề (khoá ở phần Thang điểm bên dưới). */}
+      <div className="space-y-4">
+        <div>
+          <p className="mb-1.5 text-[11.5px] font-bold uppercase tracking-[0.05em] text-muted-foreground">
+            Theo Khung đề ({frameworkPackages.length})
+          </p>
+          {frameworkPackages.length > 0 ? (
+            <PackageList
+              title={`Gói khung đề · ${subjName} · ${gradeName}`}
+              highlighted
+              packages={frameworkPackages}
+              state={state}
+              blueprints={blueprints}
+              subjects={subjects}
+              grades={grades}
+              pickPackage={pickPackage}
+            />
+          ) : (
+            <p className="text-[12px] text-muted-foreground">Chưa có gói khung đề đã duyệt.</p>
+          )}
+        </div>
+        <div>
+          <p className="mb-1.5 text-[11.5px] font-bold uppercase tracking-[0.05em] text-muted-foreground">
+            Theo YCCĐ ({yccdPackages.length}) · chấm theo thang điểm riêng của đề
+          </p>
+          {yccdPackages.length > 0 ? (
+            <PackageList
+              title={`Đề YCCĐ · ${subjName} · ${gradeName}`}
+              highlighted
+              packages={yccdPackages}
+              state={state}
+              blueprints={blueprints}
+              subjects={subjects}
+              grades={grades}
+              pickPackage={pickPackage}
+            />
+          ) : (
+            <p className="text-[12px] text-muted-foreground">Chưa có đề YCCĐ đã duyệt.</p>
+          )}
+        </div>
+      </div>
 
       {state.packageId && (
         <ScoringPanel state={state} setState={setState} />

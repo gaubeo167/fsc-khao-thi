@@ -181,6 +181,17 @@ export interface ExamPackage {
   yccdMatrix?: YccdMatrix;
   /** MOET scoring policy (Axis-B) for YCCĐ packages; frozen into ExamForm. */
   scoringPolicy?: ScoringPolicy;
+  /**
+   * Wizard round-trip state (chỉ đề YCCĐ) — để "Sửa" mở lại đúng 6 bước mà
+   * không suy hao. `selected`/`excludeIds`/`orderStrategy`/`variantCount`
+   * KHÔNG suy lại được đầy đủ từ blueprint+matrix nên lưu kèm ở đây. Additive.
+   */
+  yccdDraft?: {
+    selectedIds: string[];
+    excludeIds: string[];
+    orderStrategy: "by-section" | "shuffle-all";
+    variantCount: number;
+  };
 
   /**
    * Approval state for using this package in exam shifts (ca kíp thi).
