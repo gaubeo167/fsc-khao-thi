@@ -46,6 +46,7 @@ import {
   cellKey,
   checkYccdInvariants,
   generateYccdExams,
+  partIdForType,
   validateYccdMatrix,
   type YccdResolvers,
 } from "../../lib/generate-yccd";
@@ -192,6 +193,7 @@ export function YccdWizard({
     );
   }, [editing, blueprintsAll, generatedAll]);
 
+
   // Nạp cấu hình phần đã lưu cho (Môn + Khối) MỘT LẦN mỗi phạm vi — tên phần,
   // dạng câu, điểm/câu, cách chấm, thứ tự, thời gian. Không có bản lưu → mặc
   // định MOET. Chỉ áp một lần/khoá (guard bằng ref) để không đè lên chỉnh tay,
@@ -334,6 +336,49 @@ export function YccdWizard({
       }),
     [pool, selected],
   );
+
+  /**
+   * Mở SỬA một đề đã sinh mã: nạp lại chính các mã đề đó làm bản nháp, thay vì
+   * bắt sinh lại từ đầu (sinh lại = đổi toàn bộ câu của mọi mã đề, và bước ⑥
+   * trước đây bị khoá vì `drafts` rỗng). Chờ `pool` để dựng lại `sections`
+   * (nhóm câu theo phần) — thiếu nó thì bảng mã đề hiện 0 câu / 0đ.
+   */
+  const draftsHydratedRef = useRef(false);
+  useEffect(() => {
+    if (!editing || draftsHydratedRef.current) return;
+    if (pool.length === 0) return;
+    const existing = generatedAll
+      .filter((g) => g.packageId === editing.id)
+      .sort((a, b) => a.id.localeCompare(b.id));
+    if (existing.length === 0) return;
+    draftsHydratedRef.current = true;
+    const typeById = new Map(pool.map((q) => [q.id, q.type]));
+    const partList = editing.yccdMatrix?.parts ?? parts;
+    setDrafts(
+      existing.map((g) => {
+        const byPart = new Map<string, string[]>();
+        for (const qid of g.questionIds) {
+          const t = typeById.get(qid);
+          const pid = t ? partIdForType(partList, t) : null;
+          if (!pid) continue;
+          const list = byPart.get(pid) ?? [];
+          list.push(qid);
+          byPart.set(pid, list);
+        }
+        return {
+          questionIds: [...g.questionIds],
+          sections: partList
+            .filter((p) => (byPart.get(p.id)?.length ?? 0) > 0)
+            .map((p) => ({
+              topicId: p.id,
+              name: p.label,
+              questionIds: byPart.get(p.id) ?? [],
+            })),
+        };
+      }),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing, pool, generatedAll]);
 
   // Đề CŨ (chưa có yccdDraft): dựng lại phạm vi ① từ câu đã chốt trong
   // blueprint — YCCĐ/Bài của các câu picked = selected; câu cùng scope nhưng

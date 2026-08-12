@@ -23,7 +23,7 @@ import { packageInUse } from "@/lib/in-use";
 import { versionOf } from "@/lib/version";
 import { cn } from "@/lib/utils";
 
-import { isYccdPackage, type ExamPackage } from "../../data/types";
+import { isYccdPackage, type ExamPackage, type GeneratedExam } from "../../data/types";
 import { useBlueprintsStore } from "../../state/blueprints-store";
 import { useGeneratedStore } from "../../state/generated-store";
 import { usePackagesStore } from "../../state/packages-store";
@@ -106,6 +106,8 @@ export function YccdExamManager() {
 
   const [query, setQuery] = useState("");
   const [showArchived, setShowArchived] = useState(false);
+  const [tab, setTab] = useState<"packages" | "generated">("packages");
+  const removeGenerated = useGeneratedStore((s) => s.remove);
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -119,6 +121,13 @@ export function YccdExamManager() {
       .filter((p) => !q || p.name.toLowerCase().includes(q))
       .sort((a, b) => toMillis(b.updatedAt) - toMillis(a.updatedAt));
   }, [packages, showArchived, activeCampusId, query]);
+
+  /** Mã đề đã sinh của riêng các gói đề YCCĐ — kho này dùng chung với đề
+   *  khung nên phải lọc, nếu không hai bên lẫn vào nhau. */
+  const yccdGenerated = useMemo(() => {
+    const ids = new Set(packages.filter((p) => isYccdPackage(p)).map((p) => p.id));
+    return generated.filter((g) => ids.has(g.packageId));
+  }, [generated, packages]);
 
   if (mode.view !== "list") {
     return (
@@ -199,8 +208,25 @@ export function YccdExamManager() {
 
   const canManage = !!session && session.role !== "student";
 
+  if (tab === "generated") {
+    return (
+      <div className="space-y-4">
+        <TabBar tab={tab} setTab={setTab} genTotal={yccdGenerated.length} />
+        <YccdGeneratedView
+          rows={rows}
+          generated={yccdGenerated}
+          canManage={canManage}
+          onDelete={(id) => removeGenerated(id)}
+          onDeleteAll={(pkgId) => removeGeneratedByPackage(pkgId)}
+          onEdit={(p) => setMode({ view: "edit", pkg: p })}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
+      <TabBar tab={tab} setTab={setTab} genTotal={yccdGenerated.length} />
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-[220px] flex-1 max-w-sm">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -411,6 +437,149 @@ export function YccdExamManager() {
           })}
         </ul>
       )}
+    </div>
+  );
+}
+
+/** Hai kho của luồng YCCĐ, tách hẳn khỏi luồng khung đề. */
+function TabBar({
+  tab,
+  setTab,
+  genTotal,
+}: {
+  tab: "packages" | "generated";
+  setTab: (t: "packages" | "generated") => void;
+  genTotal: number;
+}) {
+  const items: { key: "packages" | "generated"; label: string; badge?: number }[] = [
+    { key: "packages", label: "Đề YCCĐ" },
+    { key: "generated", label: "Đề đã sinh", badge: genTotal },
+  ];
+  return (
+    <div className="flex flex-wrap gap-1.5 border-b pb-2">
+      {items.map((it) => (
+        <button
+          key={it.key}
+          type="button"
+          onClick={() => setTab(it.key)}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-semibold",
+            tab === it.key
+              ? "bg-primary/10 text-primary"
+              : "text-muted-foreground hover:bg-surface-2",
+          )}
+        >
+          {it.label}
+          {it.badge != null && (
+            <span
+              className={cn(
+                "rounded px-1.5 text-[11px] font-bold",
+                tab === it.key ? "bg-primary/15" : "bg-muted",
+              )}
+            >
+              {it.badge}
+            </span>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Mã đề đã sinh, gom theo gói đề YCCĐ — song song với tab "Đề đã sinh" của
+ *  luồng khung đề nhưng chỉ chứa đề YCCĐ. */
+function YccdGeneratedView({
+  rows,
+  generated,
+  canManage,
+  onDelete,
+  onDeleteAll,
+  onEdit,
+}: {
+  rows: ExamPackage[];
+  generated: GeneratedExam[];
+  canManage: boolean;
+  onDelete: (id: string) => void;
+  onDeleteAll: (packageId: string) => void;
+  onEdit: (p: ExamPackage) => void;
+}) {
+  const byPackage = new Map<string, GeneratedExam[]>();
+  for (const g of generated) {
+    const list = byPackage.get(g.packageId) ?? [];
+    list.push(g);
+    byPackage.set(g.packageId, list);
+  }
+  const groups = rows
+    .map((p) => ({ pkg: p, exams: byPackage.get(p.id) ?? [] }))
+    .filter((g) => g.exams.length > 0);
+
+  if (groups.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed bg-muted/20 px-6 py-12 text-center text-[13px] text-muted-foreground">
+        Chưa có mã đề nào. Vào một đề YCCĐ → bước ⑤ để sinh mã đề.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {groups.map(({ pkg, exams }) => (
+        <div key={pkg.id} className="overflow-hidden rounded-xl border">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b bg-surface-2 px-4 py-2">
+            <span className="text-[13px] font-semibold">{pkg.name}</span>
+            <span className="text-[11.5px] text-muted-foreground">
+              {exams.length} mã đề · {pkg.scoringPolicy?.maxScore ?? 0}đ
+            </span>
+            {canManage && (
+              <div className="ml-auto flex gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => onEdit(pkg)}
+                  className="inline-flex items-center gap-1 rounded-md border bg-card px-2 py-1 text-[12px] font-medium hover:bg-surface-2"
+                >
+                  <PencilLine className="h-3.5 w-3.5" /> Mở đề
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirm(`Xoá toàn bộ ${exams.length} mã đề của "${pkg.name}"?`))
+                      onDeleteAll(pkg.id);
+                  }}
+                  className="inline-flex items-center gap-1 rounded-md border bg-card px-2 py-1 text-[12px] font-medium text-rose-600 hover:bg-rose-50"
+                >
+                  <Trash2 className="h-3.5 w-3.5" /> Xoá tất cả
+                </button>
+              </div>
+            )}
+          </div>
+          <ul className="divide-y">
+            {exams.map((g) => (
+              <li
+                key={g.id}
+                className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-[12.5px]"
+              >
+                <span className="rounded bg-primary/10 px-2 py-0.5 font-mono text-[11px] font-semibold text-primary">
+                  {g.name}
+                </span>
+                <span className="text-muted-foreground">
+                  {g.questionIds.length} câu · ⏱ {g.duration} phút
+                </span>
+                {canManage && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (confirm(`Xoá mã đề "${g.name}"?`)) onDelete(g.id);
+                    }}
+                    className="ml-auto inline-flex items-center gap-1 rounded-md border bg-card px-2 py-1 text-[11.5px] font-medium text-rose-600 hover:bg-rose-50"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" /> Xoá
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
     </div>
   );
 }

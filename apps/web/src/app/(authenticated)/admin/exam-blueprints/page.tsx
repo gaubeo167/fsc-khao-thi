@@ -36,6 +36,7 @@ import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import { PageHeader } from "@/features/shell/components/page-header";
 import { cn } from "@/lib/utils";
 import { blueprintInUse, buildLockedMessage, packageInUse } from "@/lib/in-use";
+import { isYccdPackage } from "@/features/exams/data/types";
 import { versionOf } from "@/lib/version";
 
 import { BlueprintCard } from "@/features/exams/components/blueprint-card";
@@ -214,10 +215,24 @@ export default function ExamBlueprintsPage() {
   // assignment. A teacher of Văn shouldn't see Toán blueprints in the
   // list at all; the strict scope mirrors what's enforced in the
   // blueprint creation dialog so the surface stays consistent.
+  /**
+   * Khung đề do wizard YCCĐ sinh ra: nhận diện qua gói đề trỏ vào nó có
+   * `yccdMatrix`. Hai luồng tạo đề dùng chung collection nên phải lọc, nếu
+   * không đề YCCĐ hiện lẫn ở đây và người dùng sửa nhầm bằng công cụ khung.
+   */
+  const yccdBlueprintIds = useMemo(
+    () =>
+      new Set(
+        packages.filter((p) => isYccdPackage(p)).map((p) => p.blueprintId),
+      ),
+    [packages],
+  );
+
   const scopedBlueprints = useMemo(() => {
     const campusScope =
       session?.role === "superadmin" ? activeCampusId : session?.campusId ?? null;
     return blueprints.filter((b) => {
+      if (yccdBlueprintIds.has(b.id)) return false;
       if (campusScope && b.campusId !== campusScope) return false;
       if (!scope.isUnscoped && scope.allowedSubjectIds != null) {
         if (!scope.allowedSubjectIds.has(b.subjectId)) return false;
@@ -231,11 +246,14 @@ export default function ExamBlueprintsPage() {
       return true;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [blueprints, session, activeCampusId, scope]);
+  }, [blueprints, session, activeCampusId, scope, yccdBlueprintIds]);
 
   const scopedPackages = useMemo(() => {
     const blueprintIds = new Set(scopedBlueprints.map((b) => b.id));
-    return packages.filter((p) => blueprintIds.has(p.blueprintId));
+    // Gói đề YCCĐ có màn quản lý riêng — không trộn vào đây.
+    return packages.filter(
+      (p) => blueprintIds.has(p.blueprintId) && !isYccdPackage(p),
+    );
   }, [packages, scopedBlueprints]);
 
   const scopedGenerated = useMemo(() => {
