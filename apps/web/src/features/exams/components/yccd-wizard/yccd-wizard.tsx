@@ -379,11 +379,36 @@ export function YccdWizard({
     setCells(cs);
   }, [editing, scopedPool.length]);
 
+  // Dạng câu KHUNG ĐỀ đang giữ (đã trừ câu bỏ ra ở bước ②).
+  const frameTypes = useMemo(() => {
+    const s = new Set<QuestionType>();
+    for (const q of scopedPool) if (!excludeIds.has(q.id)) s.add(q.type);
+    return s;
+  }, [scopedPool, excludeIds]);
+
+  /**
+   * Dạng câu CÓ trong khung nhưng KHÔNG phần nào nhận. Cấu hình phần lưu theo
+   * Môn+Khối có thể thiếu dạng (vd chỉ có Đúng–Sai + Trả lời ngắn), khi đó câu
+   * nhiều lựa chọn trong khung biến mất khỏi ma trận mà không báo gì. Bổ sung
+   * phần mặc định MOET cho những dạng đó và nói rõ ở bước ③.
+   */
+  const autoParts = useMemo(() => {
+    const covered = new Set(parts.flatMap((p) => p.questionTypes));
+    return MOET_DEFAULT_PARTS.filter(
+      (d) =>
+        !parts.some((p) => p.id === d.id) &&
+        d.questionTypes.some((t) => frameTypes.has(t) && !covered.has(t)),
+    );
+  }, [parts, frameTypes]);
+
   // Cấu phần đề tự suy theo LOẠI CÂU có trong khung — chỉ hiện phần nào thực
   // sự có câu, không bắt người dùng bật/tắt tay.
   const enabledParts = useMemo(
-    () => parts.filter((p) => scopedPool.some((q) => p.questionTypes.includes(q.type))),
-    [parts, scopedPool],
+    () => [
+      ...parts.filter((p) => scopedPool.some((q) => p.questionTypes.includes(q.type))),
+      ...autoParts,
+    ],
+    [parts, scopedPool, autoParts],
   );
 
   const inventory = useMemo(
@@ -893,6 +918,7 @@ export function YccdWizard({
                 onCellChange={setCell}
                 validation={validation}
                 totalQ={totalQ}
+                autoParts={autoParts}
               />
             )}
             {step === 4 && (
@@ -1365,10 +1391,17 @@ function StepFrame({
             });
           if (groups.length === 0) return null;
           return (
-            <div key={r.topicId} className="rounded-lg border">
-              <div className="border-b bg-surface-2 px-3 py-1.5 text-[12px] font-semibold">
-                <span className="text-muted-foreground">{r.chapterName} › </span>
-                {r.topicName}
+            <div key={r.topicId} className="overflow-hidden rounded-lg border">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b bg-surface-2 px-3 py-2">
+                <span className="text-[11px] uppercase tracking-[0.04em] text-muted-foreground">
+                  {r.chapterName}
+                </span>
+                <span className="text-muted-foreground/50">›</span>
+                <span className="text-[13px] font-bold">{r.topicName}</span>
+                <span className="ml-auto text-[11px] text-muted-foreground">
+                  {groups.reduce((s, g) => s + keptCount(g.questions), 0)}/
+                  {groups.reduce((s, g) => s + g.questions.length, 0)} câu · {groups.length} mục
+                </span>
               </div>
               <ul className="divide-y">
                 {groups.map((g) => {
@@ -1377,58 +1410,67 @@ function StepFrame({
                   const exp = expanded.has(g.id);
                   const bloom = g.bloom ? bloomMeta(g.bloom) : null;
                   const partsOfGroup = partitionByPart(g.questions);
+                  // Vạch màu bên trái = mức Bloom của YCCĐ. Vừa tách các YCCĐ
+                  // liền nhau ra khỏi nhau, vừa đọc được mức độ mà không phải
+                  // dò chữ NB/TH/VD. Câu chung của Bài dùng màu trung tính.
+                  const accent = !bloom
+                    ? "border-l-slate-300"
+                    : bloom.level === 1
+                      ? "border-l-emerald-400"
+                      : bloom.level === 2
+                        ? "border-l-amber-400"
+                        : "border-l-rose-400";
                   return (
-                    <li key={g.id}>
-                      <div className="px-3 py-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                          {g.code && (
-                            <span className="shrink-0 rounded bg-slate-100 px-1 font-mono text-[10px] text-slate-600">
-                              {g.code}
-                            </span>
-                          )}
-                          {bloom && (
-                            <span
-                              className={cn(
-                                "shrink-0 rounded px-1 text-[9.5px] font-semibold",
-                                bloom.chipBg,
-                                bloom.chipFg,
-                              )}
-                            >
-                              {bloom.short}
-                            </span>
-                          )}
-                          <span className="min-w-[140px] flex-1 text-[12.5px] font-medium">
-                            {g.label}
-                          </span>
-                          <span className="shrink-0 text-[11px] text-muted-foreground">
-                            Đã chọn{" "}
-                            <span className="font-semibold text-foreground">{n}</span>/{total}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => toggle(expanded, setExpanded, g.id)}
-                            className="inline-flex shrink-0 items-center gap-1 rounded-md border bg-card px-2 py-1 text-[11.5px] text-primary hover:bg-surface-2"
-                          >
-                            {exp ? (
-                              <ChevronDown className="h-3.5 w-3.5" />
-                            ) : (
-                              <ChevronRight className="h-3.5 w-3.5" />
+                    <li key={g.id} className={cn("border-l-[3px]", accent)}>
+                      <div className="flex flex-wrap items-start gap-x-4 gap-y-2 px-3 py-2.5 transition-colors hover:bg-surface-2/40">
+                        {/* TRÁI — danh tính YCCĐ: mã, mức Bloom, nội dung */}
+                        <div className="min-w-[240px] flex-1">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {g.code && (
+                              <span className="shrink-0 rounded bg-slate-700/90 px-1.5 py-0.5 font-mono text-[10px] font-semibold tracking-tight text-white">
+                                {g.code}
+                              </span>
                             )}
-                            Xem {total} câu
-                          </button>
+                            {bloom ? (
+                              <span
+                                className={cn(
+                                  "shrink-0 rounded px-1.5 py-0.5 text-[9.5px] font-bold",
+                                  bloom.chipBg,
+                                  bloom.chipFg,
+                                )}
+                                title={bloom.full}
+                              >
+                                {bloom.short}
+                              </span>
+                            ) : (
+                              <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[9.5px] font-bold text-slate-500">
+                                CHUNG
+                              </span>
+                            )}
+                          </div>
+                          <p
+                            className={cn(
+                              "mt-1 text-[12.5px] font-medium leading-snug",
+                              !bloom && "italic text-muted-foreground",
+                            )}
+                          >
+                            {g.label}
+                          </p>
                         </div>
-                        {/* Nhập số câu VÀO KHUNG theo TỪNG DẠNG của YCCĐ này. */}
-                        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 pl-0.5">
+
+                        {/* PHẢI — chọn bao nhiêu câu vào khung, cùng hàng */}
+                        <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1.5">
                           {partsOfGroup.map(({ partId, questions }) => {
                             const kept = keptCount(questions);
                             const cap = questions.length;
                             return (
-                              <div key={partId} className="flex items-center gap-1.5">
-                                <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                              <div
+                                key={partId}
+                                className="flex items-center gap-1.5 rounded-md border bg-card px-1.5 py-1"
+                                title={`Có ${cap} câu dạng ${PART_SHORT[partId] ?? partId} — chọn tối đa ${cap}`}
+                              >
+                                <span className="text-[10.5px] font-medium text-muted-foreground">
                                   {PART_SHORT[partId] ?? partId}
-                                </span>
-                                <span className="text-[11px] text-muted-foreground">
-                                  Vào khung:
                                 </span>
                                 <input
                                   type="number"
@@ -1441,8 +1483,10 @@ function StepFrame({
                                       Math.max(0, Math.min(cap, Number(e.target.value) || 0)),
                                     )
                                   }
-                                  title={`Có ${cap} câu dạng ${PART_SHORT[partId] ?? partId} — chọn tối đa ${cap}`}
-                                  className="h-7 w-14 rounded-md border bg-card px-2 text-center text-[12.5px] tabular-nums"
+                                  className={cn(
+                                    "h-7 w-12 rounded border bg-card px-1 text-center text-[12.5px] font-semibold tabular-nums",
+                                    kept === 0 && "text-muted-foreground",
+                                  )}
                                 />
                                 <span className="text-[11px] font-semibold text-emerald-700">
                                   /{cap}
@@ -1450,6 +1494,31 @@ function StepFrame({
                               </div>
                             );
                           })}
+                          <span
+                            className={cn(
+                              "shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold tabular-nums",
+                              n === 0
+                                ? "bg-muted text-muted-foreground"
+                                : n === total
+                                  ? "bg-emerald-50 text-emerald-700"
+                                  : "bg-amber-50 text-amber-700",
+                            )}
+                            title="Số câu vào khung / tổng số câu trong kho"
+                          >
+                            {n}/{total}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => toggle(expanded, setExpanded, g.id)}
+                            className="inline-flex shrink-0 items-center gap-1 rounded-md border bg-card px-2 py-1 text-[11.5px] text-primary hover:bg-surface-2"
+                          >
+                            {exp ? (
+                              <ChevronDown className="h-3.5 w-3.5" />
+                            ) : (
+                              <ChevronRight className="h-3.5 w-3.5" />
+                            )}
+                            Xem {total}
+                          </button>
                         </div>
                       </div>
                       {exp && (
@@ -1522,6 +1591,7 @@ function StepMatrix({
   onCellChange,
   validation,
   totalQ,
+  autoParts,
 }: {
   rows: MatrixRow[];
   enabledParts: YccdPart[];
@@ -1531,6 +1601,7 @@ function StepMatrix({
   onCellChange: (t: string, p: string, b: number, v: number) => void;
   validation: { ok: boolean; exceeded: unknown[] };
   totalQ: number;
+  autoParts: YccdPart[];
 }) {
   const pointsByPart: Record<string, number> = {};
   for (const p of enabledParts)
@@ -1548,16 +1619,46 @@ function StepMatrix({
             Khung chưa có câu — chọn thêm YCCĐ ở bước ①.
           </span>
         ) : (
-          enabledParts.map((p) => (
-            <span
-              key={p.id}
-              className="rounded-full border border-primary bg-primary/10 px-3 py-1 text-[12px] font-medium text-primary"
-            >
-              ✓ {p.label}
-            </span>
-          ))
+          enabledParts.map((p) => {
+            const auto = autoParts.some((a) => a.id === p.id);
+            return (
+              <span
+                key={p.id}
+                title={
+                  auto
+                    ? "Phần này chưa có trong cấu hình đã lưu — tự thêm vì khung đề có dạng câu đó."
+                    : undefined
+                }
+                className={cn(
+                  "rounded-full border px-3 py-1 text-[12px] font-medium",
+                  auto
+                    ? "border-amber-300 bg-amber-50 text-amber-800"
+                    : "border-primary bg-primary/10 text-primary",
+                )}
+              >
+                {auto ? "+ " : "✓ "}
+                {p.label}
+              </span>
+            );
+          })
         )}
       </div>
+
+      {/* Cấu hình phần lưu theo Môn+Khối có thể thiếu dạng câu đang có trong
+          khung. Trước đây những câu đó rơi khỏi ma trận không một lời nào. */}
+      {autoParts.length > 0 && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
+          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            Khung đề có dạng câu chưa được gán vào phần nào trong cấu hình đã lưu
+            của Môn + Khối này:{" "}
+            <b>{autoParts.map((p) => p.label).join(", ")}</b>. Đã tự thêm phần
+            tương ứng để những câu này không bị rơi khỏi đề — sang{" "}
+            <b>bước ④</b> nếu muốn đổi tên phần, thứ tự hoặc điểm/câu, rồi bấm
+            “Lưu cấu hình cho Môn+Khối”.
+          </span>
+        </div>
+      )}
 
       <p className="text-[12px] text-muted-foreground">
         Ô <span className="rounded bg-emerald-50 px-1 text-emerald-700">tô xanh</span> là
