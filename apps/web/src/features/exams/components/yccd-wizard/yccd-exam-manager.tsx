@@ -20,6 +20,25 @@ import { YccdWizard } from "./yccd-wizard";
 
 type Mode = { view: "list" } | { view: "create" } | { view: "edit"; pkg: ExamPackage };
 
+/**
+ * `updatedAt` được khai báo kiểu string nhưng dữ liệu cũ có thể là Firestore
+ * Timestamp (client `Timestamp` có .toMillis()/.seconds, hoặc bản serialize
+ * `{_seconds}`). Quy về millis an toàn để sort/hiển thị, tránh gọi
+ * `.localeCompare` trên object → client-side crash.
+ */
+function toMillis(v: unknown): number {
+  if (!v) return 0;
+  if (typeof v === "string") return Date.parse(v) || 0;
+  if (typeof v === "number") return v;
+  if (typeof v === "object") {
+    const o = v as { toMillis?: () => number; seconds?: number; _seconds?: number };
+    if (typeof o.toMillis === "function") return o.toMillis();
+    if (typeof o.seconds === "number") return o.seconds * 1000;
+    if (typeof o._seconds === "number") return o._seconds * 1000;
+  }
+  return 0;
+}
+
 const STATUS_META: Record<
   ExamPackage["status"],
   { label: string; cls: string }
@@ -65,7 +84,7 @@ export function YccdExamManager() {
           !activeCampusId || p.campusId === activeCampusId || p.campusId == null,
       )
       .filter((p) => !q || p.name.toLowerCase().includes(q))
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+      .sort((a, b) => toMillis(b.updatedAt) - toMillis(a.updatedAt));
   }, [packages, showArchived, activeCampusId, query]);
 
   if (mode.view !== "list") {
@@ -148,7 +167,11 @@ export function YccdExamManager() {
             const totalQ =
               p.yccdMatrix?.cells.reduce((s, c) => s + c.count, 0) ?? 0;
             const partCount = p.yccdMatrix?.parts.length ?? 0;
-            const st = STATUS_META[p.status];
+            const st =
+              STATUS_META[p.status] ?? {
+                label: String(p.status ?? "—"),
+                cls: "bg-slate-100 text-slate-600",
+              };
             const v = versionOf(p);
             return (
               <li
@@ -177,7 +200,9 @@ export function YccdExamManager() {
                     </span>
                   )}
                   <span className="ml-auto text-[11.5px] text-muted-foreground">
-                    {new Date(p.updatedAt).toLocaleString("vi-VN")}
+                    {toMillis(p.updatedAt) > 0
+                      ? new Date(toMillis(p.updatedAt)).toLocaleString("vi-VN")
+                      : ""}
                   </span>
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-muted-foreground">
