@@ -23,9 +23,14 @@ import { useAuthStore } from "@/features/auth/state/auth-store";
 import { useBlueprintsStore } from "@/features/exams/state/blueprints-store";
 import { usePackagesStore } from "@/features/exams/state/packages-store";
 import { useGeneratedStore } from "@/features/exams/state/generated-store";
+import {
+  partConfigId,
+  usePartConfigsStore,
+} from "@/features/exams/state/part-config-store";
 import { RenderedContent } from "@/features/question-bank/components/rendered-content";
 import { ViewQuestionDialog } from "@/features/question-bank/dialogs/view-question-dialog";
 import type { Question } from "@/features/question-bank/data/seed-questions";
+import type { QuestionType } from "@/features/question-bank/data/question-types";
 import { cn } from "@/lib/utils";
 
 import {
@@ -74,6 +79,9 @@ export function YccdWizard() {
   const createBlueprint = useBlueprintsStore((s) => s.create);
   const createPackage = usePackagesStore((s) => s.create);
   const addBatch = useGeneratedStore((s) => s.addBatch);
+  const partConfigs = usePartConfigsStore((s) => s.configs);
+  const partConfigsHydrated = usePartConfigsStore((s) => s.hydrated);
+  const upsertPartConfig = usePartConfigsStore((s) => s.upsert);
 
   const campusSubjects = useMemo(
     () =>
@@ -94,7 +102,7 @@ export function YccdWizard() {
   // topic-level questions). Granular: pick individual YCCĐ or whole Bài.
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [excludeIds, setExcludeIds] = useState<Set<string>>(new Set());
-  const [parts] = useState<YccdPart[]>(() => MOET_DEFAULT_PARTS.map((p) => ({ ...p })));
+  const [parts, setParts] = useState<YccdPart[]>(() => MOET_DEFAULT_PARTS.map((p) => ({ ...p })));
   const [cells, setCells] = useState<Record<string, number>>({});
   const [collapsedCh, setCollapsedCh] = useState<Set<string>>(new Set());
   const [scopeQuery, setScopeQuery] = useState("");
@@ -124,6 +132,39 @@ export function YccdWizard() {
     setCells({});
     setStep(1);
   }, [subjectId, gradeId]);
+
+  // Nạp cấu hình phần đã lưu cho (Môn + Khối) MỘT LẦN mỗi phạm vi — tên phần,
+  // dạng câu, điểm/câu, cách chấm, thứ tự, thời gian. Không có bản lưu → mặc
+  // định MOET. Chỉ áp một lần/khoá (guard bằng ref) để không đè lên chỉnh tay,
+  // và chờ store hydrate trước khi commit mặc định (tránh ghi đè bản lưu tới muộn).
+  const appliedConfigKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!subjectId) return;
+    const key = `${subjectId}|${gradeId}`;
+    if (appliedConfigKeyRef.current === key) return;
+    const cfg = partConfigs.find((c) => c.id === partConfigId(subjectId, gradeId));
+    if (!cfg && !partConfigsHydrated) return;
+    appliedConfigKeyRef.current = key;
+    if (cfg) {
+      setParts(cfg.parts.map((p) => ({ ...p, questionTypes: [...p.questionTypes] })));
+      const pbp: Record<string, number> = {};
+      for (const p of cfg.parts) if (p.pointsPerQuestion != null) pbp[p.id] = p.pointsPerQuestion;
+      setPointsByPart(pbp);
+      setMcqMultiMode(cfg.mcqMulti);
+      setDsMode(cfg.ds);
+      setDsTable(cfg.dsGraduatedTable ?? { ...DEFAULT_DS_GRADUATED });
+      setOrderStrategy(cfg.orderStrategy);
+      setDuration(cfg.durationMinutes);
+    } else {
+      setParts(MOET_DEFAULT_PARTS.map((p) => ({ ...p })));
+      setPointsByPart({});
+      setMcqMultiMode("partial");
+      setDsMode("graduated");
+      setDsTable({ ...DEFAULT_DS_GRADUATED });
+      setOrderStrategy("by-section");
+      setDuration(45);
+    }
+  }, [subjectId, gradeId, partConfigs, partConfigsHydrated]);
 
   // Competency scope (subject + grade, with all-grade fallback).
   const comps = useMemo(() => {
@@ -452,8 +493,54 @@ export function YccdWizard() {
       drafts.map((d) => ({ packageId: pkg.id, questionIds: d.questionIds, duration })),
       (i) => `${name} · Đề ${String(i).padStart(3, "0")}`,
     );
+    // Ghi lại cấu hình phần làm mặc định cho Môn+Khối (khoá theo cài đặt cho
+    // ca thi sau này; Package cũng đã ôm bản sao qua yccdMatrix.parts).
+    saveConfig();
     setSavedPkgId(pkg.id);
   }
+
+  // Các dạng câu thực sự có trong phạm vi đã chọn — để gợi ý "kho trống".
+  const poolTypes = useMemo(() => {
+    const s = new Set<QuestionType>();
+    for (const q of scopedPool) s.add(q.type);
+    return s;
+  }, [scopedPool]);
+
+  // Đổi cấu trúc phần: dọn luôn ô ma trận trỏ tới phần đã xoá / phần rỗng dạng
+  // (tránh cộng nhầm tổng điểm), và làm mới mã đề đã sinh.
+  function handlePartsChange(next: YccdPart[]) {
+    const activeIds = new Set(next.filter((p) => p.questionTypes.length > 0).map((p) => p.id));
+    setParts(next);
+    setCells((prev) => {
+      const out: Record<string, number> = {};
+      for (const [k, v] of Object.entries(prev)) {
+        const partId = k.split("|")[1];
+        if (partId && activeIds.has(partId)) out[k] = v;
+      }
+      return out;
+    });
+    setDrafts([]);
+    setSavedPkgId(null);
+  }
+
+  // Lưu cấu hình phần hiện tại làm mặc định cho Môn + Khối.
+  function saveConfig() {
+    if (!subjectId) return;
+    upsertPartConfig({
+      subjectId,
+      gradeId,
+      parts: parts.map((p) => ({ ...p, pointsPerQuestion: getPoints(p.id) })),
+      mcqMulti: mcqMultiMode,
+      ds: dsMode,
+      dsGraduatedTable: dsTable,
+      orderStrategy,
+      durationMinutes: duration,
+      updatedBy: session?.userId,
+    });
+  }
+  const savedConfig = partConfigs.find(
+    (c) => subjectId && c.id === partConfigId(subjectId, gradeId),
+  );
 
   const canNext =
     step === 1
@@ -649,6 +736,11 @@ export function YccdWizard() {
             )}
             {step === 4 && (
               <StepStructure
+                parts={parts}
+                onPartsChange={handlePartsChange}
+                poolTypes={poolTypes}
+                onSaveConfig={saveConfig}
+                savedConfigAt={savedConfig?.updatedAt ?? null}
                 enabledParts={enabledParts}
                 pointsByPart={pointsByPart}
                 onPoints={(id, v) => setPointsByPart((p) => ({ ...p, [id]: v }))}
@@ -1338,7 +1430,241 @@ function StepMatrix({
 }
 
 // ─────────────────────────── Step 4: cấu trúc + điểm ────────────────────
+/**
+ * Dạng câu (question-type categories) — đơn vị kéo–thả vào từng Phần. Mỗi dạng
+ * gộp các QuestionType tương đương; một dạng chỉ thuộc đúng một Phần.
+ */
+const DANG_CATEGORIES: { key: string; label: string; types: QuestionType[] }[] = [
+  { key: "mcq", label: "Nhiều lựa chọn", types: ["mcq-single", "mcq-multi"] },
+  { key: "ds", label: "Đúng – Sai", types: ["multi-tf"] },
+  { key: "short", label: "Trả lời ngắn", types: ["short-answer"] },
+  { key: "tl", label: "Tự luận", types: ["essay", "ai-generated"] },
+];
+const ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII"];
+const romanOf = (i: number) => ROMAN[i] ?? String(i + 1);
+
+/**
+ * Trình biên tập cấu trúc phần: đặt tên Phần I/II/…, kéo–thả (hoặc bấm) dạng
+ * câu vào từng phần, thêm/xoá/đổi thứ tự. Mỗi dạng thuộc đúng một phần.
+ */
+function PartStructureEditor({
+  parts,
+  onChange,
+  poolTypes,
+}: {
+  parts: YccdPart[];
+  onChange: (parts: YccdPart[]) => void;
+  poolTypes: Set<QuestionType>;
+}) {
+  const [dragCat, setDragCat] = useState<string | null>(null);
+  const [dragOverPart, setDragOverPart] = useState<string | null>(null);
+
+  const catInPart = (p: YccdPart, cat: (typeof DANG_CATEGORIES)[number]) =>
+    cat.types.some((t) => p.questionTypes.includes(t));
+  const assignedCats = (p: YccdPart) => DANG_CATEGORIES.filter((c) => catInPart(p, c));
+  const unassigned = DANG_CATEGORIES.filter((c) => !parts.some((p) => catInPart(p, c)));
+
+  const assign = (catKey: string, partId: string) => {
+    const cat = DANG_CATEGORIES.find((c) => c.key === catKey);
+    if (!cat) return;
+    onChange(
+      parts.map((p) => {
+        let qts = p.questionTypes.filter((t) => !cat.types.includes(t));
+        if (p.id === partId) qts = [...qts, ...cat.types];
+        return { ...p, questionTypes: qts };
+      }),
+    );
+  };
+  const unassign = (catKey: string) => {
+    const cat = DANG_CATEGORIES.find((c) => c.key === catKey);
+    if (!cat) return;
+    onChange(
+      parts.map((p) => ({
+        ...p,
+        questionTypes: p.questionTypes.filter((t) => !cat.types.includes(t)),
+      })),
+    );
+  };
+  const rename = (partId: string, label: string) =>
+    onChange(parts.map((p) => (p.id === partId ? { ...p, label } : p)));
+  const move = (idx: number, dir: -1 | 1) => {
+    const j = idx + dir;
+    if (j < 0 || j >= parts.length) return;
+    const next = [...parts];
+    [next[idx], next[j]] = [next[j]!, next[idx]!];
+    onChange(next);
+  };
+  const remove = (partId: string) => onChange(parts.filter((p) => p.id !== partId));
+  const add = () => {
+    const nums = parts.map((p) => Number(/^p-(\d+)$/.exec(p.id)?.[1] ?? 0));
+    const id = `p-${Math.max(0, ...nums) + 1}`;
+    onChange([...parts, { id, label: `Phần ${romanOf(parts.length)}`, questionTypes: [] }]);
+  };
+
+  const catChip = (
+    c: (typeof DANG_CATEGORIES)[number],
+    opts: { onRemove?: () => void },
+  ) => (
+    <span
+      key={c.key}
+      draggable
+      onDragStart={() => setDragCat(c.key)}
+      onDragEnd={() => {
+        setDragCat(null);
+        setDragOverPart(null);
+      }}
+      className="inline-flex cursor-grab items-center gap-1 rounded-md border bg-slate-50 px-2 py-0.5 text-[11.5px] font-medium text-slate-700 active:cursor-grabbing"
+      title="Kéo sang phần khác"
+    >
+      {c.label}
+      {c.types.some((t) => poolTypes.has(t)) ? null : (
+        <span className="text-[9.5px] text-muted-foreground/70">· kho trống</span>
+      )}
+      {opts.onRemove && (
+        <button
+          type="button"
+          onClick={opts.onRemove}
+          className="ml-0.5 text-muted-foreground hover:text-red-600"
+          title="Gỡ khỏi phần"
+        >
+          ×
+        </button>
+      )}
+    </span>
+  );
+
+  return (
+    <div className="rounded-lg border">
+      <div className="flex items-center justify-between border-b bg-surface-2 px-3 py-2">
+        <span className="text-[12px] font-semibold">
+          Cấu trúc phần (Phần I/II/…) — kéo hoặc bấm gán dạng câu
+        </span>
+        <button
+          type="button"
+          onClick={add}
+          className="rounded-md border bg-card px-2 py-1 text-[11.5px] font-semibold text-primary hover:bg-surface-2"
+        >
+          + Thêm phần
+        </button>
+      </div>
+      <div className="space-y-2 p-3">
+        {parts.map((p, idx) => (
+          <div
+            key={p.id}
+            onDragOver={(e) => {
+              if (dragCat) {
+                e.preventDefault();
+                setDragOverPart(p.id);
+              }
+            }}
+            onDragLeave={() => setDragOverPart((cur) => (cur === p.id ? null : cur))}
+            onDrop={() => {
+              if (dragCat) assign(dragCat, p.id);
+              setDragCat(null);
+              setDragOverPart(null);
+            }}
+            className={cn(
+              "rounded-md border bg-card p-2 transition",
+              dragOverPart === p.id && "border-primary ring-2 ring-primary/30",
+            )}
+          >
+            <div className="flex items-center gap-2">
+              <span className="shrink-0 rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">
+                Phần {romanOf(idx)}
+              </span>
+              <input
+                value={p.label}
+                onChange={(e) => rename(p.id, e.target.value)}
+                placeholder={`Phần ${romanOf(idx)}`}
+                className="h-8 flex-1 rounded-md border bg-card px-2 text-[12.5px]"
+              />
+              <button
+                type="button"
+                onClick={() => move(idx, -1)}
+                disabled={idx === 0}
+                className="rounded border bg-card px-1.5 py-1 text-[11px] disabled:opacity-30"
+                title="Lên"
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                onClick={() => move(idx, 1)}
+                disabled={idx === parts.length - 1}
+                className="rounded border bg-card px-1.5 py-1 text-[11px] disabled:opacity-30"
+                title="Xuống"
+              >
+                ↓
+              </button>
+              {parts.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => remove(p.id)}
+                  className="rounded border bg-card px-2 py-1 text-[11px] text-red-600 hover:bg-red-50"
+                >
+                  Xoá
+                </button>
+              )}
+            </div>
+            <div className="mt-2 flex min-h-[30px] flex-wrap items-center gap-1.5 rounded-md border border-dashed bg-surface-2/30 px-2 py-1.5">
+              {assignedCats(p).length === 0 ? (
+                <span className="text-[11px] italic text-muted-foreground">
+                  Kéo/bấm dạng câu vào phần này…
+                </span>
+              ) : (
+                assignedCats(p).map((c) => catChip(c, { onRemove: () => unassign(c.key) }))
+              )}
+              {unassigned.length > 0 && (
+                <select
+                  value=""
+                  onChange={(e) => {
+                    if (e.target.value) assign(e.target.value, p.id);
+                  }}
+                  className="h-6 rounded border bg-card px-1 text-[11px] text-primary"
+                  title="Thêm dạng câu vào phần"
+                >
+                  <option value="">+ dạng…</option>
+                  {unassigned.map((c) => (
+                    <option key={c.key} value={c.key}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+      {unassigned.length > 0 && (
+        <div
+          className="border-t px-3 py-2"
+          onDragOver={(e) => {
+            if (dragCat) e.preventDefault();
+          }}
+          onDrop={() => {
+            if (dragCat) unassign(dragCat);
+            setDragCat(null);
+            setDragOverPart(null);
+          }}
+        >
+          <p className="mb-1 text-[11px] text-muted-foreground">
+            Dạng câu chưa xếp phần (kéo vào phần ở trên hoặc dùng “+ dạng…”):
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {unassigned.map((c) => catChip(c, {}))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function StepStructure({
+  parts,
+  onPartsChange,
+  poolTypes,
+  onSaveConfig,
+  savedConfigAt,
   enabledParts,
   pointsByPart,
   onPoints,
@@ -1355,6 +1681,11 @@ function StepStructure({
   totalPoints,
   cells,
 }: {
+  parts: YccdPart[];
+  onPartsChange: (next: YccdPart[]) => void;
+  poolTypes: Set<QuestionType>;
+  onSaveConfig: () => void;
+  savedConfigAt: string | null;
   enabledParts: YccdPart[];
   pointsByPart: Record<string, number>;
   onPoints: (id: string, v: number) => void;
@@ -1371,7 +1702,14 @@ function StepStructure({
   totalPoints: number;
   cells: Record<string, number>;
 }) {
-  const has = (id: string) => enabledParts.some((p) => p.id === id);
+  // Chế độ chấm theo dạng câu THỰC SỰ có trong phần (không theo id phần cứng).
+  const hasType = (t: QuestionType) =>
+    enabledParts.some((p) => p.questionTypes.includes(t));
+  const [savedTick, setSavedTick] = useState(false);
+  // Chỉnh gì đó sau khi lưu → tắt dấu "đã lưu" để nhắc lưu lại.
+  useEffect(() => {
+    setSavedTick(false);
+  }, [parts, pointsByPart, mcqMultiMode, dsMode, dsTable, orderStrategy, duration]);
   const partCount = (partId: string) =>
     Object.entries(cells).reduce(
       (s, [k, v]) => (k.split("|")[1] === partId ? s + v : s),
@@ -1419,6 +1757,29 @@ function StepStructure({
         </div>
       </div>
 
+      {/* Cấu trúc phần (tuỳ biến Phần I/II/…) */}
+      <PartStructureEditor parts={parts} onChange={onPartsChange} poolTypes={poolTypes} />
+
+      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed bg-surface-2/40 px-3 py-2">
+        <button
+          type="button"
+          onClick={() => {
+            onSaveConfig();
+            setSavedTick(true);
+          }}
+          className="rounded-md bg-primary px-3 py-1.5 text-[12px] font-semibold text-primary-foreground hover:opacity-90"
+        >
+          Lưu cấu hình cho Môn + Khối
+        </button>
+        <span className="text-[11.5px] text-muted-foreground">
+          {savedTick
+            ? "✓ Đã lưu — lần sau mở wizard sẽ tự nạp lại; ca thi khoá theo cài đặt này."
+            : savedConfigAt
+              ? `Đã có bản lưu (cập nhật ${new Date(savedConfigAt).toLocaleString("vi-VN")}). Lưu để cập nhật.`
+              : "Chưa có bản lưu cho Môn+Khối này — cấu hình tên phần, dạng câu, điểm & cách chấm rồi bấm Lưu."}
+        </span>
+      </div>
+
       {/* Điểm mỗi phần */}
       <div className="rounded-lg border">
         <div className="border-b bg-surface-2 px-3 py-2 text-[12px] font-semibold">
@@ -1446,7 +1807,7 @@ function StepStructure({
       </div>
 
       {/* Chế độ chấm MOET */}
-      {has("mcq") && (
+      {hasType("mcq-multi") && (
         <ScoreMode
           title="Chấm câu nhiều đáp án đúng (mcq-multi)"
           options={[
@@ -1457,7 +1818,7 @@ function StepStructure({
           onChange={(v) => setMcqMultiMode(v as "full" | "partial")}
         />
       )}
-      {has("ds") && (
+      {hasType("multi-tf") && (
         <div className="space-y-2">
           <ScoreMode
             title="Chấm câu Đúng–Sai nhiều ý"

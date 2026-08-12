@@ -30,6 +30,7 @@ export const COLLECTIONS = {
   questions: "questions",
   blueprints: "blueprints",
   packages: "packages",
+  examPartConfigs: "exam_part_configs",
   shifts: "shifts",
   attempts: "attempts",
   gradesEssay: "grades_essay",

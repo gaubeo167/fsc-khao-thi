@@ -128,6 +128,27 @@ export interface ScoringPolicy {
   maxScore: number;
 }
 
+/**
+ * Reusable exam-structure config per Môn + Khối (bước ④). Tên phần + dạng
+ * câu trong mỗi phần + điểm/câu + cách chấm + thứ tự + thời gian. Tự nạp lại
+ * vào wizard lần sau; đề sinh ra vẫn gắn kèm bản sao (yccdMatrix.parts +
+ * scoringPolicy) để ca thi khoá theo cài đặt. Doc id = `${subjectId}__${gradeId}`.
+ */
+export interface ExamPartConfig {
+  id: string;
+  subjectId: string;
+  gradeId: string;
+  /** Các phần (Phần I/II/…) — label + questionTypes + pointsPerQuestion. */
+  parts: YccdPart[];
+  mcqMulti: "full" | "partial";
+  ds: "graduated" | "weighted" | "full";
+  dsGraduatedTable?: Record<number, number>;
+  orderStrategy: "by-section" | "shuffle-all";
+  durationMinutes: number;
+  updatedAt: string;
+  updatedBy?: string;
+}
+
 /** MOET THPT preset for 4-ý Đúng–Sai lũy tiến. FSC preset = {1:.25,2:.5,3:.75,4:1}. */
 export const DEFAULT_DS_GRADUATED: Record<number, number> = {
   1: 0.1,

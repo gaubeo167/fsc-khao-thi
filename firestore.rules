@@ -138,6 +138,15 @@ service cloud.firestore {
       allow create, update, delete: if isTeacherOrAbove();
     }
 
+    // ───── /exam_part_configs — cấu hình phần đề theo Môn+Khối (bước ④) ────
+    // Reusable exam-structure template (tên phần + dạng + điểm + cách chấm).
+    // Any signed-in user may read; teacher+ authors it. Same shape as
+    // /competencies.
+    match /exam_part_configs/{id} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isTeacherOrAbove();
+    }
+
     // ───── /teaching_assignments — teacher↔class↔subject mapping ──────────
     match /teaching_assignments/{id} {
       allow read: if isSignedIn();

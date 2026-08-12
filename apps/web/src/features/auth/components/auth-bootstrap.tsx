@@ -13,6 +13,7 @@ import { subscribeHomeworkAttempts } from "@/features/homework/state/homework-at
 import { subscribeBlueprints } from "@/features/exams/state/blueprints-store";
 import { subscribeGenerated } from "@/features/exams/state/generated-store";
 import { subscribePackages } from "@/features/exams/state/packages-store";
+import { subscribePartConfigs } from "@/features/exams/state/part-config-store";
 import { subscribeGradesCatalog } from "@/features/grades/state/grades-store";
 import { subscribeGrading } from "@/features/grading/state/grading-store";
 import { subscribeQuestions } from "@/features/question-bank/state/questions-store";
@@ -86,6 +87,8 @@ function startDataSubscriptions(session: AuthSession): Array<() => void> {
       // Khung YCCĐ (competency framework) — staff author + tag; students
       // never read the whole tree (exam payloads carry the labels they need).
       subscribeCompetencies(),
+      // Cấu hình phần đề theo Môn+Khối (bước ④ wizard) — staff-only.
+      subscribePartConfigs(),
     );
   }
   return subs;
