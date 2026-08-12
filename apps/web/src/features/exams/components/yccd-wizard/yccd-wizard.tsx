@@ -95,7 +95,6 @@ export function YccdWizard() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [excludeIds, setExcludeIds] = useState<Set<string>>(new Set());
   const [parts] = useState<YccdPart[]>(() => MOET_DEFAULT_PARTS.map((p) => ({ ...p })));
-  const [enabled, setEnabled] = useState<Set<string>>(new Set(["mcq", "ds", "tl"]));
   const [cells, setCells] = useState<Record<string, number>>({});
   const [collapsedCh, setCollapsedCh] = useState<Set<string>>(new Set());
   const [scopeQuery, setScopeQuery] = useState("");
@@ -224,11 +223,6 @@ export function YccdWizard() {
     };
   }, [rawPool, comps, tocNodes]);
 
-  const enabledParts = useMemo(
-    () => parts.filter((p) => enabled.has(p.id)),
-    [parts, enabled],
-  );
-
   // Only questions whose resolved YCCĐ / Bài is selected in step ① (granular
   // — a single YCCĐ or a whole Bài). Feeds the matrix inventory + draw.
   const scopedPool = useMemo(
@@ -238,6 +232,13 @@ export function YccdWizard() {
         return c ? selected.has(c) : false;
       }),
     [pool, selected],
+  );
+
+  // Cấu phần đề tự suy theo LOẠI CÂU có trong khung — chỉ hiện phần nào thực
+  // sự có câu, không bắt người dùng bật/tắt tay.
+  const enabledParts = useMemo(
+    () => parts.filter((p) => scopedPool.some((q) => p.questionTypes.includes(q.type))),
+    [parts, scopedPool],
   );
 
   const inventory = useMemo(
@@ -635,17 +636,6 @@ export function YccdWizard() {
             )}
             {step === 3 && (
               <StepMatrix
-                parts={parts}
-                enabled={enabled}
-                onTogglePart={(id) =>
-                  setEnabled((prev) => {
-                    const n = new Set(prev);
-                    if (n.has(id)) {
-                      if (n.size > 1) n.delete(id);
-                    } else n.add(id);
-                    return n;
-                  })
-                }
                 rows={rows}
                 enabledParts={enabledParts}
                 inventory={inventory}
@@ -1164,9 +1154,6 @@ function StepFrame({
 
 // ─────────────────────────── Step 3: matrix ─────────────────────────────
 function StepMatrix({
-  parts,
-  enabled,
-  onTogglePart,
   rows,
   enabledParts,
   inventory,
@@ -1176,9 +1163,6 @@ function StepMatrix({
   validation,
   totalQ,
 }: {
-  parts: YccdPart[];
-  enabled: Set<string>;
-  onTogglePart: (id: string) => void;
   rows: MatrixRow[];
   enabledParts: YccdPart[];
   inventory: Record<string, number>;
@@ -1194,33 +1178,25 @@ function StepMatrix({
 
   return (
     <div className="space-y-3">
-      {/* Parts config */}
+      {/* Cấu phần đề tự suy theo loại câu có trong khung (không bật/tắt tay) */}
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-[11px] font-bold uppercase tracking-[0.05em] text-muted-foreground">
-          Cấu phần đề:
+          Cấu phần đề (tự động theo loại câu trong khung):
         </span>
-        {parts.map((p) => {
-          const on = enabled.has(p.id);
-          return (
-            <button
+        {enabledParts.length === 0 ? (
+          <span className="text-[11.5px] italic text-muted-foreground">
+            Khung chưa có câu — chọn thêm YCCĐ ở bước ①.
+          </span>
+        ) : (
+          enabledParts.map((p) => (
+            <span
               key={p.id}
-              type="button"
-              onClick={() => onTogglePart(p.id)}
-              className={cn(
-                "rounded-full border px-3 py-1 text-[12px] font-medium transition",
-                on
-                  ? "border-primary bg-primary/10 text-primary"
-                  : "border-border bg-card text-muted-foreground hover:bg-accent/30",
-              )}
+              className="rounded-full border border-primary bg-primary/10 px-3 py-1 text-[12px] font-medium text-primary"
             >
-              {on ? "✓ " : ""}
-              {p.label}
-            </button>
-          );
-        })}
-        <span className="text-[11px] text-muted-foreground">
-          (bật/tắt 2–4 phần tuỳ môn / cấp)
-        </span>
+              ✓ {p.label}
+            </span>
+          ))
+        )}
       </div>
 
       <p className="text-[12px] text-muted-foreground">
