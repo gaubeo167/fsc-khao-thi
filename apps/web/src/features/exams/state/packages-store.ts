@@ -9,6 +9,7 @@ import { COLLECTIONS } from "@/lib/firestore-collections";
 import { nextVersionFields, rootId, versionOf } from "@/lib/version";
 import {
   patchDoc,
+  removeDoc,
   sanitizeForFirestore,
   subscribeCollection,
   writeDoc,
@@ -32,6 +33,10 @@ interface Actions {
   restore(id: string, actorUid: string): void;
   /** Legacy alias — routes to archive(). */
   remove(id: string): void;
+  /** Xoá VĨNH VIỄN — chỉ dùng cho gói đề CHƯA sử dụng (không ca thi nào tham
+   *  chiếu). Người gọi phải tự kiểm tra `packageInUse` trước. Gói đã dùng thì
+   *  archive() để bảo toàn dữ liệu ca thi. */
+  hardRemove(id: string, actorUid: string): void;
   /** Clone as new version (Phase D). New doc starts in `status: "draft"`
    *  so it re-enters the approval flow — clones inherit content but
    *  not approval state. */
@@ -187,6 +192,22 @@ export const usePackagesStore = create<State & Actions>()((set, get) => ({
 
   remove(id) {
     get().archive(id, "system", "Legacy remove() call");
+  },
+
+  hardRemove(id, actorUid) {
+    const before = get().packages.find((p) => p.id === id);
+    if (!before) return;
+    set({ packages: get().packages.filter((p) => p.id !== id) });
+    removeDoc(COLLECTIONS.packages, id);
+    recordAudit({
+      entityType: "package",
+      entityId: id,
+      action: "delete",
+      before: pickPackageAuditFields(before),
+      after: null,
+      campusId: before.campusId,
+      reason: `Xoá vĩnh viễn gói đề chưa sử dụng (bởi ${actorUid})`,
+    });
   },
 
   cloneAsNewVersion(sourceId, actorUid, reason) {

@@ -9,6 +9,7 @@ import { COLLECTIONS } from "@/lib/firestore-collections";
 import { nextVersionFields, rootId, versionOf } from "@/lib/version";
 import {
   patchDoc,
+  removeDoc,
   sanitizeForFirestore,
   subscribeCollection,
   writeDoc,
@@ -34,6 +35,10 @@ interface Actions {
   restore(id: string, actorUid: string): void;
   /** Legacy alias — routes to archive(). */
   remove(id: string): void;
+  /** Xoá VĨNH VIỄN — chỉ dùng khi không còn gói đề nào (kể cả đã lưu trữ)
+   *  tham chiếu khung này. Người gọi phải tự kiểm tra trước; khung còn được
+   *  dùng thì archive() để bảo toàn dữ liệu. */
+  hardRemove(id: string, actorUid: string): void;
   /** Clone as new version (Phase D version-chains). The new doc shares
    *  the parent's `versionOfRootId`, gets `version = parent.version + 1`,
    *  and the parent stays live until explicitly archived. */
@@ -215,6 +220,22 @@ export const useBlueprintsStore = create<State & Actions>()((set, get) => ({
 
   remove(id) {
     get().archive(id, "system", "Legacy remove() call");
+  },
+
+  hardRemove(id, actorUid) {
+    const before = get().blueprints.find((b) => b.id === id);
+    if (!before) return;
+    set({ blueprints: get().blueprints.filter((b) => b.id !== id) });
+    removeDoc(COLLECTIONS.blueprints, id);
+    recordAudit({
+      entityType: "blueprint",
+      entityId: id,
+      action: "delete",
+      before: pickBlueprintAuditFields(before),
+      after: null,
+      campusId: before.campusId,
+      reason: `Xoá vĩnh viễn khung đề không còn gói nào dùng (bởi ${actorUid})`,
+    });
   },
 
   cloneAsNewVersion(sourceId, actorUid, reason) {

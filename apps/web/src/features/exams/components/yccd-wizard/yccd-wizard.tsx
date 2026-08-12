@@ -584,7 +584,11 @@ export function YccdWizard({
       orderStrategy,
       variantCount,
     };
-    const status = session.role === "teacher" ? ("pending" as const) : ("approved" as const);
+    // MỌI đề YCCĐ đều phải qua duyệt mới dùng được cho ca thi — kể cả đề do
+    // tổ trưởng/admin tạo (trước đây họ tự duyệt, đề dùng được ngay). Sửa một
+    // đề đã duyệt cũng đưa về "Chờ duyệt": duyệt xong rồi sửa nội dung mà vẫn
+    // giữ trạng thái đã duyệt thì cửa duyệt coi như không có.
+    const status = "pending" as const;
     let pkgId: string;
     if (editing) {
       // SỬA tại chỗ: cập nhật blueprint + package + sinh lại mã đề.
@@ -596,6 +600,8 @@ export function YccdWizard({
         scoringPolicy,
         yccdDraft,
         status,
+        approvedBy: null,
+        rejectionNote: null,
       });
       removeGeneratedByPackage(editing.id);
       pkgId = editing.id;
@@ -2202,11 +2208,23 @@ function StepSave({
     <div className="space-y-4">
       {saved ? (
         <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-5 py-6 text-center">
-          <p className="text-[15px] font-bold text-emerald-800">✓ Đã lưu gói đề</p>
+          <p className="text-[15px] font-bold text-emerald-800">
+            ✓ Đã lưu &amp; gửi duyệt
+          </p>
           <p className="mt-1 text-[12.5px] text-emerald-700">
             {drafts.length} mã đề đã vào kho “Đề đã sinh”.
           </p>
+          <p className="mt-1 text-[12.5px] font-medium text-amber-700">
+            Đề đang ở trạng thái <span className="font-bold">Chờ duyệt</span> —
+            phải được duyệt thì ca thi mới chọn được.
+          </p>
           <div className="mt-3 flex flex-wrap justify-center gap-2">
+            <Link
+              href="/admin/approvals"
+              className="rounded-md border bg-card px-3 py-1.5 text-[12.5px] font-semibold text-primary hover:bg-surface-2"
+            >
+              → Duyệt đề
+            </Link>
             <Link
               href="/admin/exam-blueprints?tab=generated"
               className="rounded-md border bg-card px-3 py-1.5 text-[12.5px] font-semibold text-primary hover:bg-surface-2"

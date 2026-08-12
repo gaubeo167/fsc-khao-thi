@@ -405,8 +405,12 @@ export function ShiftWizard({
   const gradeScopedApprovedPackages = useMemo(() => {
     return packages.filter((p) => {
       if (p.status !== "approved") return false;
+      // Đã lưu trữ = rút khỏi lưu thông. Ca thi mới không được chọn nữa (ca
+      // cũ vẫn giữ nguyên tham chiếu). Khung đề bị lưu trữ cũng chặn theo.
+      if (p.archivedAt) return false;
       const bp = blueprints.find((b) => b.id === p.blueprintId);
       if (!bp) return false;
+      if (bp.archivedAt) return false;
       if (stateCampusId && norm(bp.campusId) !== stateCampusId) return false;
       if (stateGradeId && norm(bp.gradeId) !== stateGradeId) return false;
       if (stateSubjectId && norm(bp.subjectId) !== stateSubjectId) return false;
@@ -420,8 +424,10 @@ export function ShiftWizard({
   const gradeScopedPendingPackages = useMemo(() => {
     return packages.filter((p) => {
       if (p.status === "approved") return false;
+      if (p.archivedAt) return false;
       const bp = blueprints.find((b) => b.id === p.blueprintId);
       if (!bp) return false;
+      if (bp.archivedAt) return false;
       if (stateCampusId && norm(bp.campusId) !== stateCampusId) return false;
       if (stateGradeId && norm(bp.gradeId) !== stateGradeId) return false;
       if (stateSubjectId && norm(bp.subjectId) !== stateSubjectId) return false;
@@ -2266,10 +2272,14 @@ function PackageList({
           const bp = blueprints.find((b) => b.id === p.blueprintId);
           const subj = bp ? subjects.find((s) => s.id === bp.subjectId) : null;
           const gr = bp ? grades.find((g) => g.id === bp.gradeId) : null;
-          const perExam = p.matrix.reduce(
-            (s, r) => s + r.easyCount + r.mediumCount + r.hardCount,
-            0,
-          );
+          // Đề YCCĐ không dùng `matrix` (ma trận độ khó) mà dùng `yccdMatrix`
+          // — đọc nhầm chỗ thì mọi đề YCCĐ hiện "0 câu/đề".
+          const perExam = isYccdPackage(p)
+            ? p.yccdMatrix.cells.reduce((s, c) => s + c.count, 0)
+            : (p.matrix ?? []).reduce(
+                (s, r) => s + r.easyCount + r.mediumCount + r.hardCount,
+                0,
+              );
           const checked = state.packageId === p.id;
           // Gói đề phải sinh đề xong mới được chọn để tạo ca thi.
           const genCount = generated.filter(

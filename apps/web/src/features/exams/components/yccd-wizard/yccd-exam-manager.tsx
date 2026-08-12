@@ -1,6 +1,17 @@
 "use client";
 
-import { Archive, Copy, Lock, PencilLine, Plus, RotateCcw, Search } from "lucide-react";
+import {
+  Archive,
+  Check,
+  Copy,
+  Lock,
+  PencilLine,
+  Plus,
+  RotateCcw,
+  Search,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { useAuthStore } from "@/features/auth/state/auth-store";
@@ -39,6 +50,23 @@ function toMillis(v: unknown): number {
   return 0;
 }
 
+/** Vai trò duyệt / xoá gói đề — khớp `isApprover()` trong `firestore.rules`
+ *  (rules cho phép cả chủ sở hữu tự sửa gói của mình, nhưng TỰ DUYỆT thì UI
+ *  không mở: duyệt là việc của người có quyền duyệt). */
+const APPROVER_ROLES = new Set([
+  "superadmin",
+  "academic-director",
+  "campus-admin",
+  "subject-lead",
+]);
+/** Xoá vĩnh viễn KHUNG đề hẹp hơn — rules `/blueprints` chỉ mở cho admin
+ *  hoặc chủ sở hữu (không có subject-lead). */
+const BLUEPRINT_DELETE_ROLES = new Set([
+  "superadmin",
+  "academic-director",
+  "campus-admin",
+]);
+
 const STATUS_META: Record<
   ExamPackage["status"],
   { label: string; cls: string }
@@ -63,10 +91,15 @@ export function YccdExamManager() {
   const clonePackage = usePackagesStore((s) => s.cloneAsNewVersion);
   const updatePackage = usePackagesStore((s) => s.update);
   const archivePackage = usePackagesStore((s) => s.archive);
+  const hardRemovePackage = usePackagesStore((s) => s.hardRemove);
+  const setPackageStatus = usePackagesStore((s) => s.setStatus);
   const blueprints = useBlueprintsStore((s) => s.blueprints);
   const cloneBlueprint = useBlueprintsStore((s) => s.cloneAsNewVersion);
+  const archiveBlueprint = useBlueprintsStore((s) => s.archive);
+  const hardRemoveBlueprint = useBlueprintsStore((s) => s.hardRemove);
   const generated = useGeneratedStore((s) => s.generated);
   const addBatch = useGeneratedStore((s) => s.addBatch);
+  const removeGeneratedByPackage = useGeneratedStore((s) => s.removeByPackage);
   const shifts = useShiftsStore((s) => s.shifts);
   const subjects = useSubjectsStore((s) => s.subjects);
   const grades = useGradesStore((s) => s.grades);
@@ -118,6 +151,52 @@ export function YccdExamManager() {
     setMode({ view: "edit", pkg: { ...pkgClone, blueprintId } });
   }
 
+  /**
+   * Xoá VĨNH VIỄN một đề YCCĐ. Chỉ cho phép khi KHÔNG ca thi nào tham chiếu —
+   * kể cả ca đã lưu trữ/kết thúc (chặt hơn `packageInUse` vốn chỉ tính ca còn
+   * sống), vì xoá thật sẽ làm hỏng dữ liệu lịch sử của ca đó.
+   * Dây chuyền: mã đề đã sinh → gói đề → khung đề (nếu không gói nào khác dùng).
+   */
+  function hardDelete(p: ExamPackage) {
+    if (!session) return;
+    if (shifts.some((s) => s.packageId === p.id)) return;
+
+    const genCount = generated.filter((g) => g.packageId === p.id).length;
+    const bp = blueprints.find((b) => b.id === p.blueprintId);
+    const bpSharedWithOthers = packages.some(
+      (x) => x.id !== p.id && x.blueprintId === p.blueprintId,
+    );
+    // Rules cho /blueprints chỉ mở cho admin hoặc chủ sở hữu — không đủ quyền
+    // thì lưu trữ khung thay vì để lệnh xoá rơi im lặng.
+    const canDeleteBp =
+      !!bp &&
+      (BLUEPRINT_DELETE_ROLES.has(session.role) || bp.ownerId === session.userId);
+
+    const lines = [
+      `Xoá VĨNH VIỄN đề "${p.name}"?`,
+      "",
+      "Sẽ xoá:",
+      "• Gói đề (cấu hình ma trận YCCĐ, thang điểm)",
+      genCount > 0 ? `• ${genCount} mã đề đã sinh` : null,
+      bp && !bpSharedWithOthers
+        ? canDeleteBp
+          ? `• Khung đề "${bp.name}" (không gói nào khác dùng)`
+          : `• Khung đề "${bp.name}" sẽ được lưu trữ (bạn không đủ quyền xoá)`
+        : null,
+      "",
+      "Thao tác này KHÔNG thể hoàn tác. Muốn giữ lại để khôi phục sau thì bấm Lưu trữ.",
+    ].filter(Boolean);
+    if (!confirm(lines.join("\n"))) return;
+
+    removeGeneratedByPackage(p.id);
+    hardRemovePackage(p.id, session.userId);
+    if (bp && !bpSharedWithOthers) {
+      if (canDeleteBp) hardRemoveBlueprint(bp.id, session.userId);
+      else
+        archiveBlueprint(bp.id, session.userId, "Gói đề YCCĐ đã bị xoá vĩnh viễn");
+    }
+  }
+
   const canManage = !!session && session.role !== "student";
 
   return (
@@ -164,6 +243,14 @@ export function YccdExamManager() {
             const gradeName = grades.find((g) => g.id === bp?.gradeId)?.name ?? "—";
             const genCount = generated.filter((g) => g.packageId === p.id).length;
             const usage = packageInUse(p.id, shifts);
+            // Xoá vĩnh viễn chặt hơn "đang dùng": ca thi đã lưu trữ vẫn tham
+            // chiếu gói đề, xoá đi là hỏng lịch sử ca đó.
+            const everUsed = shifts.some((s) => s.packageId === p.id);
+            const canHardDelete =
+              !!session &&
+              !everUsed &&
+              (APPROVER_ROLES.has(session.role) || p.ownerId === session.userId);
+            const canApprove = !!session && APPROVER_ROLES.has(session.role);
             const totalQ =
               p.yccdMatrix?.cells.reduce((s, c) => s + c.count, 0) ?? 0;
             const partCount = p.yccdMatrix?.parts.length ?? 0;
@@ -222,6 +309,31 @@ export function YccdExamManager() {
                 </div>
                 {canManage && (
                   <div className="mt-2 flex flex-wrap gap-1.5">
+                    {/* Duyệt ngay tại danh sách — đề YCCĐ luôn tạo ra ở "Chờ
+                        duyệt", bắt người duyệt sang trang Duyệt chỉ để bấm 1
+                        nút là thừa. Cùng action `setStatus` như trang Duyệt. */}
+                    {!p.archivedAt && session && canApprove && p.status !== "approved" && (
+                      <button
+                        type="button"
+                        onClick={() => setPackageStatus(p.id, "approved", session.userId)}
+                        className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-[12px] font-semibold text-emerald-700 hover:bg-emerald-100"
+                      >
+                        <Check className="h-3.5 w-3.5" /> Duyệt
+                      </button>
+                    )}
+                    {!p.archivedAt && session && canApprove && p.status === "pending" && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const note = prompt(`Lý do từ chối đề "${p.name}"?`);
+                          if (note === null) return;
+                          setPackageStatus(p.id, "rejected", session.userId, note);
+                        }}
+                        className="inline-flex items-center gap-1 rounded-md border bg-card px-2 py-1 text-[12px] font-medium text-rose-600 hover:bg-rose-50"
+                      >
+                        <X className="h-3.5 w-3.5" /> Từ chối
+                      </button>
+                    )}
                     {p.archivedAt ? (
                       <button
                         type="button"
@@ -236,7 +348,8 @@ export function YccdExamManager() {
                       >
                         <RotateCcw className="h-3.5 w-3.5" /> Khôi phục
                       </button>
-                    ) : (
+                    ) : null}
+                    {!p.archivedAt && (
                       <>
                         {usage.inUse ? (
                           <button
@@ -280,6 +393,16 @@ export function YccdExamManager() {
                           </button>
                         )}
                       </>
+                    )}
+                    {canHardDelete && (
+                      <button
+                        type="button"
+                        onClick={() => hardDelete(p)}
+                        title="Xoá vĩnh viễn — chỉ được phép khi chưa ca thi nào dùng đề này."
+                        className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-card px-2 py-1 text-[12px] font-semibold text-rose-600 hover:bg-rose-50"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" /> Xoá vĩnh viễn
+                      </button>
                     )}
                   </div>
                 )}
