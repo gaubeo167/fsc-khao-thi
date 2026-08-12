@@ -958,6 +958,14 @@ const QTYPE_LABEL: Record<string, string> = {
   underline: "Gạch chân",
 };
 
+const PART_SHORT: Record<string, string> = {
+  mcq: "Nhiều lựa chọn",
+  ds: "Đúng–Sai",
+  short: "Trả lời ngắn",
+  tl: "Tự luận",
+  other: "Khác",
+};
+
 function StepFrame({
   rows,
   outcomesOf,
@@ -988,6 +996,16 @@ function StepFrame({
   // Only the YCCĐ / topic-level buckets selected in step ①.
   const selOutcomes = (topicId: string) =>
     outcomesOf(topicId).filter((o) => selected.has(o.id));
+  // Số câu theo dạng (cấu phần) trong một YCCĐ.
+  const typeBreakdown = (qs: Question[]) => {
+    const by: Record<string, number> = {};
+    for (const qq of qs) {
+      const part = MOET_DEFAULT_PARTS.find((p) => p.questionTypes.includes(qq.type));
+      const id = part?.id ?? "other";
+      by[id] = (by[id] ?? 0) + 1;
+    }
+    return by;
+  };
 
   const totalAvail = rows.reduce((s, r) => {
     let c = selected.has(r.topicId) ? (poolByComp[r.topicId] ?? []).length : 0;
@@ -1063,7 +1081,22 @@ function StepFrame({
                             {bloom.short}
                           </span>
                         )}
-                        <span className="min-w-[140px] flex-1 text-[12.5px]">{g.label}</span>
+                        <span className="min-w-[140px] flex-1 text-[12.5px]">
+                          {g.label}
+                          <span className="ml-1 inline-flex flex-wrap gap-1 align-middle">
+                            {Object.entries(typeBreakdown(g.questions))
+                              .sort()
+                              .map(([partId, c]) => (
+                                <span
+                                  key={partId}
+                                  className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600"
+                                  title="Số câu theo dạng"
+                                >
+                                  {PART_SHORT[partId] ?? partId}: {c}
+                                </span>
+                              ))}
+                          </span>
+                        </span>
                         <span className="text-[11px] text-muted-foreground">Vào khung:</span>
                         <input
                           type="number"
