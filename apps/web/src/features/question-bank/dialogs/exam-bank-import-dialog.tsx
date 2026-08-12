@@ -21,8 +21,10 @@ import { useCampusStore } from "@/features/campus/state/campus-store";
 import type { BloomLevel } from "@/features/competencies/data/types";
 import { useCompetenciesStore } from "@/features/competencies/state/competencies-store";
 import { useGradesStore } from "@/features/grades/state/grades-store";
+import { TOC_LEVELS } from "@/features/subjects/data/seed-toc";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import { authHeaders } from "@/lib/api-client";
+import { cn } from "@/lib/utils";
 
 import { RenderedContent } from "../components/rendered-content";
 import type { Question, QuestionStatus } from "../data/seed-questions";
@@ -189,12 +191,35 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
     return m;
   }, [competencies, subjectId, gradeId]);
 
-  /** Mục lục của Môn + Khối — danh sách để chọn nơi lưu câu hỏi. */
-  const tocChoices = useMemo(
-    () =>
-      tocNodes.filter((n) => n.subjectId === subjectId && n.gradeId === gradeId),
-    [tocNodes, subjectId, gradeId],
-  );
+  /**
+   * Mục lục của Môn + Khối, DUYỆT THEO CÂY đúng như màn Mục lục: gốc sắp theo
+   * `order`, con nối ngay dưới cha. Trả phẳng kèm `depth` để vẽ thụt lề + chip
+   * cấp (Ch / CĐ / CP / KN).
+   */
+  const tocChoices = useMemo(() => {
+    const scoped = tocNodes.filter(
+      (n) => n.subjectId === subjectId && n.gradeId === gradeId,
+    );
+    const ids = new Set(scoped.map((n) => n.id));
+    const byParent = new Map<string | null, typeof scoped>();
+    for (const n of scoped) {
+      // Node có cha nằm ngoài phạm vi thì coi như gốc, không thì nó biến mất.
+      const key = n.parentId && ids.has(n.parentId) ? n.parentId : null;
+      const list = byParent.get(key) ?? [];
+      list.push(n);
+      byParent.set(key, list);
+    }
+    for (const list of byParent.values()) list.sort((a, b) => a.order - b.order);
+    const out: { node: (typeof scoped)[number]; depth: number }[] = [];
+    const walk = (parent: string | null, depth: number) => {
+      for (const n of byParent.get(parent) ?? []) {
+        out.push({ node: n, depth });
+        walk(n.id, depth + 1);
+      }
+    };
+    walk(null, 0);
+    return out;
+  }, [tocNodes, subjectId, gradeId]);
 
   const entries = state.kind === "review" ? state.entries : [];
   const enriched = useMemo(
@@ -448,23 +473,69 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
               Mục lục lưu câu hỏi{" "}
               <span className="font-normal text-muted-foreground">(tuỳ chọn)</span>
             </Label>
-            <Select
-              value={storageTocId}
-              onChange={(e) => setStorageTocId(e.target.value)}
-              disabled={!subjectId || !gradeId}
-            >
-              <option value="">— Không gán mục lục —</option>
-              {tocChoices.map((n) => (
-                <option key={n.id} value={n.id}>
-                  {n.code ? `${n.code} · ` : ""}
-                  {n.name}
-                </option>
-              ))}
-            </Select>
+            {!subjectId || !gradeId ? (
+              <p className="rounded-lg border border-dashed bg-muted/20 px-3 py-3 text-[12px] text-muted-foreground">
+                Chọn Môn + Khối để xem mục lục.
+              </p>
+            ) : (
+              <div className="max-h-56 overflow-auto rounded-lg border bg-card">
+                <button
+                  type="button"
+                  onClick={() => setStorageTocId("")}
+                  className={cn(
+                    "flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12.5px] hover:bg-surface-2",
+                    !storageTocId && "bg-primary/5 font-semibold text-primary",
+                  )}
+                >
+                  {!storageTocId && <Check className="h-3.5 w-3.5 shrink-0" />}
+                  <span className={cn(!storageTocId ? "" : "pl-[22px]")}>
+                    — Không gán mục lục —
+                  </span>
+                </button>
+                {tocChoices.map(({ node, depth }) => {
+                  const lv = TOC_LEVELS[Math.min(depth, TOC_LEVELS.length - 1)]!;
+                  const active = storageTocId === node.id;
+                  return (
+                    <button
+                      key={node.id}
+                      type="button"
+                      onClick={() => setStorageTocId(node.id)}
+                      className={cn(
+                        "flex w-full items-center gap-2 border-t px-3 py-1.5 text-left text-[12.5px] hover:bg-surface-2",
+                        active && "bg-primary/5 font-semibold text-primary",
+                      )}
+                      style={{ paddingLeft: 12 + depth * 18 }}
+                    >
+                      <span
+                        className={cn("h-3.5 w-1 shrink-0 rounded-full", lv.barClass)}
+                        aria-hidden
+                      />
+                      <span
+                        className={cn(
+                          "shrink-0 rounded px-1 text-[9.5px] font-bold",
+                          lv.chipBg,
+                          lv.chipFg,
+                        )}
+                        title={lv.full}
+                      >
+                        {lv.short}
+                      </span>
+                      {node.code && (
+                        <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                          {node.code}
+                        </span>
+                      )}
+                      <span className="min-w-0 flex-1 truncate">{node.name}</span>
+                      {active && <Check className="h-3.5 w-3.5 shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             <p className="text-[11px] text-muted-foreground">
               Nơi cất câu hỏi trong kho. Việc gắn <b>năng lực</b> đã lấy theo mã
               YCCĐ trong file, không liên quan tới mục lục.
-              {subjectId && gradeId && tocChoices.length === 0 && (
+              {Boolean(subjectId) && Boolean(gradeId) && tocChoices.length === 0 && (
                 <span className="text-amber-700">
                   {" "}
                   Môn + Khối này chưa có mục lục nào.
