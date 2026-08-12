@@ -170,9 +170,8 @@ export function YccdWizard({
       const pbp: Record<string, number> = {};
       for (const p of m.parts) if (p.pointsPerQuestion != null) pbp[p.id] = p.pointsPerQuestion;
       setPointsByPart(pbp);
-      const cs: Record<string, number> = {};
-      for (const c of m.cells) cs[cellKey(c.topicId, c.partId, c.bloom)] = c.count;
-      setCells(cs);
+      // Ô ma trận (cells) nạp ở effect riêng SAU khi scopedPool sẵn sàng (xem
+      // dưới) — nếu nạp sớm, auto-clamp sẽ xoá vì tồn kho chưa tính kịp.
     }
     if (sp) {
       setMcqMultiMode(sp.mcqMulti);
@@ -365,6 +364,20 @@ export function YccdWizard({
     setExcludeIds(excl);
     scopeReconstructedRef.current = true;
   }, [editing, subjectId, pool, resolvers, blueprintsAll]);
+
+  // Nạp ô ma trận (cells) từ đề đang sửa — CHỈ khi phạm vi đã dựng xong
+  // (scopedPool > 0) để tồn kho đã đúng, auto-clamp không xoá. Chạy một lần.
+  const cellsHydratedRef = useRef(false);
+  useEffect(() => {
+    if (!editing || cellsHydratedRef.current) return;
+    if (scopedPool.length === 0) return;
+    cellsHydratedRef.current = true;
+    const m = editing.yccdMatrix;
+    if (!m) return;
+    const cs: Record<string, number> = {};
+    for (const c of m.cells) cs[cellKey(c.topicId, c.partId, c.bloom)] = c.count;
+    setCells(cs);
+  }, [editing, scopedPool.length]);
 
   // Cấu phần đề tự suy theo LOẠI CÂU có trong khung — chỉ hiện phần nào thực
   // sự có câu, không bắt người dùng bật/tắt tay.
