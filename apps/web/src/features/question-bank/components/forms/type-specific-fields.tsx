@@ -139,9 +139,19 @@ function EssayFields({
     <div className="space-y-4">
       {/* Rubric criteria */}
       <div className="space-y-2">
+        <p className="text-[12px] text-muted-foreground">
+          Tiêu chí chấm <b>không bắt buộc</b> — để trống vẫn lưu được, thêm sau
+          cũng được. Điểm mỗi tiêu chí nhập theo bước <b>0,25</b>.
+        </p>
         {errors.rubric?.message && (
           <p className="text-[12px] text-destructive">
             {errors.rubric.message as string}
+          </p>
+        )}
+        {fields.length === 0 && (
+          <p className="rounded-md border border-dashed bg-muted/20 px-3 py-2 text-[12px] text-muted-foreground">
+            Chưa có tiêu chí nào. Giáo viên chấm tay theo lời giải ở ô “Giải
+            thích đáp án”.
           </p>
         )}
 
@@ -166,8 +176,8 @@ function EssayFields({
                   render={({ field }) => (
                     <input
                       type="number"
-                      step={0.5}
-                      min={0.5}
+                      step={0.25}
+                      min={0.25}
                       max={20}
                       value={field.value ?? 1}
                       onChange={(e) =>
@@ -177,18 +187,14 @@ function EssayFields({
                     />
                   )}
                 />
-                {fields.length > 1 ? (
-                  <IconButton
-                    variant="destructive"
-                    size="sm"
-                    title="Xoá tiêu chí"
-                    onClick={() => remove(idx)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" strokeWidth={1.75} />
-                  </IconButton>
-                ) : (
-                  <span className="inline-block h-7 w-7" />
-                )}
+                <IconButton
+                  variant="destructive"
+                  size="sm"
+                  title="Xoá tiêu chí"
+                  onClick={() => remove(idx)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" strokeWidth={1.75} />
+                </IconButton>
               </div>
               {(errors.rubric as any)?.[idx]?.label?.message && (
                 <p className="mt-1 text-[12px] text-destructive">

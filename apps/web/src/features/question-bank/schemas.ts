@@ -21,8 +21,13 @@ const BaseFields = z.object({
   campusId: z.string().nullable().default(null),
   // Khung YCCĐ (additive, optional) — question-level competency tag(s) +
   // Bloom, separate from mục lục `tocNodeId` / độ khó `difficulty`.
-  competencyIds: z.array(z.string()).optional().default([]),
-  bloomLevel: BloomLevelSchema.optional(),
+  // Dữ liệu cũ có thể lưu null (Firestore) — nhận null như "chưa gắn" thay
+  // vì đánh trượt cả câu hỏi.
+  competencyIds: z
+    .array(z.string())
+    .nullish()
+    .transform((v) => v ?? []),
+  bloomLevel: BloomLevelSchema.nullish(),
 });
 
 const McqOptionSchema = z.object({
@@ -101,15 +106,21 @@ export const DragDropSchema = BaseFields.extend({
 const EssayCriterionSchema = z.object({
   id: z.string(),
   label: z.string().trim().min(1, "Tiêu chí không được trống").max(200),
-  points: z.coerce.number().min(0.5, "Điểm phải ≥ 0.5").max(20).default(1),
+  // Thang MOET chia tới 0,25 điểm (vd 0,25 / 0,5 / 0,75) — chặn ở 0,5 là
+  // ép người chấm làm tròn sai với hướng dẫn chấm.
+  points: z.coerce.number().min(0.25, "Điểm phải ≥ 0,25").max(20).default(1),
 });
 
 export const EssaySchema = BaseFields.extend({
   type: z.literal("essay"),
+  // Rubric KHÔNG bắt buộc: nhiều câu tự luận nhập từ Word chỉ có lời giải,
+  // tiêu chí chấm thêm sau. Thiếu/rỗng/null đều quy về [] thay vì chặn lưu
+  // bằng lỗi "Invalid input" không nói gì (đúng lỗi đang gặp).
   rubric: z
     .array(EssayCriterionSchema)
-    .min(1, "Cần ít nhất 1 tiêu chí chấm")
-    .max(20),
+    .max(20)
+    .nullish()
+    .transform((v) => v ?? []),
   wordMin: z.coerce.number().min(0).max(10000).optional().default(0),
   wordMax: z.coerce.number().min(0).max(10000).optional().default(0),
   aiAssist: z.boolean().default(false),

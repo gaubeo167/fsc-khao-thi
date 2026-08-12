@@ -826,12 +826,18 @@ function PreviewPanel({
 }
 
 /** Walk a react-hook-form errors object until we find a leaf message. */
-function pickFirstError(node: unknown): string | null {
+function pickFirstError(node: unknown, path: string[] = []): string | null {
   if (!node || typeof node !== "object") return null;
   const o = node as Record<string, unknown>;
-  if (typeof o.message === "string" && o.message.length > 0) return o.message;
+  if (typeof o.message === "string" && o.message.length > 0) {
+    // Kèm tên trường: zod v4 trả "Invalid input" trống trơn cho lỗi kiểu dữ
+    // liệu, không nói field nào → người dùng bó tay (đã gặp với câu tự luận).
+    const where = path.filter((p) => !/^\d+$/.test(p)).join(" › ");
+    return where ? `${o.message} (ở trường: ${where})` : o.message;
+  }
   for (const key of Object.keys(o)) {
-    const found = pickFirstError(o[key]);
+    if (key === "ref" || key === "type") continue;
+    const found = pickFirstError(o[key], [...path, key]);
     if (found) return found;
   }
   return null;
@@ -895,7 +901,8 @@ function hasAnyAnswerData(values: any, type: QuestionType): boolean {
     case "underline":
       return /\[u:[^\]]+\]/.test((values.content ?? "") as string);
     case "essay":
-      return Array.isArray(values.rubric) && values.rubric.length > 0;
+      // Tiêu chí chấm là tuỳ chọn — đề bài xong là qua được bước này.
+      return true;
     case "ai-generated":
       return (values.prompt ?? "").trim().length > 0;
   }
