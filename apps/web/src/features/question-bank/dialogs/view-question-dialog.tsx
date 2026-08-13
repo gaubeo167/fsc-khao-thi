@@ -1,6 +1,7 @@
 "use client";
 
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { keyText } from "@/lib/exam/short-answer-match";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { bloomMeta } from "@/features/competencies/data/types";
 import { useCompetenciesStore } from "@/features/competencies/state/competencies-store";
@@ -260,14 +261,25 @@ export function AnswerView({ question }: { question: Question }) {
         <div className="rounded-lg border bg-surface p-3 text-[13px]">
           <p className="text-meta mb-2">Đáp án chấp nhận:</p>
           <div className="flex flex-wrap gap-1.5">
-            {question.acceptedAnswers.map((a) => (
-              <span
-                key={a}
-                className="rounded-full border border-[#86EFAC] bg-[#DCFCE7]/60 px-2 py-0.5 text-[12px] font-medium text-[#166534]"
-              >
-                <RenderedContent inline content={a} className="text-[#166534]" />
-              </span>
-            ))}
+            {question.acceptedAnswers.map((a, i) => {
+              const text = keyText(a);
+              const grade = typeof a === "string" ? 100 : a.grade ?? 100;
+              const fb = typeof a === "string" ? undefined : a.feedback;
+              return (
+                <span
+                  key={`${text}-${i}`}
+                  title={fb || undefined}
+                  className="inline-flex items-center gap-1 rounded-full border border-[#86EFAC] bg-[#DCFCE7]/60 px-2 py-0.5 text-[12px] font-medium text-[#166534]"
+                >
+                  <RenderedContent inline content={text} className="text-[#166534]" />
+                  {grade !== 100 && (
+                    <span className="rounded bg-[#86EFAC]/50 px-1 text-[10px] font-bold">
+                      {grade}%
+                    </span>
+                  )}
+                </span>
+              );
+            })}
           </div>
           <p className="text-meta mt-2">
             {question.caseSensitive

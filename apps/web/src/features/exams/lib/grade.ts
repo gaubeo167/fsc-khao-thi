@@ -1,3 +1,4 @@
+import { keyText, matchShortAnswer } from "@/lib/exam/short-answer-match";
 import type { Question } from "@/features/question-bank/data/seed-questions";
 
 export type Verdict = "correct" | "wrong" | "partial" | "manual" | "skipped";
@@ -161,26 +162,19 @@ export function gradeQuestion(
       };
     }
     case "short-answer": {
-      const accepted = question.acceptedAnswers;
-      const correctText = accepted.join(" | ");
-      if (typeof answer !== "string" || !answer.trim()) {
-        return {
-          verdict: "skipped",
-          score: 0,
-          correctText,
-          studentText: "(chưa làm)",
-        };
+      // Dùng CHUNG module so khớp với bộ chấm thật để thi thử không lệch:
+      // chuẩn hoá số (0,25 = 0.25), ký tự đại diện *, % điểm từng đáp án.
+      const text = typeof answer === "string" ? answer : "";
+      const correctText = question.acceptedAnswers.map(keyText).join(" / ");
+      if (!text.trim()) {
+        return { verdict: "skipped", score: 0, correctText, studentText: "(chưa làm)" };
       }
-      const studentText = answer.trim();
-      const user = question.caseSensitive ? studentText : norm(studentText);
-      const correct = accepted.some((a) =>
-        question.caseSensitive ? a.trim() === user : norm(a) === user,
-      );
+      const m = matchShortAnswer(text, question.acceptedAnswers, question.caseSensitive);
       return {
-        verdict: correct ? "correct" : "wrong",
-        score: correct ? 1 : 0,
+        verdict: m.ratio >= 1 ? "correct" : m.ratio > 0 ? "partial" : "wrong",
+        score: m.ratio,
         correctText,
-        studentText,
+        studentText: text,
       };
     }
     case "essay": {

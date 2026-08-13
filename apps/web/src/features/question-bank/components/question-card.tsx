@@ -4,6 +4,7 @@ import { Copy, Eye, PencilLine, RotateCcw, Target, Trash2 } from "lucide-react";
 import { memo, useMemo } from "react";
 
 import { IconButton } from "@/components/ui/icon-button";
+import { keyText } from "@/lib/exam/short-answer-match";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useCompetenciesStore } from "@/features/competencies/state/competencies-store";
 import { useGradesStore } from "@/features/grades/state/grades-store";
@@ -313,14 +314,23 @@ function AnswerPreview({ question }: { question: Question }) {
       return (
         <div className="flex flex-wrap items-center gap-1.5 rounded-lg border bg-muted/30 px-3 py-2 text-[13px]">
           <span className="text-meta">Đáp án chấp nhận:</span>
-          {question.acceptedAnswers.map((a) => (
-            <span
-              key={a}
-              className="rounded-md bg-emerald-50 px-2 py-0.5 text-[12px] font-medium text-emerald-700 ring-1 ring-emerald-200"
-            >
-              <RenderedContent inline content={a} className="text-emerald-700" />
-            </span>
-          ))}
+          {question.acceptedAnswers.map((a, i) => {
+            const text = keyText(a);
+            const grade = typeof a === "string" ? 100 : a.grade ?? 100;
+            return (
+              <span
+                key={`${text}-${i}`}
+                className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-[12px] font-medium text-emerald-700 ring-1 ring-emerald-200"
+              >
+                <RenderedContent inline content={text} className="text-emerald-700" />
+                {grade !== 100 && (
+                  <span className="rounded bg-emerald-100 px-1 text-[10px] font-bold">
+                    {grade}%
+                  </span>
+                )}
+              </span>
+            );
+          })}
         </div>
       );
     case "fill-blank":

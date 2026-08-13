@@ -10,6 +10,7 @@
  */
 
 import type { Question } from "@/features/question-bank/data/seed-questions";
+import { matchShortAnswer } from "@/lib/exam/short-answer-match";
 import type { Answer } from "@/features/shift-exam/state/attempts-store";
 
 export function isCorrect(q: Question, a: Answer): boolean {
@@ -36,9 +37,9 @@ export function isCorrect(q: Question, a: Answer): boolean {
       );
     case "short-answer": {
       if (a.kind !== "short-answer") return false;
-      const norm = (s: string) =>
-        q.caseSensitive ? s.trim() : s.trim().toLowerCase();
-      return q.acceptedAnswers.map(norm).includes(norm(a.text));
+      // Module dùng chung với bộ chấm server (chuẩn hoá số, ký tự đại diện,
+      // % điểm). Trước đây mỗi nơi tự so chuỗi → thống kê và điểm lệch nhau.
+      return matchShortAnswer(a.text, q.acceptedAnswers, q.caseSensitive).ratio >= 1;
     }
     case "fill-blank": {
       if (a.kind !== "fill-blank") return false;

@@ -5,6 +5,7 @@ import { create } from "zustand";
 
 import type { Question } from "@/features/question-bank/data/seed-questions";
 import { isFirebaseConfigured } from "@/lib/firebase";
+import { matchShortAnswer } from "@/lib/exam/short-answer-match";
 import { COLLECTIONS } from "@/lib/firestore-collections";
 
 import { SEED_EXAM_ATTEMPTS } from "../data/seed-attempts";
@@ -164,12 +165,10 @@ function gradeOne(
     }
     case "short-answer": {
       if (a.kind !== "short-answer") return { points: 0, correct: false };
-      const norm = (s: string) =>
-        q.caseSensitive ? s.trim() : s.trim().toLowerCase();
-      const accepted = q.acceptedAnswers.map(norm);
-      return accepted.includes(norm(a.text))
-        ? { points: 1, correct: true }
-        : { points: 0, correct: false };
+      // Bản chấm demo (không có Firebase) — vẫn dùng chung module so khớp để
+      // demo và production không cho kết quả khác nhau.
+      const m = matchShortAnswer(a.text, q.acceptedAnswers, q.caseSensitive);
+      return { points: m.ratio, correct: m.ratio >= 1 };
     }
     case "fill-blank": {
       if (a.kind !== "fill-blank") return { points: 0, correct: false };

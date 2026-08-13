@@ -6,6 +6,8 @@ export type Difficulty = "easy" | "medium" | "hard";
 export type Kho = "personal" | "campus";
 export type QuestionStatus = "draft" | "pending" | "approved" | "rejected";
 
+import type { ShortAnswerKey } from "@/lib/exam/short-answer-match";
+
 export interface BaseQuestion {
   id: string;
   type: QuestionType;
@@ -102,9 +104,13 @@ export interface MultiTfQuestion extends BaseQuestion {
 
 export interface ShortAnswerQuestion extends BaseQuestion {
   type: "short-answer";
-  acceptedAnswers: string[];
+  /** Chuỗi trần = 100% điểm (dạng dữ liệu cũ, vẫn dùng được); dạng object
+   *  cho phép đặt % điểm và phản hồi riêng cho từng đáp án như Moodle. */
+  acceptedAnswers: ShortAnswerKey[];
   caseSensitive: boolean;
 }
+
+export type { ShortAnswerKey };
 
 export interface FillBlankQuestion extends BaseQuestion {
   type: "fill-blank";

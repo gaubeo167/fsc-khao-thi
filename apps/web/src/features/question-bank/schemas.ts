@@ -83,9 +83,22 @@ export const MultiTfSchema = BaseFields.extend({
     .max(20),
 });
 
+/** Đáp án trả lời ngắn: chuỗi trần (100%, dữ liệu cũ) HOẶC object có % điểm
+ *  và phản hồi riêng — theo mô hình Moodle short answer. */
+const ShortAnswerKeySchema = z.union([
+  z.string().trim().min(1),
+  z.object({
+    text: z.string().trim().min(1, "Đáp án không được trống"),
+    grade: z.coerce.number().min(0).max(100).default(100),
+    feedback: z.string().max(2000).optional(),
+  }),
+]);
+
 export const ShortAnswerSchema = BaseFields.extend({
   type: z.literal("short-answer"),
-  acceptedAnswers: z.array(z.string().trim().min(1)).min(1, "Cần ít nhất 1 đáp án chấp nhận"),
+  acceptedAnswers: z
+    .array(ShortAnswerKeySchema)
+    .min(1, "Cần ít nhất 1 đáp án chấp nhận"),
   caseSensitive: z.boolean().default(false),
 });
 

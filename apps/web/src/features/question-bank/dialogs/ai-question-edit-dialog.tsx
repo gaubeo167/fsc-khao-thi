@@ -1,6 +1,7 @@
 "use client";
 
 import { zodResolverSafe } from "@/lib/zod-resolver";
+import type { ShortAnswerKey } from "@/lib/exam/short-answer-match";
 import { Check, FileText, PlayCircle, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
@@ -50,7 +51,7 @@ export interface AiEditValues {
   zones?: Array<{ id: string; correctContent: string }>;
   distractors?: Array<{ id: string; content: string }>;
   // short-answer
-  acceptedAnswers?: string[];
+  acceptedAnswers?: ShortAnswerKey[];
   caseSensitive?: boolean;
 }
 
@@ -128,7 +129,18 @@ const EditSchema = z.object({
       }),
     )
     .optional(),
-  acceptedAnswers: z.array(z.string()).optional(),
+  acceptedAnswers: z
+    .array(
+      z.union([
+        z.string(),
+        z.object({
+          text: z.string(),
+          grade: z.number().optional(),
+          feedback: z.string().optional(),
+        }),
+      ]),
+    )
+    .optional(),
   caseSensitive: z.boolean().optional(),
 });
 

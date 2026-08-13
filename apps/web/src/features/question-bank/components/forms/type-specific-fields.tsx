@@ -23,6 +23,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { Label } from "@/components/ui/label";
 import { CompetencyPicker } from "@/features/competencies/components/competency-picker";
 import { useCompetenciesStore } from "@/features/competencies/state/competencies-store";
+import { keyText, type ShortAnswerKey } from "@/lib/exam/short-answer-match";
 import { cn } from "@/lib/utils";
 
 import type { QuestionType } from "../../data/question-types";
@@ -1112,6 +1113,137 @@ function SubQuestionRow({
   );
 }
 
+
+/**
+ * Bảng đáp án của câu TRẢ LỜI NGẮN — theo mô hình Moodle short answer:
+ * mỗi đáp án có % điểm riêng và phản hồi riêng, chấm duyệt TỪ TRÊN XUỐNG và
+ * dừng ở dòng khớp đầu tiên.
+ *
+ * Lưu gọn: đáp án 100% không phản hồi được lưu thành CHUỖI TRẦN, đúng dạng
+ * dữ liệu cũ — câu hỏi đã có trong kho không phải chuyển đổi gì.
+ */
+function ShortAnswerKeysField({
+  control,
+  error,
+}: {
+  control: Control<any>;
+  error?: string;
+}) {
+  return (
+    <Controller
+      control={control}
+      name="acceptedAnswers"
+      render={({ field }) => {
+        const raw: ShortAnswerKey[] = Array.isArray(field.value) ? field.value : [];
+        const rows = raw.map((k) => ({
+          text: typeof k === "string" ? k : k.text ?? "",
+          grade: typeof k === "string" ? 100 : k.grade ?? 100,
+          feedback: typeof k === "string" ? "" : k.feedback ?? "",
+        }));
+        const commit = (next: typeof rows) => {
+          field.onChange(
+            next.map((r) =>
+              r.grade === 100 && !r.feedback.trim()
+                ? r.text
+                : { text: r.text, grade: r.grade, feedback: r.feedback.trim() || undefined },
+            ),
+          );
+        };
+        const patch = (i: number, p: Partial<(typeof rows)[number]>) =>
+          commit(rows.map((r, idx) => (idx === i ? { ...r, ...p } : r)));
+
+        return (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-[13px] font-medium text-foreground/80">
+                Đáp án chấp nhận *
+              </Label>
+              <span className="text-[11.5px] text-muted-foreground">
+                Chấm từ trên xuống, khớp dòng đầu tiên là dừng
+              </span>
+            </div>
+
+            <ul className="space-y-1.5">
+              {rows.map((r, i) => (
+                <li key={i} className="grid grid-cols-[minmax(0,1fr)_86px_minmax(0,1fr)_auto] items-center gap-2">
+                  <input
+                    value={r.text}
+                    onChange={(e) => patch(i, { text: e.target.value })}
+                    placeholder="vd: Hà Nội — dùng * để khớp mọi ký tự"
+                    className="block w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                  />
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={5}
+                      value={r.grade}
+                      onChange={(e) =>
+                        patch(i, {
+                          grade: Math.min(100, Math.max(0, Number(e.target.value) || 0)),
+                        })
+                      }
+                      title="Phần trăm điểm khi khớp đáp án này"
+                      className="block w-full rounded-md border border-input bg-background px-2 py-2 text-right text-sm tabular-nums focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                    />
+                    <span className="text-[12px] text-muted-foreground">%</span>
+                  </div>
+                  <input
+                    value={r.feedback}
+                    onChange={(e) => patch(i, { feedback: e.target.value })}
+                    placeholder="Phản hồi (tuỳ chọn)"
+                    className="block w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                  />
+                  <IconButton
+                    variant="destructive"
+                    size="sm"
+                    title="Xoá đáp án"
+                    onClick={() => commit(rows.filter((_, idx) => idx !== i))}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" strokeWidth={1.75} />
+                  </IconButton>
+                </li>
+              ))}
+            </ul>
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => commit([...rows, { text: "", grade: 100, feedback: "" }])}
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Thêm đáp án
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                title="Bắt mọi câu trả lời còn lại để hiện lời giải thích — cách Moodle khuyên dùng"
+                onClick={() =>
+                  commit([...rows, { text: "*", grade: 0, feedback: "" }])
+                }
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Thêm dòng bắt-tất-cả (*)
+              </Button>
+            </div>
+
+            <p className="text-[11.5px] leading-relaxed text-muted-foreground">
+              Số được so theo GIÁ TRỊ: <b>0,25</b> = <b>0.25</b> = <b>1/4</b>, <b>5</b> = <b>5,0</b>.
+              Dấu <b>*</b> khớp mọi ký tự (<code>ran*ing</code> khớp “running”); viết <b>\*</b> nếu
+              cần khớp đúng dấu sao.
+            </p>
+            {error && <p className="text-[12px] text-destructive">{error}</p>}
+          </div>
+        );
+      }}
+    />
+  );
+}
+
 function ShortAnswerFields({
   control,
   errors,
@@ -1128,11 +1260,8 @@ function ShortAnswerFields({
         onAi={() => setAiOpen(true)}
       />
 
-      <AnswerListField
+      <ShortAnswerKeysField
         control={control}
-        name="acceptedAnswers"
-        label="Đáp án chấp nhận *"
-        placeholder="vd: Hà Nội, Hanoi…"
         error={errors.acceptedAnswers?.message as string}
       />
       <Controller
@@ -1161,9 +1290,24 @@ function ShortAnswerFields({
             onOpenChange={setAiOpen}
             intent="answer"
             onAccept={(text) => {
+              // Danh sách đáp án giờ có thể chứa object (có % điểm / phản hồi),
+              // nên gộp theo NỘI DUNG chứ không theo tham chiếu — Set trên
+              // object không khử được trùng và sẽ đẻ ra dòng lặp.
               const suggestions = parseAcceptedAnswers(text);
-              const current: string[] = Array.isArray(field.value) ? field.value : [];
-              const merged = Array.from(new Set([...current, ...suggestions]));
+              const current: ShortAnswerKey[] = Array.isArray(field.value)
+                ? field.value
+                : [];
+              const seen = new Set(
+                current.map((k) => keyText(k).trim().toLowerCase()),
+              );
+              const merged = [...current];
+              for (const sug of suggestions) {
+                const norm = sug.trim().toLowerCase();
+                if (norm && !seen.has(norm)) {
+                  seen.add(norm);
+                  merged.push(sug);
+                }
+              }
               field.onChange(merged);
             }}
           />

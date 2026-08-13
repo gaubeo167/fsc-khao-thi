@@ -15,6 +15,7 @@ import { notFound, useParams } from "next/navigation";
 import { useMemo } from "react";
 
 import { useUsersStore } from "@/features/admin/users/users-store";
+import { keyText, matchShortAnswer } from "@/lib/exam/short-answer-match";
 import { useUserScope } from "@/features/auth/lib/use-scope";
 import { useAuthStore } from "@/features/auth/state/auth-store";
 import { useCampusStore } from "@/features/campus/state/campus-store";
@@ -546,7 +547,7 @@ function renderCorrectAnswer(q: Question) {
     case "short-answer":
       return (
         <span className="font-mono">
-          {q.acceptedAnswers.join(" / ")}
+          {q.acceptedAnswers.map(keyText).join(" / ")}
           {q.caseSensitive && (
             <span className="ml-2 text-[10.5px] text-muted-foreground">
               (phân biệt hoa thường)
@@ -658,9 +659,9 @@ function isCorrect(q: Question, a: Answer): boolean {
       );
     case "short-answer": {
       if (a.kind !== "short-answer") return false;
-      const norm = (s: string) =>
-        q.caseSensitive ? s.trim() : s.trim().toLowerCase();
-      return q.acceptedAnswers.map(norm).includes(norm(a.text));
+      // Dùng chung module so khớp với bộ chấm server, nếu không màn hình sẽ
+      // báo sai/đúng khác với điểm đã chấm (0,25 vs 0.25, ký tự đại diện…).
+      return matchShortAnswer(a.text, q.acceptedAnswers, q.caseSensitive).ratio >= 1;
     }
     case "fill-blank": {
       if (a.kind !== "fill-blank") return false;

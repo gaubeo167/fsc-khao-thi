@@ -16,6 +16,8 @@
 import type { Question } from "@/features/question-bank/data/seed-questions";
 import type { Answer } from "@/features/shift-exam/state/attempts-store";
 
+import { matchShortAnswer } from "./short-answer-match";
+
 export function gradeQuestion(
   q: Question,
   a: Answer | undefined,
@@ -46,11 +48,10 @@ export function gradeQuestion(
     }
     case "short-answer": {
       if (a.kind !== "short-answer") return { points: 0, correct: false };
-      const norm = (s: string) => (q.caseSensitive ? s.trim() : s.trim().toLowerCase());
-      const accepted = q.acceptedAnswers.map(norm);
-      return accepted.includes(norm(a.text))
-        ? { points: 1, correct: true }
-        : { points: 0, correct: false };
+      // So khớp nằm ở module dùng chung với bộ chấm thi thử: chuẩn hoá số
+      // (0,25 = 0.25 = 1/4), ký tự đại diện *, và % điểm từng đáp án.
+      const m = matchShortAnswer(a.text, q.acceptedAnswers, q.caseSensitive);
+      return { points: m.ratio, correct: m.ratio >= 1 };
     }
     case "fill-blank": {
       if (a.kind !== "fill-blank") return { points: 0, correct: false };
@@ -273,7 +274,9 @@ export function gradeQuestionRatio(
 
   const r = gradeQuestion(q, a);
   if (r == null) return null;
-  return r.points > 0 ? 1 : 0;
+  // `points` của gradeQuestion là 0..1 (trả lời ngắn có thể ăn một phần theo
+  // % đáp án). Ép về 0/1 ở đây là xoá mất điểm từng phần vừa tính.
+  return Math.min(1, Math.max(0, r.points));
 }
 
 /** Chỉ những trường của ScoringPolicy mà bộ chấm cần (tránh phụ thuộc vòng). */

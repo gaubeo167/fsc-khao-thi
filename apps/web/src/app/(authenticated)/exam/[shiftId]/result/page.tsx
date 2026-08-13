@@ -14,6 +14,7 @@ import { notFound, useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { useAuthStore } from "@/features/auth/state/auth-store";
+import { keyText, matchShortAnswer } from "@/lib/exam/short-answer-match";
 import {
   DEFAULT_SCORING,
   DEFAULT_RESULT_VISIBILITY,
@@ -493,6 +494,21 @@ export default function ExamResultPage() {
                         💬 {grade.graderName}: {grade.comment}
                       </span>
                     )}
+                    {/* Phản hồi giáo viên gắn cho ĐÁP ÁN mà học sinh đã khớp
+                        (kiểu Moodle short answer). Không hiện thì cả tính năng
+                        chỉ nằm trong form soạn, học sinh chẳng bao giờ thấy. */}
+                    {q?.type === "short-answer" &&
+                      ans?.kind === "short-answer" &&
+                      (() => {
+                        const fb = matchShortAnswer(
+                          ans.text,
+                          q.acceptedAnswers,
+                          q.caseSensitive,
+                        ).feedback;
+                        return fb ? (
+                          <span className="italic text-amber-700">💡 {fb}</span>
+                        ) : null;
+                      })()}
                   </div>
                 </div>
                 {correctnessIcon}
@@ -536,9 +552,9 @@ function isCorrect(
       );
     case "short-answer": {
       if (a.kind !== "short-answer") return false;
-      const norm = (s: string) =>
-        q.caseSensitive ? s.trim() : s.trim().toLowerCase();
-      return q.acceptedAnswers.map(norm).includes(norm(a.text));
+      // Dùng chung module so khớp với bộ chấm server, nếu không màn hình sẽ
+      // báo sai/đúng khác với điểm đã chấm (0,25 vs 0.25, ký tự đại diện…).
+      return matchShortAnswer(a.text, q.acceptedAnswers, q.caseSensitive).ratio >= 1;
     }
     case "fill-blank": {
       if (a.kind !== "fill-blank") return false;

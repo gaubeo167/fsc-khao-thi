@@ -23,6 +23,8 @@
  * with one line per Word paragraph / table cell / option.
  */
 
+import type { ShortAnswerKey } from "@/lib/exam/short-answer-match";
+
 export const U_OPEN = "\u27E6U\u27E7"; // ⟦U⟧
 export const U_CLOSE = "\u27E6/U\u27E7"; // ⟦/U⟧
 
@@ -49,8 +51,10 @@ export interface ParsedBankQuestion {
   options: Array<{ content: string; isCorrect: boolean }>;
   /** multi-tf (đúng-sai). */
   subQuestions: Array<{ statement: string; correctAnswer: boolean }>;
-  /** short-answer accepted answers (from <Key=…>). */
-  acceptedAnswers: string[];
+  /** Đáp án câu trả lời ngắn, lấy từ `<Key=…>`. Chuỗi trần = 100% điểm;
+   *  dạng object khi người soạn ghi thêm % điểm / phản hồi:
+   *  `<Key=đáp án|50%|lời nhắc>`. */
+  acceptedAnswers: ShortAnswerKey[];
   /** Lời giải / hướng dẫn giải / đáp án viết dưới câu hỏi. Với câu tự luận
    *  đây là đáp án mẫu — về sau làm cơ sở cho chấm AI theo rubric. */
   explanation: string;
@@ -113,6 +117,28 @@ function isSectionLine(line: string): boolean {
     /^ĐỀ CHÍNH THỨC/i.test(line) ||
     /^Câu\s+\d+\.?\s*$/i.test(line)
   );
+}
+
+
+/**
+ * `<Key=…>` nhận ba dạng, tương thích ngược hoàn toàn:
+ *   <Key=Hà Nội>                    → 100% điểm
+ *   <Key=Ha Noi|50%>                → 50% điểm
+ *   <Key=*|0%|Sai rồi, xem lại bài> → bắt-tất-cả kèm phản hồi (kiểu Moodle)
+ * Không có "|" thì trả về CHUỖI TRẦN để dữ liệu giống hệt trước đây.
+ */
+export function parseAnswerKey(raw: string): ShortAnswerKey {
+  const parts = raw.split("|");
+  const text = (parts[0] ?? "").trim();
+  if (parts.length === 1) return text;
+  const gradeRaw = (parts[1] ?? "").trim().replace("%", "").replace(",", ".");
+  const grade = Number(gradeRaw);
+  const feedback = parts.slice(2).join("|").trim();
+  return {
+    text,
+    grade: Number.isFinite(grade) ? Math.min(100, Math.max(0, grade)) : 100,
+    ...(feedback ? { feedback } : {}),
+  };
 }
 
 export function parseExamBank(marked: string): ExamBankParseResult {
@@ -204,7 +230,7 @@ export function parseExamBank(marked: string): ExamBankParseResult {
     // phần lời giải vẫn được nhận là đáp án chấm máy.
     const key = KEY_RE.exec(clean);
     if (key && cur.typeLetter === "S") {
-      cur.acceptedAnswers.push(key[1]!.trim());
+      cur.acceptedAnswers.push(parseAnswerKey(key[1]!));
       continue;
     }
 
