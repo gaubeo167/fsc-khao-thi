@@ -372,13 +372,25 @@ export const useAttemptsStore = create<State & Actions>()((set, get) => ({
           correctCount: number;
           maxScore: number;
           submittedAt: string;
+          points?: number | null;
+          maxPoints?: number | null;
+          perQuestionPoints?: Record<string, number> | null;
+          earnedPerQuestion?: Record<string, number> | null;
         };
+        // Phải bê ĐỦ các trường điểm server vừa chấm sang row cục bộ. Bỏ sót
+        // là màn kết quả không thấy điểm/câu → lùi về chia đều tổng điểm cho
+        // số câu (đề 10đ/11 câu ra 0,91đ cho 1 câu đúng thay vì 1đ), rồi số
+        // tự nhảy khi snapshot Firestore về.
         const next: StudentAttempt = {
           ...att,
           submittedAt: data.submittedAt,
           score: data.score,
           maxScore: data.maxScore,
           correctCount: data.correctCount,
+          points: data.points ?? null,
+          maxPoints: data.maxPoints ?? null,
+          perQuestionPoints: data.perQuestionPoints ?? null,
+          earnedPerQuestion: data.earnedPerQuestion ?? null,
         };
         set({ attempts: get().attempts.map((a) => (a.id === attemptId ? next : a)) });
         return next;

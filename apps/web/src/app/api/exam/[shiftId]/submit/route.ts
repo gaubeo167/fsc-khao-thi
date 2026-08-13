@@ -193,6 +193,11 @@ export async function POST(
     maxScore,
     points: weighted?.points ?? null,
     maxPoints: weighted?.maxPoints ?? null,
+    // Trả luôn 2 bản đồ điểm để client cập nhật ngay sau khi nộp, không phải
+    // chờ snapshot Firestore về (chờ = học sinh thấy điểm sai vài giây rồi
+    // số tự đổi).
+    perQuestionPoints: weighted?.perQuestion ?? null,
+    earnedPerQuestion: weighted?.earnedPerQuestion ?? null,
     submittedAt: now,
   });
 }
