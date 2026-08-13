@@ -887,7 +887,7 @@ export function YccdWizard({
             quay lại đây.
           </p>
           <Link
-            href="/admin/subjects"
+            href="/admin/subjects?tab=competency"
             className="mt-3 inline-block text-[12px] font-semibold text-primary hover:underline"
           >
             → Sang Môn học · tab Khung YCCĐ

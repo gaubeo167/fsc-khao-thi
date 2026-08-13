@@ -14,7 +14,7 @@ import {
   Trash2,
 } from "lucide-react";
 import dynamic from "next/dynamic";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -73,6 +73,9 @@ import { PageHeader } from "@/features/shell/components/page-header";
 import type { FrameworkNode } from "@/lib/toc/parse-framework";
 import { cn } from "@/lib/utils";
 
+/** Các tab của trang — cũng là giá trị hợp lệ cho `?tab=` trên URL. */
+type SubjectsTab = "list" | "toc" | "competency";
+
 export default function SubjectsAdminPage() {
   const session = useAuthStore((s) => s.session);
   const activeCampusId = useCampusStore((s) => s.activeCampusId);
@@ -105,7 +108,22 @@ export default function SubjectsAdminPage() {
     [operatingCampus],
   );
 
-  const [tab, setTab] = useState<"list" | "toc" | "competency">("list");
+  const [tab, setTab] = useState<SubjectsTab>("list");
+
+  // Cho phép deep-link tới đúng tab: `/admin/subjects?tab=competency`.
+  // Trang trống YCCĐ ở wizard tạo đề trỏ thẳng sang đây, và trước khi có
+  // đoạn này link vẫn mở tab "Danh sách môn học" — người dùng bấm vào chỗ
+  // ghi rõ "tab Khung YCCĐ" rồi phải tự đi tìm.
+  //
+  // Đọc trong effect (không phải trong initializer của useState) để server
+  // và client luôn render cùng một tab ở lần đầu — tránh hydration
+  // mismatch, đổi tab ngay frame sau khi đã gắn vào DOM.
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get("tab");
+    if (wanted === "toc" || wanted === "competency" || wanted === "list") {
+      setTab(wanted);
+    }
+  }, []);
 
   // Subject list filters
   const [search, setSearch] = useState("");
@@ -274,10 +292,7 @@ export default function SubjectsAdminPage() {
 
       <CampusGateBanner />
 
-      <Tabs
-        value={tab}
-        onValueChange={(v) => setTab(v as "list" | "toc" | "competency")}
-      >
+      <Tabs value={tab} onValueChange={(v) => setTab(v as SubjectsTab)}>
         <div className="mb-3">
           <TabsList>
             <TabsTrigger value="list">Danh sách môn học</TabsTrigger>
