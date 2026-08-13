@@ -276,6 +276,46 @@
   }
 }
 
+/*
+ * ─────────────────────────────────────────────────────────────────────────
+ *  prefers-reduced-motion — phân biệt chuyển động CHỨC NĂNG và TRANG TRÍ.
+ *
+ *  Đoạn reset hay được chép trên mạng đặt `animation-iteration-count: 1`
+ *  cho toàn bộ `*`. Ở app này thì đó là sai: 27 chỗ dùng animate-spin và 8
+ *  chỗ dùng animate-pulse đều là báo hiệu ĐANG TẢI. Cho chúng quay đúng một
+ *  vòng rồi đứng im nghĩa là người bật giảm chuyển động sẽ thấy spinner
+ *  đóng băng và tưởng hệ thống treo — tệ hơn hẳn thứ ta định tránh.
+ *
+ *  Luật ở đây:
+ *    - Chuyển động chức năng (spinner, skeleton): CHẬM LẠI, không tắt.
+ *      Vẫn nói được "đang chạy" mà không giật mắt.
+ *    - Chuyển động trang trí (chấm live nhấp nháy): TẮT HẲN. Nó nằm trên
+ *      màn giám sát mà giám thị nhìn suốt cả ca thi, và đã có nhãn chữ
+ *      "ĐANG DIỄN RA" ngay bên cạnh nên không mất thông tin nào.
+ *    - Transition: rút gần bằng 0. Không mang thông tin.
+ * ─────────────────────────────────────────────────────────────────────────
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* Chức năng: giữ vòng lặp, hạ tốc. */
+  .animate-spin {
+    animation-duration: 2s !important;
+  }
+  .animate-pulse {
+    animation-duration: 4s !important;
+  }
+  /* Trang trí: dừng, giữ nguyên hiển thị. */
+  .status-live-dot {
+    animation: none !important;
+    opacity: 1;
+  }
+}
+
 @keyframes fsc-live-pulse {
   0%,
   100% {
