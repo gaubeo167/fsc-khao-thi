@@ -72,6 +72,17 @@ export const QUESTION_TYPES: QuestionTypeMeta[] = [
     color: "#16A34A",
   },
   {
+    // Trả lời ngắn ĐÃ có schema, form soạn, parser upload (mã S) và bộ chấm,
+    // nhưng thiếu mục này nên picker không bao giờ render → soạn tay không
+    // chọn được. Đây là cột "Trắc nghiệm trả lời ngắn" của ma trận MOET.
+    id: "short-answer",
+    name: "Trả lời ngắn",
+    shortName: "Short answer",
+    description: "Short answer · Học sinh gõ đáp án ngắn (số hoặc từ)",
+    icon: PencilRuler,
+    color: "#0891B2",
+  },
+  {
     id: "fill-blank",
     name: "Điền khuyết",
     shortName: "Fill in blank",

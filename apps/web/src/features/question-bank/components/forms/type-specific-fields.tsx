@@ -9,7 +9,7 @@ import {
   Trash2,
   XCircle,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Controller,
   useFieldArray,
@@ -1129,25 +1129,43 @@ function ShortAnswerKeysField({
   control: Control<any>;
   error?: string;
 }) {
+  const latestRef = useRef<ShortAnswerKey[]>([]);
   return (
     <Controller
       control={control}
       name="acceptedAnswers"
       render={({ field }) => {
+        // Giữ bản mới nhất trong ref: hai lần bấm "Thêm đáp án" trong cùng một
+        // nhịp React đều đọc `field.value` CŨ, nên lần bấm sau ghi đè lần trước
+        // và chỉ ra một dòng. Ref luôn trỏ vào giá trị hiện tại.
         const raw: ShortAnswerKey[] = Array.isArray(field.value) ? field.value : [];
+        latestRef.current = raw;
         const rows = raw.map((k) => ({
           text: typeof k === "string" ? k : k.text ?? "",
           grade: typeof k === "string" ? 100 : k.grade ?? 100,
           feedback: typeof k === "string" ? "" : k.feedback ?? "",
         }));
+        const rowsOf = (list: ShortAnswerKey[]) =>
+          list.map((k) => ({
+            text: typeof k === "string" ? k : k.text ?? "",
+            grade: typeof k === "string" ? 100 : k.grade ?? 100,
+            feedback: typeof k === "string" ? "" : k.feedback ?? "",
+          }));
         const commit = (next: typeof rows) => {
-          field.onChange(
-            next.map((r) =>
-              r.grade === 100 && !r.feedback.trim()
-                ? r.text
-                : { text: r.text, grade: r.grade, feedback: r.feedback.trim() || undefined },
-            ),
+          const serialized: ShortAnswerKey[] = next.map((r) =>
+            r.grade === 100 && !r.feedback.trim()
+              ? r.text
+              : {
+                  text: r.text,
+                  grade: r.grade,
+                  feedback: r.feedback.trim() || undefined,
+                },
           );
+          // Cập nhật ref NGAY, không đợi render kế tiếp: bấm "Thêm đáp án"
+          // nhiều lần liên tiếp thì lần sau phải nhìn thấy dòng lần trước vừa
+          // thêm, nếu không nó ghi đè và chỉ ra một dòng.
+          latestRef.current = serialized;
+          field.onChange(serialized);
         };
         const patch = (i: number, p: Partial<(typeof rows)[number]>) =>
           commit(rows.map((r, idx) => (idx === i ? { ...r, ...p } : r)));
@@ -1212,7 +1230,12 @@ function ShortAnswerKeysField({
                 type="button"
                 size="sm"
                 variant="outline"
-                onClick={() => commit([...rows, { text: "", grade: 100, feedback: "" }])}
+                onClick={() =>
+                  commit([
+                    ...rowsOf(latestRef.current),
+                    { text: "", grade: 100, feedback: "" },
+                  ])
+                }
               >
                 <Plus className="h-3.5 w-3.5" />
                 Thêm đáp án
@@ -1223,7 +1246,10 @@ function ShortAnswerKeysField({
                 variant="outline"
                 title="Bắt mọi câu trả lời còn lại để hiện lời giải thích — cách Moodle khuyên dùng"
                 onClick={() =>
-                  commit([...rows, { text: "*", grade: 0, feedback: "" }])
+                  commit([
+                    ...rowsOf(latestRef.current),
+                    { text: "*", grade: 0, feedback: "" },
+                  ])
                 }
               >
                 <Plus className="h-3.5 w-3.5" />
@@ -1233,8 +1259,9 @@ function ShortAnswerKeysField({
 
             <p className="text-[11.5px] leading-relaxed text-muted-foreground">
               Số được so theo GIÁ TRỊ: <b>0,25</b> = <b>0.25</b> = <b>1/4</b>, <b>5</b> = <b>5,0</b>.
-              Dấu <b>*</b> khớp mọi ký tự (<code>ran*ing</code> khớp “running”); viết <b>\*</b> nếu
-              cần khớp đúng dấu sao.
+              Dấu <b>*</b> khớp mọi ký tự: <code>ran*ing</code> khớp “ranting”,
+              <code>fuel*oxygen</code> khớp “fuel, oxygen”. Viết <b>\*</b> nếu cần khớp
+              đúng dấu sao.
             </p>
             {error && <p className="text-[12px] text-destructive">{error}</p>}
           </div>
