@@ -20,6 +20,7 @@ import {
   FILE_TYPE_LABEL,
   formatFileSize,
 } from "@/features/learning-materials/data/types";
+import { keyText } from "@/lib/exam/short-answer-match";
 import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 
@@ -664,7 +665,7 @@ function CorrectAnswerHint({ q }: { q: Question }) {
     case "short-answer":
       return (
         <p className="text-[12.5px] text-emerald-700">
-          Đáp án chấp nhận: <b>{q.acceptedAnswers.join(" / ")}</b>
+          Đáp án chấp nhận: <b>{q.acceptedAnswers.map(keyText).join(" / ")}</b>
         </p>
       );
     case "fill-blank":

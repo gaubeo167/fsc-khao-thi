@@ -18,6 +18,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { useAuthStore } from "@/features/auth/state/auth-store";
 import { useCampusStore } from "@/features/campus/state/campus-store";
+import { keyText } from "@/lib/exam/short-answer-match";
 import type { BloomLevel } from "@/features/competencies/data/types";
 import { useCompetenciesStore } from "@/features/competencies/state/competencies-store";
 import { useGradesStore } from "@/features/grades/state/grades-store";
@@ -837,7 +838,7 @@ function AnswerPreview({ v }: { v: AiEditValues }) {
       <p className="mt-2 text-[12px]">
         Đáp án:{" "}
         <span className="font-medium text-emerald-700">
-          {(v.acceptedAnswers ?? []).join(", ") || "—"}
+          {(v.acceptedAnswers ?? []).map(keyText).join(", ") || "—"}
         </span>
       </p>
     );

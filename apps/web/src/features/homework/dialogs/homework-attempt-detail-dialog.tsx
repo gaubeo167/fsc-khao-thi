@@ -11,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { keyText } from "@/lib/exam/short-answer-match";
 import { RenderedContent } from "@/features/question-bank/components/rendered-content";
 import type { Question } from "@/features/question-bank/data/seed-questions";
 import { isCorrect } from "@/features/shift-exam/lib/is-correct";
@@ -220,7 +221,7 @@ function AnswerSummary({ q, a }: { q: Question; a: Answer | undefined }) {
           <Box label="HS trả lời">
             {a.kind === "short-answer" ? a.text : "(bỏ trống)"}
           </Box>
-          <Box label="Đáp án chấp nhận">{q.acceptedAnswers.join(" / ")}</Box>
+          <Box label="Đáp án chấp nhận">{q.acceptedAnswers.map(keyText).join(" / ")}</Box>
         </div>
       );
     case "fill-blank":

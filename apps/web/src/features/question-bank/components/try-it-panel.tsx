@@ -15,6 +15,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { keyText, matchShortAnswer, type ShortAnswerKey } from "@/lib/exam/short-answer-match";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
@@ -557,12 +558,20 @@ function MultiTfArea({ values, submitted, onSubmit }: AreaProps) {
 
 function ShortAnswerArea({ values, submitted, onSubmit }: AreaProps) {
   const [answer, setAnswer] = useState("");
-  const accepted: string[] = values.acceptedAnswers ?? [];
+  // Dùng CHUNG module so khớp với bộ chấm thật. Trước đây chỗ này tự so
+  // chuỗi: đáp án "4,16" mà học sinh gõ "4.16" thì báo sai, và với đáp án
+  // có % điểm (dạng object) thì `.trim()` ném lỗi làm sập màn làm thử.
+  const accepted: ShortAnswerKey[] = values.acceptedAnswers ?? [];
   const caseSensitive = Boolean(values.caseSensitive);
-  const norm = (s: string) =>
-    caseSensitive ? s.trim() : s.trim().toLowerCase();
-  const isCorrect = accepted.some((a) => norm(a) === norm(answer));
-  const verdict: Verdict = !submitted ? null : isCorrect ? "correct" : "wrong";
+  const match = matchShortAnswer(answer, accepted, caseSensitive);
+  const isCorrect = match.ratio >= 1;
+  const verdict: Verdict = !submitted
+    ? null
+    : isCorrect
+      ? "correct"
+      : match.ratio > 0
+        ? "partial"
+        : "wrong";
 
   return (
     <div className="space-y-2.5">
@@ -573,6 +582,7 @@ function ShortAnswerArea({ values, submitted, onSubmit }: AreaProps) {
         placeholder="Nhập đáp án…"
         className={cn(
           submitted && isCorrect && "border-emerald-400 bg-emerald-50",
+          submitted && !isCorrect && match.ratio > 0 && "border-amber-400 bg-amber-50",
           submitted && !isCorrect && "border-rose-400 bg-rose-50",
         )}
       />
@@ -581,7 +591,9 @@ function ShortAnswerArea({ values, submitted, onSubmit }: AreaProps) {
         detail={
           isCorrect
             ? "Đáp án của bạn khớp."
-            : `Đáp án được chấp nhận: ${accepted.join(" · ") || "—"}`
+            : match.ratio > 0
+              ? `Đúng một phần (${Math.round(match.ratio * 100)}%)${match.feedback ? ` — ${match.feedback}` : ""}`
+              : `Đáp án được chấp nhận: ${accepted.map(keyText).join(" · ") || "—"}${match.feedback ? ` — ${match.feedback}` : ""}`
         }
       />
     </div>
