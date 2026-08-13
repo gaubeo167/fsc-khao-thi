@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { classifyAiError, type AiErrorKind } from "@/lib/ai/classify-error";
 import { authHeaders } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
@@ -44,9 +45,7 @@ export function StudentProgressCard({
     "idle",
   );
   const [aiError, setAiError] = useState<string | null>(null);
-  const [aiErrorKind, setAiErrorKind] = useState<
-    "overload" | "auth" | "other" | null
-  >(null);
+  const [aiErrorKind, setAiErrorKind] = useState<AiErrorKind | null>(null);
   // Bump on retry click to re-trigger the effect.
   const [retryNonce, setRetryNonce] = useState(0);
   const inflightRef = useRef<AbortController | null>(null);
@@ -115,13 +114,9 @@ export function StudentProgressCard({
         const msg = String(data?.message ?? "AI không phản hồi");
         setAiError(msg);
         // Classify so the UI can show a friendlier message + retry CTA.
-        if (
-          res.status === 429 ||
-          res.status === 503 ||
-          res.status === 529 ||
-          /overload|high demand|try again later/i.test(msg)
-        ) {
-          setAiErrorKind("overload");
+        const kind = classifyAiError(res.status, data);
+        setAiErrorKind(kind);
+        if (kind === "overload") {
           // Schedule a background retry — backoff 30s, 60s, 120s. After
           // that the user keeps the manual button.
           const schedule = [30, 60, 120];
@@ -135,10 +130,6 @@ export function StudentProgressCard({
               setRetryNonce((n) => n + 1);
             }, wait);
           }
-        } else if (res.status === 401 || res.status === 403) {
-          setAiErrorKind("auth");
-        } else {
-          setAiErrorKind("other");
         }
         return;
       }
@@ -297,21 +288,37 @@ export function StudentProgressCard({
                       <RetryCountdown targetAt={nextAutoRetryAt} />
                     )}
                   </>
-                ) : aiErrorKind === "auth" ? (
+                ) : aiErrorKind === "session" ? (
+                  <>
+                    <p className="font-semibold">Phiên đăng nhập đã hết hạn</p>
+                    <p className="mt-0.5 text-[12px] text-rose-600/85">
+                      Tải lại trang để đăng nhập lại. Các số liệu bên trên vẫn
+                      đúng — chỉ phần nhận xét của AI cần đăng nhập.
+                    </p>
+                  </>
+                ) : aiErrorKind === "config" ? (
                   <>
                     <p className="font-semibold">
-                      Cấu hình AI API key chưa đúng
+                      {audience === "student"
+                        ? "Chức năng AI đang tạm ngưng"
+                        : "Cấu hình AI API key chưa đúng"}
                     </p>
                     <p className="mt-0.5 text-[12px] text-rose-600/85">
-                      Liên hệ admin để kiểm tra biến môi trường
-                      <code className="mx-1 rounded bg-rose-100 px-1">
-                        ANTHROPIC_API_KEY
-                      </code>
-                      /
-                      <code className="mx-1 rounded bg-rose-100 px-1">
-                        GEMINI_API_KEY
-                      </code>
-                      trên Vercel.
+                      {audience === "student" ? (
+                        "Nhà trường đang xử lý. Các số liệu bên trên vẫn đúng."
+                      ) : (
+                        <>
+                          Liên hệ admin để kiểm tra biến môi trường
+                          <code className="mx-1 rounded bg-rose-100 px-1">
+                            ANTHROPIC_API_KEY
+                          </code>
+                          /
+                          <code className="mx-1 rounded bg-rose-100 px-1">
+                            GEMINI_API_KEY
+                          </code>
+                          .
+                        </>
+                      )}
                     </p>
                   </>
                 ) : (
