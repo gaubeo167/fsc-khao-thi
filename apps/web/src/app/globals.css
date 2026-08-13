@@ -26,17 +26,36 @@
   --color-popover: #ffffff;
   --color-popover-foreground: #0f172a;
   --color-muted: #f1f5f9;
-  --color-muted-foreground: #64748b;
+  /* Xem ghi chú tương phản ở --color-text-muted. Hai token này luôn cùng giá trị. */
+  --color-muted-foreground: #5f6f85;
   --color-accent: #f1f5f9;
   --color-accent-foreground: #0f172a;
   --color-secondary: #f1f5f9;
   --color-secondary-foreground: #0f172a;
 
-  /* === Text hierarchy (4 levels) === */
+  /*
+   * === Text hierarchy (3 levels) ===
+   *
+   * Tương phản đo trên hai bề mặt của hệ (thẻ trắng #ffffff và nền trang
+   * #f5f7fa). Chuẩn WCAG AA cho chữ thường là 4.5:1.
+   *
+   *   #0f172a  17.85:1 / 16.63:1
+   *   #334155  10.35:1 /  9.65:1
+   *   #5f6f85   5.12:1 /  4.77:1
+   *
+   * text-muted TRƯỚC ĐÂY là #64748b: đạt 4.76:1 trên thẻ trắng nhưng chỉ
+   * 4.43:1 trên nền trang, tức là cùng một class đạt hay trượt tuỳ chỗ nó
+   * đứng. Mô tả dưới mỗi tiêu đề trang nằm thẳng trên nền trang nên rơi vào
+   * vế trượt. Hụt đúng 0,07 nên mắt thường không thấy, máy đo thì thấy.
+   * #5f6f85 đạt cả hai bề mặt.
+   *
+   * Bậc thứ 4 cũ (--color-text-subtle #94a3b8) đã bỏ: 2.56:1, không thể dùng
+   * cho chữ, và thực tế đang dùng 0 lần. Giữ lại chỉ là để sẵn một quả mìn.
+   * Cần nhạt hơn text-muted thì đó không phải chữ — dùng token border.
+   */
   --color-foreground: #0f172a;
   --color-text-2: #334155;
-  --color-text-muted: #64748b;
-  --color-text-subtle: #94a3b8;
+  --color-text-muted: #5f6f85;
 
   /* === Borders === */
   --color-border: #e5e7eb;
