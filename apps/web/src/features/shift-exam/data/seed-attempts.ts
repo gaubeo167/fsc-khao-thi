@@ -2,14 +2,14 @@ import type { StudentAttempt } from "../state/attempts-store";
 
 /**
  * Demo-mode seed exam attempts. Empty in production (store inits to []).
- * One submitted attempt by Nguyễn Hoàng Lan (U-401) for shift SH-0002 so
+ * One submitted attempt by Nguyễn Hoàng Lan (U-401) for shift SHIFT-0002 so
  * the "Lịch sử bài thi" + "Kết quả" screens have data. Answers are correct
  * (Q-0001 → b, Q-0002 → a,c) so the result shows full marks.
  */
 export const SEED_EXAM_ATTEMPTS: StudentAttempt[] = [
   {
-    id: "att-SH-0002-U-401",
-    shiftId: "SH-0002",
+    id: "att-SHIFT-0002-U-401",
+    shiftId: "SHIFT-0002",
     studentId: "U-401",
     campusId: "campus-cau-giay",
     questionIds: ["Q-0002", "Q-0001"],

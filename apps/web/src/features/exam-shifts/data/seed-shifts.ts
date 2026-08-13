@@ -6,10 +6,10 @@ import type { AntiCheatConfig, ExamShift } from "./types";
  * campus Cầu Giấy, lớp 7A1 (class-7-a1), học sinh Nguyễn Hoàng Lan
  * (U-401), giáo viên Phạm Minh (U-301), gói đề PKG-0001.
  *
- * - SH-0001: đang mở (giờ hiện tại nằm trong khoảng) → dùng cho "Lịch thi
+ * - SHIFT-0001: đang mở (giờ hiện tại nằm trong khoảng) → dùng cho "Lịch thi
  *   của tôi" + màn làm bài. Không có exam-form snapshot nên runtime dùng
  *   fallback theo khung đề BP-0001 (2 câu Q-0002 + Q-0001).
- * - SH-0002: đã kết thúc → ghép với bài làm đã nộp (seed-attempts) cho màn
+ * - SHIFT-0002: đã kết thúc → ghép với bài làm đã nộp (seed-attempts) cho màn
  *   Lịch sử + Kết quả.
  */
 
@@ -27,7 +27,7 @@ const NO_CHEAT: AntiCheatConfig = {
 
 export const SEED_SHIFTS: ExamShift[] = [
   {
-    id: "SH-0001",
+    id: "SHIFT-0001",
     name: "Kiểm tra giữa kỳ I — Toán 7A1",
     gradeId: "grade-7",
     subjectId: "subject-toan",
@@ -63,7 +63,7 @@ export const SEED_SHIFTS: ExamShift[] = [
     updatedAt: "2026-06-15T00:00:00.000Z",
   },
   {
-    id: "SH-0002",
+    id: "SHIFT-0002",
     name: "Kiểm tra 15 phút — Toán 7A1",
     gradeId: "grade-7",
     subjectId: "subject-toan",

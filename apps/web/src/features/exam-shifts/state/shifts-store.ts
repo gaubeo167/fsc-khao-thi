@@ -68,12 +68,30 @@ function pickShiftAuditFields(s: ExamShift | undefined) {
   };
 }
 
+/**
+ * Mã ca thi kế tiếp — `SHIFT-####`, đúng định dạng của toàn bộ dữ liệu thật.
+ *
+ * Nhận cả tiền tố `SH-` khi tính số lớn nhất: dữ liệu seed dùng dạng đó, và
+ * bất kỳ mã nào không khớp mẫu đều bị bỏ qua sẽ kéo bộ đếm về 0 — tức là
+ * phát ra `SHIFT-0001` trong khi ca đó đã tồn tại. `writeDoc` dùng `setDoc`
+ * nên ghi đè thẳng, không báo lỗi: mất trắng một ca thi thật.
+ *
+ * Vòng lặp cuối là lớp chặn thứ hai cho đúng tình huống đó — không bao giờ
+ * trả về mã đã có trong danh sách.
+ */
 function nextId(existing: ExamShift[]): string {
+  const taken = new Set(existing.map((s) => s.id));
   const max = existing.reduce((acc, s) => {
-    const m = /^SHIFT-(\d+)$/.exec(s.id);
+    const m = /^SH(?:IFT)?-(\d+)$/.exec(s.id);
     return m ? Math.max(acc, Number.parseInt(m[1]!, 10)) : acc;
   }, 0);
-  return `SHIFT-${String(max + 1).padStart(4, "0")}`;
+  let n = max + 1;
+  let id = `SHIFT-${String(n).padStart(4, "0")}`;
+  while (taken.has(id)) {
+    n += 1;
+    id = `SHIFT-${String(n).padStart(4, "0")}`;
+  }
+  return id;
 }
 
 export const useShiftsStore = create<State & Actions>()((set, get) => ({
