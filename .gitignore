@@ -53,3 +53,6 @@ coverage/
 # ───── Local Claude / IDE state (per-user, not for commit)
 .claude/
 .vercel
+
+# ───── gstack local artifacts (security reports — không commit)
+.gstack/

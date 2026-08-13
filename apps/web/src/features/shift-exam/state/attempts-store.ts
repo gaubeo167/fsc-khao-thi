@@ -334,11 +334,30 @@ export const useAttemptsStore = create<State & Actions>()((set, get) => ({
         return { ...a, violations: nextViol, recentEvents: nextEvents };
       }),
     });
-    if (nextViol && nextEvents) {
-      patchDoc(COLLECTIONS.attempts, attemptId, {
-        violations: nextViol,
-        recentEvents: nextEvents,
-      });
+    // Cập nhật cục bộ ở trên chỉ để UI phản hồi ngay. Bản GHI THẬT đi qua
+    // server (Admin SDK, chỉ cộng dồn) — client không còn quyền ghi trường
+    // `violations`, nếu không chính học sinh bị giám sát sẽ đặt lại về 0
+    // trong devtools trước khi nộp.
+    if (nextViol && isFirebaseConfigured()) {
+      const att = get().attempts.find((a) => a.id === attemptId);
+      if (att) {
+        void (async () => {
+          try {
+            const { authHeaders } = await import("@/lib/api-client");
+            await fetch(`/api/exam/${att.shiftId}/violation`, {
+              method: "POST",
+              headers: {
+                "content-type": "application/json",
+                ...(await authHeaders()),
+              },
+              body: JSON.stringify({ kind, at: new Date().toISOString() }),
+            });
+          } catch (e) {
+            // eslint-disable-next-line no-console
+            console.warn("[attempts] ghi vi phạm thất bại", e);
+          }
+        })();
+      }
     }
   },
 

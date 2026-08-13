@@ -23,6 +23,8 @@ type WithId<T> = T & { id: string };
 
 export const COLLECTIONS = {
   users: "users",
+  /** Bảng tra cứu đăng nhập (chỉ { email }) — đọc được trước khi đăng nhập. */
+  loginLookup: "login_lookup",
   campuses: "campuses",
   subjects: "subjects",
   grades: "grades",

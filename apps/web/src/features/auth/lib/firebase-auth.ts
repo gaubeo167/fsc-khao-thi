@@ -34,33 +34,38 @@ import { COLLECTIONS } from "@/lib/firestore-collections";
 import type { AuthSession, Role } from "../state/auth-store";
 
 /**
- * Resolve a typed login identifier (username / mã HS) → the Firebase Auth
- * email, by querying /users directly instead of keeping the whole
- * collection mirrored client-side. Used only as a fallback when the
- * synthetic `{username}@students.fsc.local` email doesn't exist (legacy
- * accounts). The /users read rule is public so this runs pre-auth.
+ * Chuẩn hoá một định danh đăng nhập (username / mã HS) thành khoá tra cứu.
+ * Doc id Firestore không nhận "/" và phân biệt hoa thường, nên hạ chữ và
+ * thay ký tự cấm.
+ */
+export function loginLookupKey(identifier: string): string {
+  return identifier.trim().toLowerCase().replace(/[/#?\[\]]/g, "_");
+}
+
+/**
+ * Đổi định danh gõ vào (username / mã HS) → email Firebase Auth.
  *
- * Tries username then studentCode, each in the typed and lower-cased form
- * (Firestore queries are case-sensitive; the old mirror matched
- * case-insensitively). Returns the first email found, or null.
+ * Tra trong /login_lookup — bảng CHỈ chứa { email }. Trước đây hàm này query
+ * thẳng /users, buộc /users phải mở `allow read: if true`, khiến bất kỳ ai
+ * trên internet tải được họ tên học sinh, lớp, mã HS và email/SĐT phụ huynh
+ * bằng REST API (web API key vốn nằm công khai trong bundle). Bảng tra cứu
+ * riêng giữ được luồng đăng nhập trước-khi-xác-thực mà không lộ hồ sơ.
+ *
+ * Chỉ chạy khi email tổng hợp `{username}@students.fsc.local` không tồn tại
+ * (tài khoản cũ). Trả email đầu tiên tìm được, hoặc null.
  */
 export async function resolveLoginEmail(
   identifier: string,
 ): Promise<string | null> {
-  const raw = identifier.trim();
-  if (!raw) return null;
-  const candidates = Array.from(new Set([raw, raw.toLowerCase()]));
-  const col = collection(getDb(), COLLECTIONS.users);
-  for (const field of ["username", "studentCode"] as const) {
-    for (const value of candidates) {
-      const snap = await getDocs(
-        query(col, where(field, "==", value), limit(1)),
-      );
-      const data = snap.docs[0]?.data() as { email?: string } | undefined;
-      if (data?.email) return data.email;
-    }
+  const key = loginLookupKey(identifier);
+  if (!key) return null;
+  try {
+    const snap = await getDoc(doc(getDb(), COLLECTIONS.loginLookup, key));
+    const email = (snap.data() as { email?: string } | undefined)?.email;
+    return typeof email === "string" && email ? email : null;
+  } catch {
+    return null;
   }
-  return null;
 }
 
 /** Doc shape stored at /users/{uid} — Firestore schema, NOT the Zustand store shape. */

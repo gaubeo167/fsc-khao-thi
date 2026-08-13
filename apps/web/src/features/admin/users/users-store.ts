@@ -28,6 +28,7 @@ import {
 import type { Role } from "@/features/auth/state/auth-store";
 import { recordAudit } from "@/lib/audit/record";
 import { getAuthSafe, getDb, isFirebaseConfigured } from "@/lib/firebase";
+import { loginLookupKey } from "@/features/auth/lib/firebase-auth";
 import { COLLECTIONS } from "@/lib/firestore-collections";
 import { sanitizeForFirestore } from "@/lib/firestore-sync";
 
@@ -215,6 +216,7 @@ export const useUsersStore = create<UsersState & UsersActions>()((set, get) => (
         doc(getDb(), COLLECTIONS.users, uid),
         sanitizeForFirestore(profile as unknown as Record<string, unknown>),
       );
+      await writeLoginLookup(lookupKeysOf(profile), profile.email);
       // Sign out from secondary so it doesn't keep a stale session locally.
       await fbSignOut(secondaryAuth);
       recordAudit({
@@ -262,6 +264,18 @@ export const useUsersStore = create<UsersState & UsersActions>()((set, get) => (
       cleaned[k] = v === null ? null : v;
     }
     await updateDoc(ref, cleaned);
+    // Đổi username / mã HS / email thì mapping đăng nhập phải đi theo, nếu
+    // không người dùng gõ định danh mới sẽ không đăng nhập được (hoặc tệ hơn:
+    // khoá cũ vẫn trỏ tới email cũ).
+    const beforeRow = get().users.find((u) => u.id === id) ?? null;
+    if (beforeRow) {
+      const merged = { ...beforeRow, ...(patch as Partial<SeedUser>) };
+      const oldKeys = lookupKeysOf(beforeRow);
+      const newKeys = lookupKeysOf(merged);
+      const stale = oldKeys.filter((k) => !newKeys.includes(k));
+      if (stale.length > 0) await removeLoginLookup(stale);
+      await writeLoginLookup(newKeys, merged.email ?? beforeRow.email);
+    }
     const after = get().users.find((u) => u.id === id) ?? null;
     recordAudit({
       entityType: "user",
@@ -279,6 +293,7 @@ export const useUsersStore = create<UsersState & UsersActions>()((set, get) => (
     set({ users: get().users.filter((u) => u.id !== id) });
     if (!isFirebaseConfigured()) return;
     await deleteDoc(doc(getDb(), COLLECTIONS.users, id));
+    if (before) await removeLoginLookup(lookupKeysOf(before));
     recordAudit({
       entityType: "user",
       entityId: id,
@@ -391,6 +406,45 @@ export const useUsersStore = create<UsersState & UsersActions>()((set, get) => (
  * screens (user admin, monitoring, reports) but far too much to push to
  * 1700 student devices. Staff call with no args.
  */
+
+/**
+ * Bảng tra cứu đăng nhập: `login_lookup/{username|studentCode}` → { email }.
+ * Trang đăng nhập cần đổi định danh gõ vào thành email TRƯỚC khi xác thực;
+ * trước đây việc đó buộc /users phải mở đọc công khai, khiến cả danh bạ học
+ * sinh (kèm SĐT phụ huynh) tải được từ internet. Bảng này chỉ chứa email nên
+ * mở công khai được, và phải cập nhật cùng nhịp với /users.
+ */
+function lookupKeysOf(u: {
+  username?: string | null;
+  studentCode?: string | null;
+}): string[] {
+  return [u.username, u.studentCode]
+    .filter((v): v is string => typeof v === "string" && v.trim().length > 0)
+    .map((v) => loginLookupKey(v));
+}
+
+async function writeLoginLookup(keys: string[], email: string): Promise<void> {
+  if (!isFirebaseConfigured() || !email) return;
+  await Promise.all(
+    keys.map((k) =>
+      setDoc(doc(getDb(), COLLECTIONS.loginLookup, k), { email }).catch(() => {
+        /* không chặn luồng tạo user vì lỗi mapping */
+      }),
+    ),
+  );
+}
+
+async function removeLoginLookup(keys: string[]): Promise<void> {
+  if (!isFirebaseConfigured()) return;
+  await Promise.all(
+    keys.map((k) =>
+      deleteDoc(doc(getDb(), COLLECTIONS.loginLookup, k)).catch(() => {
+        /* đã không còn thì thôi */
+      }),
+    ),
+  );
+}
+
 export function subscribeUsers(opts?: { selfId?: string }): Unsubscribe {
   if (!isFirebaseConfigured()) {
     // No backend to subscribe to. Mark hydrated so the rest of the app

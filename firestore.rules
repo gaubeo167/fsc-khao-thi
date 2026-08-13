@@ -76,8 +76,21 @@ service cloud.firestore {
     // enrollment lists. UI does per-campus filtering after read.
     //
     // Writes stay tightly gated.
-    match /users/{userId} {
+    // Bảng tra cứu ĐĂNG NHẬP: chỉ chứa { email }, không có tên/lớp/liên hệ
+    // phụ huynh. Đây là thứ DUY NHẤT cần đọc trước khi đăng nhập, thay cho
+    // việc mở cả /users ra internet.
+    match /login_lookup/{key} {
       allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /users/{userId} {
+      // TRƯỚC: `if true` — bất kỳ ai trên internet GET được toàn bộ hồ sơ
+      // (họ tên học sinh, lớp, mã HS, email + SĐT phụ huynh) qua REST API
+      // bằng web API key vốn công khai trong bundle. Nay: nhân viên đọc cả
+      // danh bạ (cần cho quản lý/báo cáo), học sinh chỉ đọc doc của mình
+      // (đúng bằng những gì client thật sự query).
+      allow read: if isTeacherOrAbove() || (isSignedIn() && userId == uid());
       allow create: if isAdmin() && (
         isSuperadmin() ||
         request.resource.data.campusId == callerCampusId()
@@ -168,9 +181,13 @@ service cloud.firestore {
       // Acknowledge = the TARGET student updates their own row; teacher
       // can edit anything they sent. (Was `if isSignedIn()` — any user
       // could modify any proctor event, incl. other students'.)
+      // Học sinh CHỈ được đánh dấu đã đọc. Trước đây sửa được mọi trường
+      // của cảnh cáo gửi cho mình — tức viết lại biên bản của giám thị.
       allow update: if isSignedIn() && (
-        resource.data.studentId == uid() ||
-        isTeacherOrAbove()
+        isTeacherOrAbove() ||
+        (resource.data.studentId == uid() &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['acknowledgedAt']))
       );
       allow delete: if isTeacherOrAbove();
     }
@@ -282,8 +299,11 @@ service cloud.firestore {
         (resource.data.studentId == uid() &&
           resource.data.submittedAt == null &&
           request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['answers', 'markedForReview', 'violations',
-                      'recentEvents', 'updatedAt']))
+            // `violations` / `recentEvents` KHÔNG còn trong danh sách: chúng
+            // là bằng chứng chống gian lận, nay chỉ server ghi (cộng dồn) qua
+            // /api/exam/[shiftId]/violation. Để client ghi nghĩa là người bị
+            // giám sát tự xoá được bằng chứng của mình.
+            .hasOnly(['answers', 'markedForReview', 'updatedAt']))
       );
       allow delete: if isAdmin();
     }
