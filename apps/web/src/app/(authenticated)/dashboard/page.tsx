@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Building2,
   CalendarClock,
   CheckCircle2,
   ClipboardCheck,
@@ -136,26 +137,40 @@ export default function DashboardPage() {
         title={<>Xin chào, {session?.name ?? "bạn"} 👋</>}
         description="Tổng quan vận hành khảo thí · Cập nhật theo thời gian thực."
         actions={
-          <>
+          // Superadmin cố ý KHÔNG thao tác bên trong campus (xem
+          // `campus-badge.tsx`) nên menu bên trái của họ chỉ có Tổng quan +
+          // Quản lý campus. Ba nút tắt này trỏ vào đúng những trang đã bị
+          // bỏ khỏi menu đó — để nguyên thì dashboard mời gọi làm một việc
+          // mà cả phần còn lại của giao diện nói là không dành cho họ.
+          session?.role === "superadmin" ? (
             <Button asChild variant="outline" size="sm">
-              <Link href="/admin/shifts">
-                <PlusCircle className="h-4 w-4" />
-                Tạo ca thi mới
+              <Link href="/admin/campuses">
+                <Building2 className="h-4 w-4" />
+                Quản lý campus
               </Link>
             </Button>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/admin/question-bank">
-                <FileText className="h-4 w-4" />
-                Ngân hàng câu hỏi
-              </Link>
-            </Button>
-            <Button asChild size="sm">
-              <Link href="/admin/exam-blueprints">
-                <Play className="h-4 w-4" />
-                Khung đề & Gói đề
-              </Link>
-            </Button>
-          </>
+          ) : (
+            <>
+              <Button asChild variant="outline" size="sm">
+                <Link href="/admin/shifts">
+                  <PlusCircle className="h-4 w-4" />
+                  Tạo ca thi mới
+                </Link>
+              </Button>
+              <Button asChild variant="outline" size="sm">
+                <Link href="/admin/question-bank">
+                  <FileText className="h-4 w-4" />
+                  Ngân hàng câu hỏi
+                </Link>
+              </Button>
+              <Button asChild size="sm">
+                <Link href="/admin/exam-blueprints">
+                  <Play className="h-4 w-4" />
+                  Khung đề & Gói đề
+                </Link>
+              </Button>
+            </>
+          )
         }
       />
 
