@@ -4,7 +4,7 @@ import { zodResolverSafe } from "@/lib/zod-resolver";
 import { AtSign, Eye, EyeOff, KeyRound, Loader2, ShieldAlert } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,17 @@ export function LoginForm() {
   const [submitting, setSubmitting] = useState(false);
   const [showPwd, setShowPwd] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  /** Đăng nhập đã thành công nhưng điều hướng không tới nơi — đổi tiêu đề
+   *  hộp cảnh báo, vì "Đăng nhập thất bại" lúc này là sai sự thật. */
+  const [redirectStalled, setRedirectStalled] = useState(false);
+  /** Timer canh việc chuyển trang sau khi đăng nhập — xem cuối `onSubmit`. */
+  const redirectGuardRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (redirectGuardRef.current) clearTimeout(redirectGuardRef.current);
+    },
+    [],
+  );
   // Two parallel sign-in flows that gate which identifier format is
   // accepted. Staff = email; HS = username / mã học sinh. The split is
   // pure UX — auth-store enforces the actual rule below.
@@ -38,6 +49,13 @@ export function LoginForm() {
 
   async function onSubmit(values: LoginFormValues) {
     setAuthError(null);
+    setRedirectStalled(false);
+    // Lần bấm mới huỷ chốt chặn của lần trước, tránh nó bắn thông báo
+    // "chưa chuyển được trang" đè lên lượt đang chạy.
+    if (redirectGuardRef.current) {
+      clearTimeout(redirectGuardRef.current);
+      redirectGuardRef.current = null;
+    }
     const identifier = values.identifier.trim();
 
     // Role-based identifier validation. Staff must use a real email;
@@ -89,6 +107,23 @@ export function LoginForm() {
     // Scope subsequent queries to the user's campus (null = all, for superadmin).
     setActiveCampus(result.session.campusId);
     router.replace(next);
+
+    // Chốt chặn: `router.replace` có thể không đi tới đâu cả — tải chunk
+    // hỏng vì mạng chập chờn, người dùng mất kết nối đúng lúc đó (dev thì
+    // Fast Refresh chen vào giữa lượt điều hướng). Đường thành công không
+    // hề reset `submitting`, nên khi đó nút quay mãi: đăng nhập ĐÃ thành
+    // công nhưng người dùng đứng nguyên ở trang login, không thông báo,
+    // không cách nào thử lại ngoài việc tự đoán ra là phải tải lại trang.
+    //
+    // Điều hướng thành công thì component unmount và timer bị dọn, nên
+    // nhánh dưới chỉ chạy khi thực sự kẹt.
+    redirectGuardRef.current = setTimeout(() => {
+      setSubmitting(false);
+      setRedirectStalled(true);
+      setAuthError(
+        "Đăng nhập thành công nhưng chưa chuyển được sang trang chính. Bấm 'Đăng nhập' lần nữa hoặc tải lại trang.",
+      );
+    }, 6_000);
   }
 
   return (
@@ -142,7 +177,9 @@ export function LoginForm() {
         >
           <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-destructive" strokeWidth={1.75} />
           <div className="text-[13px] leading-relaxed text-destructive">
-            <p className="font-semibold">Đăng nhập thất bại</p>
+            <p className="font-semibold">
+              {redirectStalled ? "Chưa chuyển được trang" : "Đăng nhập thất bại"}
+            </p>
             <p className="mt-0.5 text-destructive/80">{authError}</p>
           </div>
         </div>
