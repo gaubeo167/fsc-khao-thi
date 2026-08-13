@@ -75,6 +75,7 @@ import { useQuestionsStore } from "@/features/question-bank/state/questions-stor
 import { materializeExamForm } from "@/features/exam-forms/lib/materialize";
 import type { ExamOrderStrategy } from "@/features/exam-forms/data/types";
 import { useExamFormsStore } from "@/features/exam-forms/state/exam-forms-store";
+import { isFirebaseConfigured } from "@/lib/firebase";
 import { cn } from "@/lib/utils";
 
 import {
@@ -299,6 +300,8 @@ export function ShiftWizard({
   const allQuestions = useQuestionsStore((s) => s.questions);
   const createShift = useShiftsStore((s) => s.create);
   const updateShift = useShiftsStore((s) => s.update);
+  /** Đã nhận snapshot ca thi từ Firestore chưa — xem `handleSubmit`. */
+  const shiftsHydrated = useShiftsStore((s) => s.hydrated);
 
   const campusId =
     session?.role === "superadmin"
@@ -595,6 +598,20 @@ export function ShiftWizard({
     }
     if (!session) {
       setError("Phiên đăng nhập không hợp lệ.");
+      return;
+    }
+    // Mã ca thi được đánh số từ danh sách ca ĐANG có trong store. Nếu
+    // snapshot Firestore chưa về (mạng chậm, listener lỗi quyền), store vẫn
+    // đang giữ dữ liệu seed — số kế tiếp tính ra sẽ trùng mã của một ca thật,
+    // và `writeDoc` dùng `setDoc` nên ghi đè im lặng lên ca đó. Thà chặn lại
+    // và bảo người dùng thử lại còn hơn xoá mất một ca thi đã lên lịch.
+    // `isFirebaseConfigured()`: ở chế độ seed/offline không có listener nào
+    // chạy nên `hydrated` mãi là false — bỏ điều kiện này là chặn luôn việc
+    // tạo ca thi khi chạy local.
+    if (!editing && isFirebaseConfigured() && !shiftsHydrated) {
+      setError(
+        "Chưa tải xong danh sách ca thi hiện có — chờ vài giây rồi bấm lại. (Tạo lúc này có thể ghi đè lên một ca thi khác.)",
+      );
       return;
     }
 
