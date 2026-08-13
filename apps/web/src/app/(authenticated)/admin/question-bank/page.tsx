@@ -549,6 +549,7 @@ export default function QuestionBankPage() {
           if (!o) setEditing(null);
         }}
         editing={editing}
+        onSaved={setKhoView}
       />
       <ImportWordDialog open={importOpen} onOpenChange={setImportOpen} />
       <ExamBankImportDialog open={examBankOpen} onOpenChange={setExamBankOpen} />

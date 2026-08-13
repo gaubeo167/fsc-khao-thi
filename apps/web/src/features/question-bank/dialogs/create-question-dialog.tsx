@@ -59,9 +59,20 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   /** When supplied, the dialog enters Edit mode and skips Step 1. */
   editing?: Question | null;
+  /**
+   * Kho mà câu hỏi vừa được lưu vào. Trang ngân hàng dùng để chuyển danh
+   * sách sang đúng kho đó — nếu không, người soạn lưu vào "Kho cá nhân"
+   * xong vẫn nhìn thấy "Kho chung" y như cũ và tưởng lưu hỏng.
+   */
+  onSaved?: (kho: Question["kho"]) => void;
 }
 
-export function CreateQuestionDialog({ open, onOpenChange, editing }: Props) {
+export function CreateQuestionDialog({
+  open,
+  onOpenChange,
+  editing,
+  onSaved,
+}: Props) {
   const session = useAuthStore((s) => s.session);
   const create = useQuestionsStore((s) => s.create);
   const update = useQuestionsStore((s) => s.update);
@@ -118,6 +129,7 @@ export function CreateQuestionDialog({ open, onOpenChange, editing }: Props) {
               ? "Đã gửi duyệt câu hỏi"
               : "Đã lưu bản nháp",
         );
+        onSaved?.(((values as any).kho ?? editing.kho) as Question["kho"]);
       } else {
         const created = create({
           ...(values as any),
@@ -135,6 +147,7 @@ export function CreateQuestionDialog({ open, onOpenChange, editing }: Props) {
               ? `Đã gửi duyệt ${created.id} — chờ TBM/Admin xác nhận`
               : `Đã lưu bản nháp ${created.id}`,
         );
+        onSaved?.(created.kho);
       }
       onOpenChange(false);
     } catch (e) {
