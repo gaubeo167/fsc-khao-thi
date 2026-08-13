@@ -73,12 +73,21 @@ const VIOLATION_ICON: Record<ViolationKind, string> = {
   pasteAttempts: "📋",
 };
 
+/**
+ * Thời lượng còn lại cho giám thị đọc.
+ *
+ * Có bậc NGÀY vì bản cũ dừng ở giờ: ca thi mở dài (deadline nộp bài đặt xa,
+ * ví dụ cuối năm) hiện ra "Còn 643257h 01m" — con số vô nghĩa ngay trên màn
+ * hình trực ca. Quá 1 ngày thì bỏ giây, vì lúc đó giây không còn ý nghĩa.
+ */
 function formatDuration(ms: number): string {
   if (ms <= 0) return "—";
   const totalSec = Math.floor(ms / 1000);
-  const h = Math.floor(totalSec / 3600);
+  const d = Math.floor(totalSec / 86400);
+  const h = Math.floor((totalSec % 86400) / 3600);
   const m = Math.floor((totalSec % 3600) / 60);
   const s = totalSec % 60;
+  if (d > 0) return `${d} ngày ${h}h ${String(m).padStart(2, "0")}m`;
   if (h > 0) return `${h}h ${String(m).padStart(2, "0")}m`;
   return `${m}m ${String(s).padStart(2, "0")}s`;
 }
