@@ -161,7 +161,16 @@ export default function ExamResultPage() {
   const examQuestions = attempt.questionIds
     .map((qid) => questionSource.find((q) => q.id === qid))
     .filter((q): q is NonNullable<typeof q> => !!q);
-  const perQuestionScore = computePerQuestionScores(scoring, examQuestions);
+  // Điểm/câu ưu tiên bản SERVER ĐÃ CHẤM lúc nộp (đóng băng theo đề: đề YCCĐ
+  // tính theo phần, đề khung theo cấu hình ca thi). Tính lại ở client bằng
+  // `computePerQuestionScores(shift.scoring)` sẽ chia đều tổng điểm và làm
+  // sai thang MOET — chỉ dùng làm đường lùi cho bài nộp trước bản này.
+  const frozenPerQuestion = attempt.perQuestionPoints;
+  const perQuestionScore =
+    frozenPerQuestion && Object.keys(frozenPerQuestion).length > 0
+      ? frozenPerQuestion
+      : computePerQuestionScores(scoring, examQuestions);
+  const earnedMap = attempt.earnedPerQuestion ?? null;
   // Sum of MAX possible across the actually-administered subset. Manual
   // mode may diverge from `scoring.maxScore` because the student only
   // sees a slice of the blueprint pool — display reflects what *this*
@@ -187,7 +196,13 @@ export default function ExamResultPage() {
       continue;
     }
     autoCorrectMax++;
-    if (ans && isCorrect(q, ans)) {
+    // Có bản server chấm thì lấy thẳng (đã tính Đúng–Sai lũy tiến / mcq-multi
+    // từng phần); không có thì lùi về đúng-hết-mới-có-điểm như cũ.
+    const earned = earnedMap?.[q.id];
+    if (typeof earned === "number") {
+      earnedScore += earned;
+      if (earned >= qScore && qScore > 0) autoCorrect++;
+    } else if (ans && isCorrect(q, ans)) {
       earnedScore += qScore;
       autoCorrect++;
     }

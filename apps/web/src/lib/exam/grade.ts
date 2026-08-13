@@ -212,3 +212,128 @@ export function computeAttemptScore(
   const score = max > 0 ? Math.round((scored / max) * 100) : 0;
   return { score, correctCount, maxScore: max };
 }
+
+/* ─────────────── Chấm theo THANG ĐIỂM CỦA ĐỀ (MOET) ───────────────
+ *
+ * `computeAttemptScore` ở trên cho mỗi câu 1 điểm rồi quy phần trăm — đúng
+ * cho "bao nhiêu câu đúng", SAI khi đề có thang riêng (đề YCCĐ: Phần I mcq
+ * 0,25đ/câu, Phần II Đúng–Sai 1đ/câu…). Điểm/câu thật đã được đóng băng vào
+ * `ExamFormVariant.perQuestion` lúc tạo ca thi; phần dưới chấm theo đúng bản
+ * đóng băng đó, cộng ngữ nghĩa chấm từng phần của `ScoringPolicy`.
+ */
+
+/** Phần điểm đạt được của MỘT câu, tính theo tỉ lệ 0..1 của điểm câu đó.
+ *  `null` = câu chấm tay (tự luận) — không tính vào điểm máy. */
+export function gradeQuestionRatio(
+  q: Question,
+  a: Answer | undefined,
+  policy?: ScoringPolicyLike | null,
+): number | null {
+  if (q.type === "essay" || q.type === "ai-generated") return null;
+
+  // Đúng–Sai chùm: MOET chấm LŨY TIẾN theo số ý đúng (1 ý 0,1đ · 2 ý 0,25đ ·
+  // 3 ý 0,5đ · 4 ý 1đ với câu 1 điểm). Bảng là điểm tuyệt đối cho câu đủ ý,
+  // nên quy về tỉ lệ = bảng[k] / bảng[tổng số ý] để vẫn đúng khi điểm/câu khác 1.
+  if (q.type === "multi-tf" && policy && policy.ds !== "full") {
+    if (!a || a.kind !== "multi-tf") return 0;
+    const subs = q.subQuestions ?? [];
+    if (subs.length === 0) return 0;
+    const rightCount = subs.filter((s) => a.values[s.id] === s.correctAnswer).length;
+    if (policy.ds === "weighted") {
+      // Trọng số từng ý (mặc định đều nhau khi không đặt).
+      const totalW = subs.reduce((n, s) => n + (s.weight ?? 1), 0);
+      if (totalW <= 0) return 0;
+      const gotW = subs.reduce(
+        (n, s) => n + (a.values[s.id] === s.correctAnswer ? s.weight ?? 1 : 0),
+        0,
+      );
+      return gotW / totalW;
+    }
+    const table = policy.dsGraduatedTable ?? { 1: 0.1, 2: 0.25, 3: 0.5, 4: 1 };
+    const full = table[subs.length] ?? Math.max(...Object.values(table), 1);
+    if (full <= 0) return 0;
+    return Math.min(1, (table[rightCount] ?? 0) / full);
+  }
+
+  // MCQ nhiều đáp án chấm TỪNG PHẦN — công thức đã chốt trong ScoringPolicy:
+  // max(0, (số đúng − số sai) / số đáp án đúng). Chọn bừa thêm 1 đáp án sai
+  // là trừ đi 1 phần, chọn hết thì về 0. Trùng công thức bộ chấm thi thử.
+  if (q.type === "mcq-multi" && policy?.mcqMulti === "partial") {
+    if (!a || a.kind !== "mcq-multi") return 0;
+    const correctIds = new Set(q.options.filter((o) => o.isCorrect).map((o) => o.id));
+    if (correctIds.size === 0) return 0;
+    let hits = 0;
+    let misses = 0;
+    for (const id of new Set(a.optionIds ?? [])) {
+      if (correctIds.has(id)) hits += 1;
+      else misses += 1;
+    }
+    return Math.max(0, (hits - misses) / correctIds.size);
+  }
+
+  const r = gradeQuestion(q, a);
+  if (r == null) return null;
+  return r.points > 0 ? 1 : 0;
+}
+
+/** Chỉ những trường của ScoringPolicy mà bộ chấm cần (tránh phụ thuộc vòng). */
+export interface ScoringPolicyLike {
+  mcqMulti: "full" | "partial";
+  ds: "graduated" | "weighted" | "full";
+  dsGraduatedTable?: Record<number, number>;
+}
+
+export interface WeightedAttemptScore {
+  /** Điểm máy chấm được, theo thang của đề. */
+  points: number;
+  /** Tổng điểm tối đa của các câu máy chấm được (chưa gồm tự luận). */
+  maxPoints: number;
+  /** Điểm TỐI ĐA từng câu (khoá theo id câu hỏi). */
+  perQuestion: Record<string, number>;
+  /** Điểm ĐẠT ĐƯỢC từng câu — màn kết quả chỉ hiển thị, không tính lại, nên
+   *  học sinh và giáo viên luôn thấy đúng con số server đã chấm. */
+  earnedPerQuestion: Record<string, number>;
+  correctCount: number;
+  autoGradedCount: number;
+}
+
+/**
+ * Chấm cả bài theo thang điểm của đề.
+ * `weightOf` trả điểm tối đa của một câu (lấy từ `variant.perQuestion`).
+ */
+export function computeWeightedAttemptScore(
+  questions: Question[],
+  answers: Record<string, Answer>,
+  weightOf: (q: Question) => number,
+  policy?: ScoringPolicyLike | null,
+): WeightedAttemptScore {
+  let points = 0;
+  let maxPoints = 0;
+  let correctCount = 0;
+  let autoGradedCount = 0;
+  const perQuestion: Record<string, number> = {};
+  const earnedPerQuestion: Record<string, number> = {};
+  for (const q of questions) {
+    const w = weightOf(q);
+    perQuestion[q.id] = round2(w);
+    const ratio = gradeQuestionRatio(q, answers[q.id], policy);
+    if (ratio == null) continue; // tự luận — chấm tay
+    autoGradedCount += 1;
+    maxPoints += w;
+    points += w * ratio;
+    earnedPerQuestion[q.id] = round2(w * ratio);
+    if (ratio >= 1) correctCount += 1;
+  }
+  return {
+    points: round2(points),
+    maxPoints: round2(maxPoints),
+    perQuestion,
+    earnedPerQuestion,
+    correctCount,
+    autoGradedCount,
+  };
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}

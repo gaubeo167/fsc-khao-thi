@@ -154,6 +154,9 @@ export function materializeExamForm(input: MaterializeInput): ExamForm {
     blueprintId: blueprint.id,
     campusId,
     maxScore: yccd ? yccd.scoringPolicy.maxScore : scoring.maxScore,
+    // Đóng băng cách chấm theo đề (Đúng–Sai lũy tiến, mcq-multi từng phần).
+    // Không có = đề khung → chấm toàn phần như cũ.
+    scoringPolicy: yccd ? yccd.scoringPolicy : null,
     durationMinutes: pkg.duration || blueprint.duration,
     variants,
     orderStrategy,

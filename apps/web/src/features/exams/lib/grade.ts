@@ -29,7 +29,19 @@ function formatLetters(optionIds: string[], all: string[]): string {
     .join(", ");
 }
 
-export function gradeQuestion(question: Question, answer: unknown): GradeResult {
+/** Cách chấm của bộ đề (Đúng–Sai lũy tiến…) — thi thử nhận để hiện đúng
+ *  cách tính của đề thật. Không truyền = chấm toàn phần như trước. */
+export interface TrialScoringPolicy {
+  mcqMulti?: "full" | "partial";
+  ds?: "graduated" | "weighted" | "full";
+  dsGraduatedTable?: Record<number, number>;
+}
+
+export function gradeQuestion(
+  question: Question,
+  answer: unknown,
+  policy?: TrialScoringPolicy | null,
+): GradeResult {
   switch (question.type) {
     case "mcq-single": {
       const ids = question.options.map((o) => o.id);
@@ -187,9 +199,27 @@ export function gradeQuestion(question: Question, answer: unknown): GradeResult 
         if (map[sub.id] === sub.correctAnswer) okCount++;
       }
       const allCorrect = okCount === question.subQuestions.length;
+      // Đúng–Sai lũy tiến (MOET): 1 ý 0,1 · 2 ý 0,25 · 3 ý 0,5 · 4 ý 1 điểm.
+      // Bảng là điểm tuyệt đối của câu đủ ý → quy về tỉ lệ 0..1.
+      let tfScore = allCorrect ? 1 : 0;
+      if (!allCorrect && policy && policy.ds && policy.ds !== "full") {
+        const subs = question.subQuestions;
+        if (policy.ds === "weighted") {
+          const totalW = subs.reduce((n, s) => n + (s.weight ?? 1), 0);
+          const gotW = subs.reduce(
+            (n, s) => n + (map[s.id] === s.correctAnswer ? s.weight ?? 1 : 0),
+            0,
+          );
+          tfScore = totalW > 0 ? gotW / totalW : 0;
+        } else {
+          const table = policy.dsGraduatedTable ?? { 1: 0.1, 2: 0.25, 3: 0.5, 4: 1 };
+          const full = table[subs.length] ?? Math.max(...Object.values(table), 1);
+          tfScore = full > 0 ? Math.min(1, (table[okCount] ?? 0) / full) : 0;
+        }
+      }
       return {
         verdict: allCorrect ? "correct" : okCount > 0 ? "partial" : "wrong",
-        score: allCorrect ? 1 : 0,
+        score: tfScore,
         correctText: question.subQuestions
           .map((s, i) => `${i + 1}. ${s.correctAnswer ? "Đ" : "S"}`)
           .join(" · "),
@@ -369,6 +399,7 @@ export interface ExamGrade {
 export function gradeExam(
   questions: Question[],
   answers: Record<string, unknown>,
+  policy?: TrialScoringPolicy | null,
 ): ExamGrade {
   const results: ExamGrade["results"] = [];
   let totalScore = 0;
@@ -379,7 +410,7 @@ export function gradeExam(
   let wrongCount = 0;
   let skippedCount = 0;
   for (const q of questions) {
-    const g = gradeQuestion(q, answers[q.id]);
+    const g = gradeQuestion(q, answers[q.id], policy);
     results.push({ questionId: q.id, grade: g });
     if (g.verdict === "manual") {
       manualCount += 1;

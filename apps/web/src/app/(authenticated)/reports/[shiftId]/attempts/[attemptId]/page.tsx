@@ -123,7 +123,16 @@ export default function ReportAttemptDetailPage() {
     allLiveQuestions: allQuestions,
   });
   const examQuestions = resolved.questions;
-  const perQuestionScore = computePerQuestionScores(scoring, examQuestions);
+  // Điểm/câu ưu tiên bản SERVER ĐÃ CHẤM lúc nộp (đóng băng theo đề: đề YCCĐ
+  // tính theo phần, đề khung theo cấu hình ca thi). Tính lại ở client bằng
+  // `computePerQuestionScores(shift.scoring)` sẽ chia đều tổng điểm và làm
+  // sai thang MOET — chỉ dùng làm đường lùi cho bài nộp trước bản này.
+  const frozenPerQuestion = attempt.perQuestionPoints;
+  const perQuestionScore =
+    frozenPerQuestion && Object.keys(frozenPerQuestion).length > 0
+      ? frozenPerQuestion
+      : computePerQuestionScores(scoring, examQuestions);
+  const earnedMap = attempt.earnedPerQuestion ?? null;
   const examMaxScore = Object.values(perQuestionScore).reduce(
     (a, n) => a + n,
     0,
@@ -143,7 +152,13 @@ export default function ReportAttemptDetailPage() {
       continue;
     }
     autoMax++;
-    if (ans && isCorrect(q, ans)) {
+    // Ưu tiên điểm server đã chấm (Đúng–Sai lũy tiến / mcq-multi từng phần);
+    // bài cũ chưa có thì lùi về đúng-hết-mới-có-điểm.
+    const got = earnedMap?.[q.id];
+    if (typeof got === "number") {
+      earned += got;
+      if (got >= qScore && qScore > 0) autoCorrect++;
+    } else if (ans && isCorrect(q, ans)) {
       earned += qScore;
       autoCorrect++;
     }

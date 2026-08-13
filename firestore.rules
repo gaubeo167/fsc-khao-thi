@@ -271,13 +271,19 @@ service cloud.firestore {
       // progress, but MUST NOT set their own score/submittedAt/correctCount
       // — those are written server-side (Admin SDK bypasses rules) by
       // /api/exam/[shiftId]/submit. Teacher+ can update anything (grading).
+      // Danh sách TRẮNG thay vì liệt kê từng trường cấm: học sinh chỉ được
+      // đổi 4 trường tự lưu khi đang làm bài. Mọi trường điểm (score,
+      // correctCount, points, maxPoints, perQuestionPoints, earnedPerQuestion,
+      // submittedAt…) chỉ server ghi qua Admin SDK. Liệt kê trường cấm từng
+      // cái là bẫy: thêm trường điểm mới mà quên sửa rule là học sinh tự ghi
+      // điểm được.
       allow update: if isSignedIn() && (
         isTeacherOrAbove() ||
         (resource.data.studentId == uid() &&
           resource.data.submittedAt == null &&
-          request.resource.data.submittedAt == resource.data.submittedAt &&
-          request.resource.data.score == resource.data.score &&
-          request.resource.data.correctCount == resource.data.correctCount)
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['answers', 'markedForReview', 'violations',
+                      'recentEvents', 'updatedAt']))
       );
       allow delete: if isAdmin();
     }

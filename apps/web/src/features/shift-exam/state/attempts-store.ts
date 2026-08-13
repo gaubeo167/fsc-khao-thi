@@ -73,6 +73,16 @@ export interface StudentAttempt {
   score: number | null;
   maxScore: number | null;
   correctCount: number | null;
+  /** Điểm THEO THANG CỦA ĐỀ do server chấm lúc nộp (đề YCCĐ: điểm/câu theo
+   *  phần, Đúng–Sai lũy tiến…). Khác `score` vốn là PHẦN TRĂM số câu đúng.
+   *  Bài nộp trước bản này không có 4 trường dưới → màn kết quả tự lùi về
+   *  cách tính cũ. */
+  points?: number | null;
+  maxPoints?: number | null;
+  /** questionId → điểm tối đa của câu. */
+  perQuestionPoints?: Record<string, number> | null;
+  /** questionId → điểm đạt được (đã tính lũy tiến / từng phần). */
+  earnedPerQuestion?: Record<string, number> | null;
   /** Anti-cheat counters captured during the attempt (best-effort). */
   violations: {
     tabSwitches: number;

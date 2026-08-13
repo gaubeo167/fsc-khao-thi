@@ -20,7 +20,10 @@ import { pickVariantForStudent, type ExamForm } from "@/features/exam-forms/data
 import type { Question } from "@/features/question-bank/data/seed-questions";
 import type { Answer } from "@/features/shift-exam/state/attempts-store";
 import { verifyCaller } from "@/lib/api-auth";
-import { computeAttemptScore } from "@/lib/exam/grade";
+import {
+  computeAttemptScore,
+  computeWeightedAttemptScore,
+} from "@/lib/exam/grade";
 import { restoreServedAnswers } from "@/lib/exam/matching-opaque";
 import { getAdmin } from "@/lib/firebase-admin";
 
@@ -69,6 +72,10 @@ export async function POST(
   let questions: Question[] = [];
   let examFormId: string | null = null;
   let variantId: string | null = null;
+  /** Điểm/câu ĐÓNG BĂNG (khoá theo snapshotId) + cách chấm của đề. Thiếu =
+   *  đề cũ chưa có bản đóng băng → lùi về chấm mỗi câu 1 điểm như trước. */
+  let frozenPerQuestion: Record<string, number> | null = null;
+  let frozenPolicy: ExamForm["scoringPolicy"] = null;
 
   // Single-field query (no composite index needed); pick active in code.
   try {
@@ -86,6 +93,8 @@ export async function POST(
         questions = variant.questions as unknown as Question[];
         examFormId = form.id;
         variantId = variant.variantId;
+        frozenPerQuestion = variant.perQuestion ?? null;
+        frozenPolicy = form.scoringPolicy ?? null;
       }
     }
   } catch (e) {
@@ -111,7 +120,23 @@ export async function POST(
   // Translate matching answers (opaque tokens → real ids) so grading works
   // and the STORED answers carry real ids (review/reports stay unchanged).
   const gradedAnswers = restoreServedAnswers(questions, answers);
+  // `score`/`maxScore` GIỮ NGUYÊN ngữ nghĩa cũ (phần trăm / số câu) để 32 bài
+  // đã nộp và mọi màn đang đọc chúng không bị diễn giải sai.
   const { score, correctCount, maxScore } = computeAttemptScore(questions, gradedAnswers);
+  // Điểm THẬT theo thang của đề: điểm/câu lấy từ bản đóng băng của đề thi,
+  // Đúng–Sai lũy tiến / mcq-multi từng phần theo scoringPolicy của bộ đề.
+  const weighted = frozenPerQuestion
+    ? computeWeightedAttemptScore(
+        questions,
+        gradedAnswers,
+        (q) => {
+          const snapId = (q as unknown as { snapshotId?: string }).snapshotId;
+          const w = snapId ? frozenPerQuestion?.[snapId] : undefined;
+          return typeof w === "number" ? w : 0;
+        },
+        frozenPolicy,
+      )
+    : null;
 
   // ── Write the attempt authoritatively ────────────────────────────────
   const attemptId = `att-${shiftId}-${uid}`;
@@ -139,6 +164,17 @@ export async function POST(
       score,
       maxScore,
       correctCount,
+      // Điểm theo thang đề (đề YCCĐ: theo phần; đề khung: theo cấu hình ca
+      // thi). Bài cũ không có 3 trường này → màn kết quả tự lùi về cách tính
+      // cũ, không vỡ.
+      ...(weighted
+        ? {
+            points: weighted.points,
+            maxPoints: weighted.maxPoints,
+            perQuestionPoints: weighted.perQuestion,
+            earnedPerQuestion: weighted.earnedPerQuestion,
+          }
+        : {}),
       violations:
         (prev.violations as Record<string, number>) ?? {
           tabSwitches: 0,
@@ -150,5 +186,13 @@ export async function POST(
     { merge: true },
   );
 
-  return NextResponse.json({ ok: true, score, correctCount, maxScore, submittedAt: now });
+  return NextResponse.json({
+    ok: true,
+    score,
+    correctCount,
+    maxScore,
+    points: weighted?.points ?? null,
+    maxPoints: weighted?.maxPoints ?? null,
+    submittedAt: now,
+  });
 }

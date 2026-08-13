@@ -26,6 +26,7 @@
  *   it staying queryable forever).
  */
 
+import type { ScoringPolicy } from "@/features/exams/data/types";
 import type { Question } from "@/features/question-bank/data/seed-questions";
 
 /**
@@ -104,6 +105,11 @@ export interface ExamForm {
   maxScore: number;
   /** Duration (minutes) copied from package/blueprint at freeze time. */
   durationMinutes: number;
+
+  /** Cách chấm ĐÓNG BĂNG của bộ đề YCCĐ (Đúng–Sai lũy tiến, mcq-multi từng
+   *  phần…). Đóng băng cùng đề để sửa gói đề sau này không đổi cách chấm
+   *  bài đã thi. Không có = chấm toàn phần như cũ. */
+  scoringPolicy?: ScoringPolicy | null;
 
   variants: ExamFormVariant[];
 

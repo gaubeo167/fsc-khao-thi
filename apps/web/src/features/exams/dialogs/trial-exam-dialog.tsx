@@ -21,6 +21,8 @@ import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import { cn } from "@/lib/utils";
 
 import type { GeneratedExam } from "../data/types";
+import { isYccdPackage } from "../data/types";
+import { usePackagesStore } from "../state/packages-store";
 import { gradeExam, type ExamGrade, type Verdict } from "../lib/grade";
 
 interface Props {
@@ -41,6 +43,14 @@ interface Props {
  */
 export function TrialExamDialog({ exam, onClose, onDelete }: Props) {
   const allQuestions = useQuestionsStore((s) => s.questions);
+  const packages = usePackagesStore((s) => s.packages);
+  // Đề YCCĐ có cách chấm riêng (Đúng–Sai lũy tiến, mcq-multi từng phần) —
+  // thi thử phải chấm y như ca thi thật, nếu không giáo viên đối chiếu sẽ lệch.
+  const trialPolicy = useMemo(() => {
+    if (!exam) return null;
+    const pkg = packages.find((p) => p.id === exam.packageId);
+    return pkg && isYccdPackage(pkg) ? pkg.scoringPolicy : null;
+  }, [exam, packages]);
   const subjects = useSubjectsStore((s) => s.subjects);
   const grades = useGradesStore((s) => s.grades);
 
@@ -116,7 +126,7 @@ export function TrialExamDialog({ exam, onClose, onDelete }: Props) {
   // Grade only at submit time so the heavy comparison doesn't run every render.
   const grade: ExamGrade | null = useMemo(() => {
     if (!submitted) return null;
-    return gradeExam(questions, answers);
+    return gradeExam(questions, answers, trialPolicy);
   }, [submitted, questions, answers]);
 
   if (!exam) return null;
