@@ -81,20 +81,43 @@ export function ExamRuntime({
 
   // Bootstrap the attempt — runs exactly once per shift/student. Persisted
   // in a ref so React StrictMode double-mounting doesn't create two attempts.
+  //
+  // MUST stay inside an effect. This used to run straight in the render body
+  // (`if (!attemptRef.current) attemptRef.current = startOrResume(...)`), and
+  // `startOrResume` both mutates the zustand store AND fires a Firestore
+  // write. Because ExamPage also subscribes to that store, React logged
+  // "Cannot update a component (ExamPage) while rendering a different
+  // component (ExamRuntime)" on every exam open — a real render-purity
+  // violation on the one screen we can least afford to have one: a discarded
+  // concurrent render would re-issue the write, and the warning was masking
+  // any other error a student might hit mid-exam.
   const attemptRef = useRef<StudentAttempt | null>(null);
-  if (!attemptRef.current && session) {
-    attemptRef.current = startOrResume({
+  const [attemptId, setAttemptId] = useState<string | null>(null);
+  const questionIdsKey = questions.map((q) => q.id).join("|");
+  useEffect(() => {
+    if (attemptRef.current || !session) return;
+    const att = startOrResume({
       shiftId: shift.id,
       studentId: session.userId,
-      questionIds: questions.map((q) => q.id),
+      questionIds: questionIdsKey ? questionIdsKey.split("|") : [],
       campusId: shift.campusId,
       examFormId,
       variantId,
     });
-  }
+    attemptRef.current = att;
+    setAttemptId(att.id);
+  }, [
+    session,
+    shift.id,
+    shift.campusId,
+    questionIdsKey,
+    examFormId,
+    variantId,
+    startOrResume,
+  ]);
   // Subscribe so saveAnswer triggers rerender of stats.
   const liveAttempt = useAttemptsStore((s) =>
-    s.attempts.find((a) => a.id === attemptRef.current?.id),
+    s.attempts.find((a) => a.id === attemptId),
   );
 
   const [currentIdx, setCurrentIdx] = useState(0);
