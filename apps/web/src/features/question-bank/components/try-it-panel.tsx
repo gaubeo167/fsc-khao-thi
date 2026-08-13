@@ -583,7 +583,10 @@ function ShortAnswerArea({ values, submitted, onSubmit }: AreaProps) {
         className={cn(
           submitted && isCorrect && "border-emerald-400 bg-emerald-50",
           submitted && !isCorrect && match.ratio > 0 && "border-amber-400 bg-amber-50",
-          submitted && !isCorrect && "border-rose-400 bg-rose-50",
+          // `match.ratio === 0` chứ không phải `!isCorrect`: nhánh sai đứng
+          // sau nhánh một-phần nên tailwind-merge giữ màu của nó, khiến câu
+          // được 50% điểm vẫn hiện viền đỏ trong khi banner ghi "Suýt rồi!".
+          submitted && match.ratio === 0 && "border-rose-400 bg-rose-50",
         )}
       />
       <VerdictBanner
