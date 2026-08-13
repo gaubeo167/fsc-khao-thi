@@ -140,6 +140,8 @@
  *    .text-body          14px / 400
  *    .text-small         13px / 400
  *    .text-meta          12px / 400 muted
+ *    .text-hint          11px / 400 muted (chú thích ô nhập — KHÔNG hoa)
+ *    .text-dense         10px / 400 (chip, ô bảng dày — KHÔNG hoa)
  *    .mono               Inter + tabular-nums (never JetBrains/Roboto Mono)
  * ─────────────────────────────────────────────────────────────────────────
  */
@@ -213,6 +215,30 @@
     font-weight: 400;
     line-height: 1.4;
     color: var(--color-text-muted);
+  }
+  /*
+   * .text-hint / .text-dense — hai vai trò BỊ THIẾU trong thang gốc.
+   *
+   * Thang cũ có 11px (.text-eyebrow) và 10px (.text-micro) nhưng CẢ HAI đều ép
+   * uppercase + giãn chữ. Ai cần chữ 11px hay 10px thường thì không có gì để
+   * dùng, nên đã tự chế: 231 chỗ `text-[11px]` và 110 chỗ `text-[10px]` không
+   * kèm uppercase. Đó là lỗ thủng của hệ thống, không phải lỗi người viết code.
+   *
+   * .text-hint  — chú thích dưới ô nhập, phụ đề trong hộp thoại / wizard.
+   *               (111/231 chỗ tự chế đã tự thêm text-muted-foreground)
+   * .text-dense — nhãn chip, ô bảng dày đặc. Sát đáy thang; đừng đi thấp hơn.
+   */
+  .text-hint {
+    font-size: 0.6875rem;
+    font-weight: 400;
+    line-height: 1.4;
+    color: var(--color-text-muted);
+  }
+  .text-dense {
+    font-size: 0.625rem;
+    font-weight: 400;
+    line-height: 1.35;
+    color: var(--color-foreground);
   }
   .mono {
     font-family: var(--font-sans);
