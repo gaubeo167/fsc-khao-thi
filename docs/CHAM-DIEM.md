@@ -76,6 +76,14 @@ interface ScoringPolicy {
 
 Định nghĩa tại `apps/web/src/features/exams/data/types.ts`.
 
+**Đề nào có ScoringPolicy.** Đề YCCĐ lấy thẳng từ gói đề. Đề tạo từ khung đề
+dựng policy từ cấu hình ca thi (`ScoringConfig.mcqMulti` / `.ds` /
+`.dsGraduatedTable`) — xem `policyFromScoringConfig` trong `materialize.ts`.
+
+Ca thi **không cài gì** thì `scoringPolicy` đóng băng là `null`, nghĩa là chấm
+toàn phần. Đó là hành vi của toàn bộ ca thi tạo trước tính năng này, và phải
+giữ nguyên: đổi mặc định ở đây là đổi điểm của những bài đã thi xong.
+
 ### `mcqMulti` — trắc nghiệm nhiều đáp án đúng
 
 | Giá trị | Cách tính |
@@ -106,6 +114,59 @@ phần, chọn hết mọi đáp án thì về 0. Không thể ăn điểm bằn
 
 Tổng điểm toàn đề. Khuyến nghị chuẩn hoá 10. Tổng `perQuestion` của mỗi variant
 phải bằng đúng giá trị này.
+
+---
+
+## Phần 3b — Điểm/câu: giữ số chính xác, làm tròn khi hiển thị
+
+Bảng `perQuestion` là **dữ liệu**, không phải thứ để đọc. Nó từng bị làm tròn 2
+chữ số ngay lúc đóng băng, và tổng đề trượt khỏi thang:
+
+| Chế độ | Cấu hình | Mỗi câu | Tổng |
+|---|---|---|---|
+| `even` | 3 câu, thang 10 | 10/3 = 3,3333 → **3,33** | **9,99** |
+| `by-difficulty` | 2 dễ + 4 TB, thang 10 | 10×1,5/8 = 1,875 → **1,88** | **10,02** |
+
+Đề 10 điểm chấm trên thang 10,02. Không lỗi, không cảnh báo — chỉ ra điểm lệch.
+
+Quy ước hiện tại: **lưu số chính xác, làm tròn ở chỗ hiển thị** bằng
+`formatScore`. Áp cho cả `materialize.ts` lẫn `perQuestion` /
+`earnedPerQuestion` trong `grade.ts` — hai bảng sau **bị cộng lại** ở màn kết
+quả, nên cộng số đã tròn thì sai số dồn lên.
+
+Đã cân nhắc và **bỏ** cách dồn phần dư vào vài câu (largest remainder): nó làm
+hai câu cùng độ khó lệch điểm nhau (1,88 với 1,87), và trong một kỳ thi thì học
+sinh có quyền thắc mắc.
+
+Hệ quả phải biết: cộng tay các con số **hiển thị** có thể ra 10,02 dù tổng thật
+là 10. Bước cài điểm cảnh báo trước khi giáo viên chọn thang chia không hết.
+
+Bất biến này có test khoá: `scripts/test-materialize.mjs`.
+
+---
+
+## Phần 3c — Bốn chế độ phân bổ điểm (đề tạo từ khung đề)
+
+`ScoringConfig.mode` trong `features/exam-shifts/data/types.ts`:
+
+| Chế độ | Cách chia |
+|---|---|
+| `even` | `maxScore / số câu`, mọi câu bằng nhau |
+| `by-difficulty` | theo trọng số dễ/TB/khó (mặc định 1 / 1,5 / 2) |
+| `by-part` | giáo viên đặt **TỔNG** điểm mỗi phần, chia đều cho số câu thực tế của phần |
+| `manual` | tự đặt từng câu; tổng lệch thang thì chuẩn hoá lại theo tỉ lệ |
+
+`by-part` là cấu trúc đề định kỳ quen thuộc — Phần I 4,0đ / Phần II 4,0đ /
+Phần III 2,0đ. Phần xác định bằng **dạng câu hỏi**, không phải một trục của ma
+trận; mỗi dạng chỉ thuộc một phần, phần đứng trước thắng.
+
+Ba chuyện làm đề chấm sai thang mà im lặng, nên bước cài điểm phải nói ra: tổng
+các phần lệch thang (**chặn**), phần không bốc được câu nào (cảnh báo, kèm số
+điểm mất), câu có dạng ngoài mọi phần (cảnh báo, câu đó 0 điểm).
+
+Hàm chia nằm **một chỗ duy nhất** — `pointsByScorePart` trong
+`features/exam-shifts/lib/scoring.ts` — dùng chung cho bước xem trước và bước
+đóng băng. Lệch nhau nghĩa là giáo viên thấy một đằng, học sinh bị chấm một nẻo.
 
 ---
 
