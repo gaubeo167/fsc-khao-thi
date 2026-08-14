@@ -82,6 +82,7 @@ import {
   DEFAULT_ANTI_CHEAT,
   DEFAULT_RESULT_VISIBILITY,
   DEFAULT_SCORING,
+  MOET_DEFAULT_SCORE_PARTS,
   type AntiCheatConfig,
   type ExamShift,
   type RoomAssignMode,
@@ -96,6 +97,7 @@ import {
   formatScore,
   sumManualPerQuestion,
 } from "../lib/scoring";
+import { ScorePartsEditor } from "../components/score-parts-editor";
 import { gradeNumber, tierForGrade } from "../lib/grade-tier";
 import { useShiftsStore } from "../state/shifts-store";
 
@@ -484,6 +486,20 @@ export function ShiftWizard({
       }
       if (!state.scoring.maxScore || state.scoring.maxScore <= 0) {
         return "Điểm tối đa phải > 0.";
+      }
+      if (state.scoring.mode === "by-part") {
+        // Chỉ chặn ở đúng một chuyện: tổng điểm các phần lệch thang, vì khi đó
+        // đề chắc chắn chấm sai thang. Phần rỗng và câu ngoài mọi phần thì chỉ
+        // CẢNH BÁO trong ScorePartsEditor — chặn ở đây sẽ khoá luôn những ca
+        // thi hợp lệ có phần dự phòng chưa dùng tới.
+        const parts = state.scoring.parts ?? [];
+        if (parts.length === 0) return "Chưa khai báo phần nào để chia điểm.";
+        const unnamed = parts.find((p) => !p.label.trim());
+        if (unnamed) return "Có phần chưa đặt tên.";
+        const sum = parts.reduce((a, p) => a + (p.points || 0), 0);
+        if (Math.abs(sum - state.scoring.maxScore) > 0.001) {
+          return `Tổng điểm các phần (${formatScore(sum)}) phải bằng điểm tối đa (${formatScore(state.scoring.maxScore)}).`;
+        }
       }
       if (state.scoring.mode === "manual") {
         // Validate sum PER VARIANT — each generated đề must sum to
@@ -1692,6 +1708,16 @@ function ScoringPanel({
         for (const q of pool) init[q.id] = Math.round(each * 100) / 100;
         draft.perQuestion = init;
       }
+      if (mode === "by-part" && !draft.parts) {
+        // Ba phần mặc định co giãn theo thang đang chọn, để chọn thang 100 thì
+        // không phải sửa cả ba ô mới hết báo lệch tổng.
+        const scale = draft.maxScore / 10;
+        draft.parts = MOET_DEFAULT_SCORE_PARTS.map((p) => ({
+          ...p,
+          questionTypes: [...p.questionTypes],
+          points: p.points * scale,
+        }));
+      }
       return { ...s, scoring: draft };
     });
   }
@@ -1923,7 +1949,7 @@ function ScoringPanel({
           <Label className="text-[11px] font-bold uppercase tracking-[0.06em] text-foreground/65">
             Chế độ phân bổ
           </Label>
-          <div className="mt-1 grid grid-cols-3 gap-1.5">
+          <div className="mt-1 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
             {(
               [
                 { v: "even", label: "Chia đều", desc: "Mọi câu cùng điểm" },
@@ -1931,6 +1957,11 @@ function ScoringPanel({
                   v: "by-difficulty",
                   label: "Theo độ khó",
                   desc: "Dễ < TB < Khó",
+                },
+                {
+                  v: "by-part",
+                  label: "Theo phần",
+                  desc: "Phần I / II / III",
                 },
                 {
                   v: "manual",
@@ -1973,6 +2004,15 @@ function ScoringPanel({
               <b>{formatScore(scoring.maxScore)} điểm</b>
             </p>
           </div>
+        )}
+
+        {scoring.mode === "by-part" && (
+          <ScorePartsEditor
+            parts={scoring.parts ?? []}
+            maxScore={scoring.maxScore}
+            pool={pool}
+            onChange={(parts) => patchScoring({ parts })}
+          />
         )}
 
         {scoring.mode === "by-difficulty" && (
