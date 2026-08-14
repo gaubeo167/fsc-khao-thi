@@ -302,7 +302,7 @@ function AddAdminDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-md p-0">
+      <DialogContent srDescription="Thêm hoặc gỡ quản trị viên của campus." className="max-w-md p-0">
         <header className="flex items-start gap-3 border-b px-6 py-4 pr-12">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 ring-1 ring-blue-200">
             <UserPlus className="h-5 w-5" strokeWidth={1.85} />
@@ -424,7 +424,7 @@ function ResetAdminPasswordDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && close()}>
-      <DialogContent className="max-w-md p-0">
+      <DialogContent srDescription="Thêm hoặc gỡ quản trị viên của campus." className="max-w-md p-0">
         <header className="flex items-start gap-3 border-b px-6 py-4 pr-12">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-700 ring-1 ring-amber-200">
             <KeyRound className="h-5 w-5" strokeWidth={1.85} />

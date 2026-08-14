@@ -425,7 +425,7 @@ export function ImportWordDialog({ open, onOpenChange }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl p-0 max-h-[94vh] overflow-y-auto">
+      <DialogContent srDescription="Nhập câu hỏi từ file Word, xem trước từng câu rồi xác nhận thêm vào kho." className="max-w-3xl p-0 max-h-[94vh] overflow-y-auto">
         <header className="flex items-start gap-3 border-b px-6 py-4 pr-12">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200">
             <FileText className="h-5 w-5" strokeWidth={1.85} aria-hidden />

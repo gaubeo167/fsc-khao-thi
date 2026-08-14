@@ -417,7 +417,7 @@ export function MathLiveDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
+      <DialogContent srDescription="Soạn công thức toán bằng bàn phím công thức rồi chèn vào nội dung câu hỏi."
         className="max-w-4xl p-0 max-h-[92vh] overflow-y-auto"
         srTitle={initialTex ? "Chỉnh sửa công thức" : "Soạn công thức toán"}
       >

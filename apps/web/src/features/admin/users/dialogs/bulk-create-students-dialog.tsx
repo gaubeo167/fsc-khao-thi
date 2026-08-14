@@ -327,7 +327,7 @@ export function BulkCreateStudentsDialog({ open, onOpenChange }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && close()}>
-      <DialogContent
+      <DialogContent srDescription="Tạo nhiều tài khoản học sinh cùng lúc bằng cách dán danh sách hoặc tải file lên."
         className="flex h-[90vh] w-full max-w-4xl flex-col gap-0 overflow-hidden p-0"
         onPointerDownOutside={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}

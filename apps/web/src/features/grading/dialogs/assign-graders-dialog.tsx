@@ -192,7 +192,7 @@ export function AssignGradersDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => (o ? onOpenChange(true) : requestClose())}>
-      <DialogContent className="max-w-2xl p-0">
+      <DialogContent srDescription="Phân công giáo viên chấm bài tự luận cho ca thi này." className="max-w-2xl p-0">
         <header className="flex items-start gap-3 border-b px-5 py-4">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-700">
             <UserCheck className="h-5 w-5" strokeWidth={1.85} />

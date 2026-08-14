@@ -139,7 +139,7 @@ export function TocAiDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
+      <DialogContent srDescription="Dùng AI sinh mục lục môn học từ mô tả chương trình, xem trước trước khi lưu."
         className="max-w-3xl p-0 max-h-[92vh] overflow-y-auto"
         srTitle="AI tạo mục lục môn học"
       >

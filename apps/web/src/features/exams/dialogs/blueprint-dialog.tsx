@@ -219,7 +219,7 @@ export function BlueprintDialog({ open, onOpenChange, editing }: Props) {
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-3xl p-0 max-h-[94vh] overflow-y-auto">
+        <DialogContent srDescription="Tạo hoặc sửa khung đề: môn, khối, cấu trúc chủ đề và thời lượng." className="max-w-3xl p-0 max-h-[94vh] overflow-y-auto">
           <header className="flex items-start gap-3 border-b px-6 py-4 pr-12">
             <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 ring-1 ring-blue-200">
               <LayoutGrid className="h-5 w-5" strokeWidth={1.85} />

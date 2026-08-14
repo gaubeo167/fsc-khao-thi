@@ -95,7 +95,7 @@ export function SendReminderDialog({ open, onOpenChange, shift }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl p-0">
+      <DialogContent srDescription="Soạn và gửi nhắc nhở tới học sinh chưa hoàn thành." className="max-w-xl p-0">
         <header className="flex items-start gap-3 border-b px-5 py-4">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
             <Bell className="h-5 w-5" strokeWidth={1.85} />

@@ -118,7 +118,7 @@ export function FrameworkImportDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
+      <DialogContent srDescription="Nhập khung năng lực từ file Word, xem trước cây chương rồi xác nhận."
         className="max-w-3xl p-0 max-h-[92vh] overflow-y-auto"
         srTitle="Tải khung kiến thức từ file"
       >

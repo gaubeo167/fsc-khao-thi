@@ -89,7 +89,7 @@ export function StudentProgressDialog({ studentId, onClose }: Props) {
 
   return (
     <Dialog open={Boolean(studentId)} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent
+      <DialogContent srDescription="Xem tiến độ học tập của học sinh: điểm thi, bài tập và nhận xét của AI."
         className="flex h-[90vh] w-full max-w-4xl flex-col gap-0 overflow-hidden p-0"
         onPointerDownOutside={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}

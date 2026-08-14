@@ -87,7 +87,7 @@ export function GenerateExamsDialog({ package_, onClose, onGenerated }: Props) {
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-md p-0">
+      <DialogContent srDescription="Chọn số lượng đề cần sinh thêm từ gói đề này." className="max-w-md p-0">
         <header className="flex items-start gap-3 border-b px-6 py-4 pr-12">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-600 ring-1 ring-violet-200">
             <Sparkles className="h-5 w-5" strokeWidth={1.85} />

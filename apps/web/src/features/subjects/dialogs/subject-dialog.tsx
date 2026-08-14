@@ -100,7 +100,7 @@ export function SubjectDialog({ open, onOpenChange, editing }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
+      <DialogContent srDescription="Tạo hoặc sửa môn học: tên, mã môn và các khối áp dụng."
         className="max-w-3xl"
         srTitle={editing ? "Sửa môn học" : "Thêm môn học"}
       >

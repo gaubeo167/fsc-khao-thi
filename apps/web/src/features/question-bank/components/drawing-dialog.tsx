@@ -426,7 +426,7 @@ export function DrawingDialog({ open, onOpenChange, onInsert }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
+      <DialogContent srDescription="Vẽ hình minh hoạ rồi chèn vào nội dung câu hỏi."
         className="max-w-5xl p-0 max-h-[94vh] overflow-y-auto"
         srTitle="Bảng vẽ"
       >

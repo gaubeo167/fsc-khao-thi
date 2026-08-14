@@ -171,7 +171,7 @@ export function CreateQuestionDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
+      <DialogContent srDescription="Chọn dạng câu hỏi rồi soạn nội dung, đáp án và thông tin phân loại."
         className="max-w-3xl max-h-[92vh] overflow-y-auto"
         onPointerDownOutside={(e) => {
           // Always swallow the close gesture. If user was in preview /
@@ -1247,7 +1247,7 @@ function BackConfirmDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
-      <DialogContent className="max-w-md p-0">
+      <DialogContent srDescription="Chọn dạng câu hỏi rồi soạn nội dung, đáp án và thông tin phân loại." className="max-w-md p-0">
         <header className="flex items-start gap-3 border-b px-6 py-4 pr-12">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-600 ring-1 ring-amber-200">
             <ArrowLeft className="h-5 w-5" strokeWidth={1.85} aria-hidden />

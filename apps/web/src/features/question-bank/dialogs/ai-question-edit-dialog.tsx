@@ -178,7 +178,7 @@ export function AiQuestionEditDialog({ open, onOpenChange, initial, onSave }: Pr
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl p-0 max-h-[92vh] overflow-y-auto">
+      <DialogContent srDescription="Sửa lại câu hỏi do AI sinh trước khi lưu vào kho." className="max-w-3xl p-0 max-h-[92vh] overflow-y-auto">
         <header className="flex items-start gap-3 border-b px-6 py-4 pr-12">
           <span
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl"
@@ -296,7 +296,7 @@ export function AiQuestionEditDialog({ open, onOpenChange, initial, onSave }: Pr
 
       {/* "Làm thử" as its own popup (không chèn lên phần chỉnh sửa) */}
       <Dialog open={tryingIt} onOpenChange={setTryingIt}>
-        <DialogContent
+        <DialogContent srDescription="Sửa lại câu hỏi do AI sinh trước khi lưu vào kho."
           className="max-w-2xl p-0 max-h-[92vh] overflow-y-auto"
           srTitle="Làm thử câu hỏi"
         >

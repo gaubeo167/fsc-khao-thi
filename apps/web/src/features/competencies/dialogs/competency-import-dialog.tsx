@@ -137,7 +137,7 @@ export function CompetencyImportDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
+      <DialogContent srDescription="Nhập khung Yêu cầu cần đạt từ file Word, xem trước rồi xác nhận thêm vào kho."
         className="max-w-3xl p-0 max-h-[92vh] overflow-y-auto"
         srTitle="Tải khung YCCĐ từ file"
       >

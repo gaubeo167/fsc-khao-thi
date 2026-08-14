@@ -281,7 +281,7 @@ export function AiBatchDialog({ open, onOpenChange, onBack }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
+      <DialogContent srDescription="Mô tả chủ đề để AI sinh nhiều câu hỏi cùng lúc, duyệt từng câu trước khi lưu."
         className="max-w-3xl p-0 max-h-[94vh] overflow-y-auto"
         srTitle="AI tạo nhiều câu hỏi cùng lúc"
       >

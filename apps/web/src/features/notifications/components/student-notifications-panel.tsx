@@ -190,7 +190,7 @@ function NotificationDetailDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-lg p-0">
+      <DialogContent srDescription="Danh sách thông báo gửi tới học sinh." className="max-w-lg p-0">
         <header className="flex items-start gap-3 border-b px-5 py-4">
           <span
             className={cn(

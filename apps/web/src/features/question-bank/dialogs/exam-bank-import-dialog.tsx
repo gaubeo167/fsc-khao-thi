@@ -419,7 +419,7 @@ export function ExamBankImportDialog({ open, onOpenChange }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
+      <DialogContent srDescription="Tải đề theo mã lên, đối chiếu với ngân hàng câu hỏi rồi xác nhận nhập."
         className="max-w-4xl p-0 max-h-[92vh] overflow-y-auto"
         srTitle="Upload đề vào ngân hàng câu hỏi"
       >

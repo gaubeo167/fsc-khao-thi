@@ -65,7 +65,7 @@ export function MathInsertDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
+      <DialogContent srDescription="Soạn công thức toán bằng LaTeX rồi chèn vào nội dung câu hỏi."
         className="max-w-2xl p-0 max-h-[90vh] overflow-y-auto"
         srTitle={initialTex ? "Chỉnh sửa công thức toán" : "Chèn công thức toán"}
       >

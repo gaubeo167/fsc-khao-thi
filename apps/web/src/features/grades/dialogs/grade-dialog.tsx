@@ -58,7 +58,7 @@ export function GradeDialog({ open, onOpenChange, editing }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
+      <DialogContent srDescription="Tạo hoặc sửa thông tin khối học: tên khối, mã khối và trạng thái hoạt động."
         className="max-w-xl p-0"
         srTitle={editing ? "Chỉnh sửa khối" : "Thêm khối mới"}
       >

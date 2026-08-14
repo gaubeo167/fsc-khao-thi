@@ -259,7 +259,7 @@ export function CampusDialog({ open, onOpenChange, editing }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl p-0 max-h-[94vh] overflow-y-auto">
+      <DialogContent srDescription="Tạo hoặc sửa campus: tên, mã, địa chỉ và các khối áp dụng." className="max-w-2xl p-0 max-h-[94vh] overflow-y-auto">
         <header className="flex items-start gap-3 border-b px-6 py-4 pr-12">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 ring-1 ring-blue-200">
             <Building2 className="h-5 w-5" strokeWidth={1.85} />

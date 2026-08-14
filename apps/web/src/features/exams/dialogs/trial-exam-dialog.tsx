@@ -160,7 +160,7 @@ export function TrialExamDialog({ exam, onClose, onDelete }: Props) {
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent
+      <DialogContent srDescription="Làm thử đề theo đúng giao diện học sinh, không lưu kết quả."
         className="max-w-5xl p-0 max-h-[96vh] overflow-hidden flex flex-col"
         srTitle={`Thi thử ${exam.name}`}
       >

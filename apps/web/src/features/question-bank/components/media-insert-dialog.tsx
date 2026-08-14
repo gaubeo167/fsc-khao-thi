@@ -165,7 +165,7 @@ export function MediaInsertDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md p-0 max-h-[88vh] overflow-y-auto">
+      <DialogContent srDescription="Chèn ảnh, video, âm thanh hoặc liên kết vào nội dung câu hỏi." className="max-w-md p-0 max-h-[88vh] overflow-y-auto">
         <header className="flex items-start gap-3 border-b px-6 py-4 pr-12">
           <span
             className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ring-1 ${copy.accent}`}

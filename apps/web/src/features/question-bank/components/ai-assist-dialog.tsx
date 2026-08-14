@@ -190,7 +190,7 @@ export function AiAssistDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
+      <DialogContent srDescription="Nhờ AI gợi ý hoặc viết lại nội dung, xem trước trước khi chèn vào câu hỏi."
         className="max-w-2xl p-0 max-h-[88vh] overflow-y-auto"
         srTitle={copy.title}
       >

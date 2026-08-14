@@ -61,7 +61,7 @@ export function FractionInsertDialog({ open, onOpenChange, onInsert }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
+      <DialogContent srDescription="Nhập tử số và mẫu số để chèn phân số vào nội dung câu hỏi."
         className="max-w-md p-0 max-h-[88vh] overflow-y-auto"
         srTitle="Chèn phân số"
       >

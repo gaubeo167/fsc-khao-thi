@@ -68,7 +68,7 @@ export function CompetencyNodeDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md p-0">
+      <DialogContent srDescription="Tạo hoặc sửa một mục trong khung Yêu cầu cần đạt: mã, tên và cấp bậc." className="max-w-md p-0">
         <header className="border-b px-5 py-3.5">
           <DialogTitle className="text-section-title">
             {mode === "add" ? "Thêm" : "Sửa"} {meta.full}

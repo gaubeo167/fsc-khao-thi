@@ -44,7 +44,7 @@ export function ViewQuestionDialog({ question, onClose }: Props) {
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent
+      <DialogContent srDescription="Xem toàn bộ nội dung câu hỏi, đáp án đúng và thông tin phân loại."
         className="max-w-2xl p-0 max-h-[88vh] overflow-y-auto"
         srTitle={`Xem câu hỏi ${question.id}`}
       >

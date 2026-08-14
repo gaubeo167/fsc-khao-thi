@@ -109,7 +109,7 @@ export function ClassDialog({ open, onOpenChange, editing, presetGradeId }: Prop
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
+      <DialogContent srDescription="Tạo hoặc sửa lớp học: tên lớp, mã lớp, khối và giáo viên chủ nhiệm."
         className="max-w-xl p-0"
         srTitle={editing ? "Chỉnh sửa lớp" : "Thêm lớp mới"}
       >

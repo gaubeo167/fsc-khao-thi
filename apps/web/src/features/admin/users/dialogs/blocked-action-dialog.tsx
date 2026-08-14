@@ -34,7 +34,7 @@ export function BlockedActionDialog({
 }: Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent srDescription="Giải thích vì sao thao tác này bị chặn và cần làm gì tiếp theo." className="max-w-md">
         <DialogHeader>
           <div className="flex items-center gap-3">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-destructive/12 text-destructive ring-1 ring-destructive/20">

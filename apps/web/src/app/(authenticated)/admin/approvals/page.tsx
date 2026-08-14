@@ -943,7 +943,7 @@ function MaterialRejectDialog({
   const [note, setNote] = useState("");
   return (
     <Dialog open={Boolean(target)} onOpenChange={(o) => !o && onCancel()}>
-      <DialogContent className="max-w-md p-0" srTitle="Từ chối học liệu">
+      <DialogContent srDescription="Xem chi tiết và duyệt hoặc từ chối câu hỏi, gói đề đang chờ phê duyệt." className="max-w-md p-0" srTitle="Từ chối học liệu">
         <header className="flex items-start gap-3 border-b px-6 py-4 pr-12">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-600 ring-1 ring-rose-200">
             <ThumbsDown className="h-5 w-5" strokeWidth={1.85} aria-hidden />
@@ -1003,7 +1003,7 @@ function PackageRejectDialog({
   const [note, setNote] = useState("");
   return (
     <Dialog open={Boolean(target)} onOpenChange={(o) => !o && onCancel()}>
-      <DialogContent className="max-w-md p-0" srTitle="Từ chối gói đề">
+      <DialogContent srDescription="Xem chi tiết và duyệt hoặc từ chối câu hỏi, gói đề đang chờ phê duyệt." className="max-w-md p-0" srTitle="Từ chối gói đề">
         <header className="flex items-start gap-3 border-b px-6 py-4 pr-12">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-600 ring-1 ring-rose-200">
             <ThumbsDown className="h-5 w-5" strokeWidth={1.85} aria-hidden />
@@ -1063,7 +1063,7 @@ function RejectDialog({
   const [note, setNote] = useState("");
   return (
     <Dialog open={Boolean(target)} onOpenChange={(o) => !o && onCancel()}>
-      <DialogContent className="max-w-md p-0" srTitle="Từ chối câu hỏi">
+      <DialogContent srDescription="Xem chi tiết và duyệt hoặc từ chối câu hỏi, gói đề đang chờ phê duyệt." className="max-w-md p-0" srTitle="Từ chối câu hỏi">
         <header className="flex items-start gap-3 border-b px-6 py-4 pr-12">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-600 ring-1 ring-rose-200">
             <ThumbsDown className="h-5 w-5" strokeWidth={1.85} aria-hidden />
