@@ -139,10 +139,12 @@ console.log("── Nhóm 1: khoá hành vi 3 chế độ hiện có ──");
     pool, easy: 2, medium: 4,
     scoring: { maxScore: 10, mode: "by-difficulty", difficultyWeights: { easy: 1, medium: 1.5, hard: 2 } },
   }));
-  const easyPts = pts.filter((p) => p === 1.25).length;
-  const medPts = pts.filter((p) => p === 1.88).length;
+  const easyPts = pts.filter((p) => Math.abs(p - 1.25) < 1e-9).length;
+  const medPts = pts.filter((p) => Math.abs(p - 1.875) < 1e-9).length;
   eq("by-difficulty · 2 câu dễ nhận 1,25đ", easyPts, 2);
-  eq("by-difficulty · 4 câu TB nhận 1,88đ (đã làm tròn từ 1,875)", medPts, 4);
+  // 1,875 CHÍNH XÁC, không phải 1,88. Giao diện vẫn hiện "1.88" qua formatScore,
+  // nhưng dữ liệu giữ số thật nên cộng lại vẫn tròn 10.
+  eq("by-difficulty · 4 câu TB nhận đúng 1,875đ (không làm tròn)", medPts, 4);
 }
 
 // manual: điểm do giáo viên tự đặt, tổng đã đúng thang → giữ nguyên
@@ -183,9 +185,7 @@ console.log("\n── Nhóm 2: bất biến tổng điểm ──");
 {
   const pool = [q("Q1", "easy"), q("Q2", "easy"), q("Q3", "easy")];
   const pts = pointsOf(makeInput({ pool, easy: 3, scoring: { maxScore: 10, mode: "even" } }));
-  // ĐANG SAI: 10/3 = 3,3333 bị round2 thành 3,33 → tổng 9,99.
-  // Ghi nhận hiện trạng ở commit này; commit sau sửa thành 10 tròn.
-  eq("even · 3 câu — HIỆN TRẠNG tổng 9,99 (SAI, sửa ở commit sau)", sum(pts), 9.99);
+  eq("even · 3 câu KHÔNG chia hết → tổng vẫn đúng 10", sum(pts), 10);
 }
 
 // by-difficulty, đúng ca trong ảnh. 2×1,25 + 4×1,88 = 10,02.
@@ -198,9 +198,76 @@ console.log("\n── Nhóm 2: bất biến tổng điểm ──");
     pool, easy: 2, medium: 4,
     scoring: { maxScore: 10, mode: "by-difficulty", difficultyWeights: { easy: 1, medium: 1.5, hard: 2 } },
   }));
-  // ĐANG SAI: 10×1,5/8 = 1,875 bị round2 thành 1,88 → tổng 10,02.
-  // Đây đúng là cấu hình trong ảnh chụp màn hình người dùng gửi.
-  eq("by-difficulty · ca trong ảnh — HIỆN TRẠNG tổng 10,02 (SAI, sửa ở commit sau)", sum(pts), 10.02);
+  eq("by-difficulty · ca trong ảnh → tổng vẫn đúng 10", sum(pts), 10);
+}
+
+/* ══════════════════ NHÓM 3 — CHẾ ĐỘ MỚI "ĐIỂM THEO PHẦN" ══════════════════
+ * Cấu trúc giáo viên quen dùng: Phần I 4,0đ / Phần II 4,0đ / Phần III 2,0đ.
+ * Phần xác định bằng DẠNG câu hỏi; TỔNG điểm của phần chia đều cho số câu
+ * thực tế, nên đổi số câu không phải tính lại điểm bằng tay.
+ */
+console.log("\n── Nhóm 3: điểm theo phần ──");
+
+const PARTS_3 = [
+  { id: "p1", label: "Phần I", questionTypes: ["mcq-single"], points: 4 },
+  { id: "p2", label: "Phần II", questionTypes: ["multi-tf"], points: 4 },
+  { id: "p3", label: "Phần III", questionTypes: ["short-answer"], points: 2 },
+];
+
+// 4 câu TN + 2 câu Đ/S + 2 câu trả lời ngắn → 1,0 / 2,0 / 1,0
+{
+  const pool = [
+    q("Q1", "easy", "mcq-single"), q("Q2", "easy", "mcq-single"),
+    q("Q3", "medium", "mcq-single"), q("Q4", "medium", "mcq-single"),
+    q("Q5", "medium", "multi-tf"), q("Q6", "medium", "multi-tf"),
+    q("Q7", "hard", "short-answer"), q("Q8", "hard", "short-answer"),
+  ];
+  const form = materializeExamForm(makeInput({
+    pool, easy: 2, medium: 4, hard: 2,
+    scoring: { maxScore: 10, mode: "by-part", parts: PARTS_3 },
+  }));
+  const v = form.variants[0];
+  const byType = {};
+  for (const s of v.questions) byType[s.type] = v.perQuestion[s.snapshotId];
+  eq("by-part · 4 câu TN chia 4,0đ → 1,0đ mỗi câu", byType["mcq-single"], 1);
+  eq("by-part · 2 câu Đ/S chia 4,0đ → 2,0đ mỗi câu", byType["multi-tf"], 2);
+  eq("by-part · 2 câu trả lời ngắn chia 2,0đ → 1,0đ mỗi câu", byType["short-answer"], 1);
+  eq("by-part · tổng đúng thang 10", sum(v.questions.map((s) => v.perQuestion[s.snapshotId])), 10);
+}
+
+// Phần chia KHÔNG hết: 4,0đ cho 3 câu → 1,3333 mỗi câu, tổng phần vẫn đúng 4,0.
+{
+  const pool = [
+    q("Q1", "easy", "mcq-single"), q("Q2", "easy", "mcq-single"), q("Q3", "easy", "mcq-single"),
+    q("Q4", "medium", "multi-tf"), q("Q5", "medium", "multi-tf"),
+    q("Q6", "hard", "short-answer"), q("Q7", "hard", "short-answer"),
+  ];
+  const pts = pointsOf(makeInput({
+    pool, easy: 3, medium: 2, hard: 2,
+    scoring: { maxScore: 10, mode: "by-part", parts: PARTS_3 },
+  }));
+  eq("by-part · phần chia không hết → tổng đề vẫn đúng 10", sum(pts), 10);
+}
+
+// Dạng câu KHÔNG thuộc phần nào → 0 điểm, và KHÔNG được âm thầm ăn vào phần khác.
+{
+  const pool = [
+    q("Q1", "easy", "mcq-single"), q("Q2", "easy", "mcq-single"),
+    q("Q3", "medium", "multi-tf"), q("Q4", "medium", "multi-tf"),
+    q("Q5", "hard", "matching"), // không phần nào khai "matching"
+  ];
+  const form = materializeExamForm(makeInput({
+    pool, easy: 2, medium: 2, hard: 1,
+    scoring: {
+      maxScore: 8, mode: "by-part",
+      parts: [PARTS_3[0], PARTS_3[1]],
+    },
+  }));
+  const v = form.variants[0];
+  const orphan = v.questions.find((s) => s.type === "matching");
+  eq("by-part · dạng câu ngoài mọi phần nhận 0đ", v.perQuestion[orphan.snapshotId], 0);
+  eq("by-part · điểm hai phần vẫn nguyên vẹn (4+4)",
+     sum(v.questions.map((s) => v.perQuestion[s.snapshotId])), 8);
 }
 
 console.log(`\n${pass} pass · ${fail} fail`);

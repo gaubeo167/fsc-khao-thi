@@ -15,6 +15,7 @@
  */
 
 import type { ExamOrderStrategy } from "@/features/exam-forms/data/types";
+import type { QuestionType } from "@/features/question-bank/data/question-types";
 
 export type ShiftStatus =
   | "draft"
@@ -95,12 +96,37 @@ export type RoomAssignMode = "alphabet" | "class" | "random";
  *   - "by-difficulty" — easy / medium / hard each have a relative weight;
  *                       a question's score = `maxScore * (w_d / Σ(w_d × count_d))`
  *   - "manual"        — explicit per-question score map, sum MUST equal `maxScore`
+ *   - "by-part"       — giáo viên chia đề thành các PHẦN theo DẠNG câu hỏi và
+ *                       đặt TỔNG điểm cho từng phần; hệ thống chia đều tổng đó
+ *                       cho số câu thực tế trong phần
  *
  * The student's final shift score is the sum of per-question scores
  * awarded (full credit for auto-graded correct, ratio of essay rubric for
  * manually-graded). Auto-graded incorrect = 0.
  */
-export type ScoringMode = "even" | "by-difficulty" | "manual";
+export type ScoringMode = "even" | "by-difficulty" | "manual" | "by-part";
+
+/**
+ * Một PHẦN của đề khi chấm theo cấu trúc quen thuộc của giáo viên:
+ *
+ *   Phần I  — Trắc nghiệm nhiều lựa chọn   4,0 điểm
+ *   Phần II — Đúng/Sai nhiều ý             4,0 điểm
+ *   Phần III— Trả lời ngắn                 2,0 điểm
+ *
+ * Phần được xác định bằng DẠNG câu hỏi, không phải một trục của ma trận. Một
+ * dạng chỉ thuộc đúng một phần; khi nhiều phần cùng khai một dạng thì phần
+ * ĐỨNG TRƯỚC thắng (xem `partIdForType`).
+ *
+ * `points` là TỔNG điểm của cả phần, không phải điểm mỗi câu. Chia cho số câu
+ * thực tế bốc được, nên giáo viên không phải tính tay khi số câu thay đổi.
+ */
+export interface ScorePart {
+  id: string;
+  label: string;
+  questionTypes: QuestionType[];
+  /** TỔNG điểm của cả phần. Σ points của mọi phần phải bằng `maxScore`. */
+  points: number;
+}
 
 export interface ScoringConfig {
   /** Total possible score for this exam — typically 10 (VN standard) or 100. */
@@ -112,7 +138,37 @@ export interface ScoringConfig {
   /** Per-question explicit score when `mode === "manual"`. Sum must
    *  equal `maxScore` — wizard validation enforces this. */
   perQuestion?: Record<string, number>;
+  /** Các phần khi `mode === "by-part"`. Σ points phải bằng `maxScore`. */
+  parts?: ScorePart[];
 }
+
+/**
+ * Ba phần mặc định theo cấu trúc đề định kỳ phổ biến (thang 10).
+ *
+ * Chỉ là ĐIỂM KHỞI ĐẦU: giáo viên thêm/bớt phần, đổi tên, đổi dạng câu hỏi và
+ * đổi điểm thoải mái. Các dạng không nằm trong ba phần này (nối, sắp xếp, kéo
+ * thả, gạch chân, tự luận…) giáo viên tự thêm phần cho chúng khi cần.
+ */
+export const MOET_DEFAULT_SCORE_PARTS: ScorePart[] = [
+  {
+    id: "part-1",
+    label: "Phần I — Trắc nghiệm nhiều lựa chọn",
+    questionTypes: ["mcq-single", "mcq-multi"],
+    points: 4,
+  },
+  {
+    id: "part-2",
+    label: "Phần II — Đúng/Sai nhiều ý",
+    questionTypes: ["multi-tf", "true-false"],
+    points: 4,
+  },
+  {
+    id: "part-3",
+    label: "Phần III — Trả lời ngắn",
+    questionTypes: ["short-answer", "fill-blank"],
+    points: 2,
+  },
+];
 
 /** Sensible default — most VN schools score on a 10-point scale, even. */
 export const DEFAULT_SCORING: ScoringConfig = {

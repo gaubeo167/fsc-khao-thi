@@ -24,6 +24,7 @@ import {
 import type {
   ScoringConfig,
 } from "@/features/exam-shifts/data/types";
+import { pointsByScorePart } from "@/features/exam-shifts/lib/scoring";
 import type {
   Question,
 } from "@/features/question-bank/data/seed-questions";
@@ -230,11 +231,36 @@ function computeYccdPerQuestion(
   const out: Record<string, number> = {};
   for (const snap of snapshots) {
     const pid = partIdForType(parts, snap.type);
-    out[snap.snapshotId] = pid ? round2(pts[pid] ?? 0) : 0;
+    // Không round2: xem ghi chú "Vì sao KHÔNG làm tròn" ở computePerQuestionScoring.
+    out[snap.snapshotId] = pid ? pts[pid] ?? 0 : 0;
   }
   return out;
 }
 
+/**
+ * VÌ SAO KHÔNG LÀM TRÒN Ở ĐÂY
+ *
+ * Điểm/câu đóng băng trong bảng này là DỮ LIỆU, không phải thứ để đọc. Làm tròn
+ * nó từng khiến tổng điểm của đề lệch khỏi thang:
+ *
+ *   even, 3 câu, thang 10       10/3 = 3,3333 → 3,33 → tổng 9,99
+ *   by-difficulty, 2 dễ + 4 TB  10×1,5/8 = 1,875 → 1,88 → tổng 10,02
+ *
+ * Tức là đề 10 điểm bị chấm trên thang 10,02. Sai lặng lẽ, không lỗi, không
+ * cảnh báo — đúng loại lỗi tệ nhất trong hệ thống khảo thí.
+ *
+ * Cách chữa là giữ số CHÍNH XÁC (1,875) trong dữ liệu, làm tròn KHI HIỂN THỊ
+ * bằng `formatScore`. Mọi chỗ hiển thị đã gọi hàm đó rồi.
+ *
+ * Đã cân nhắc cách "dồn phần dư vào vài câu" (largest remainder) và bỏ, vì nó
+ * làm hai câu CÙNG độ khó lệch điểm nhau (1,88 với 1,87). Trong một kỳ thi thì
+ * học sinh có quyền thắc mắc chuyện đó, còn 1,875 thì không ai thiệt.
+ *
+ * Hệ quả cần biết: cộng tay các con số HIỂN THỊ có thể ra 10,02 dù tổng thật là
+ * 10. Bước cài điểm cảnh báo trước khi giáo viên chọn thang chia không hết.
+ *
+ * Test giữ bất biến này: `scripts/test-materialize.mjs`.
+ */
 function computePerQuestionScoring(
   snapshots: QuestionSnapshot[],
   scoring: ScoringConfig,
@@ -242,6 +268,16 @@ function computePerQuestionScoring(
   const n = snapshots.length;
   if (n === 0) return {};
   const out: Record<string, number> = {};
+
+  // Điểm theo PHẦN: mỗi phần có TỔNG điểm, chia đều cho số câu thực tế của phần
+  // đó. Phần không bốc được câu nào thì điểm của nó không rơi vào đâu cả — đó
+  // là lý do bước cài điểm phải cảnh báo, chứ ở đây không tự ý phân phối lại.
+  if (scoring.mode === "by-part" && scoring.parts && scoring.parts.length > 0) {
+    return pointsByScorePart(
+      snapshots.map((s) => ({ id: s.snapshotId, type: s.type })),
+      scoring.parts,
+    );
+  }
 
   if (scoring.mode === "manual" && scoring.perQuestion) {
     let total = 0;
@@ -256,7 +292,7 @@ function computePerQuestionScoring(
     if (total > 0 && Math.abs(total - scoring.maxScore) > 0.01) {
       const scale = scoring.maxScore / total;
       for (const snap of snapshots) {
-        out[snap.snapshotId] = round2(out[snap.snapshotId]! * scale);
+        out[snap.snapshotId] = out[snap.snapshotId]! * scale;
       }
     }
     return out;
@@ -275,20 +311,16 @@ function computePerQuestionScoring(
     } else {
       for (const snap of snapshots) {
         const w = weights[snap.difficulty] ?? 1;
-        out[snap.snapshotId] = round2((scoring.maxScore * w) / denom);
+        out[snap.snapshotId] = (scoring.maxScore * w) / denom;
       }
       return out;
     }
   }
 
   // "even" (or fallback)
-  const per = round2(scoring.maxScore / n);
+  const per = scoring.maxScore / n;
   for (const snap of snapshots) out[snap.snapshotId] = per;
   return out;
-}
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
 }
 
 /**

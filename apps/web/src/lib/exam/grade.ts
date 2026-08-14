@@ -318,13 +318,17 @@ export function computeWeightedAttemptScore(
   const earnedPerQuestion: Record<string, number> = {};
   for (const q of questions) {
     const w = weightOf(q);
-    perQuestion[q.id] = round2(w);
+    // Giữ số CHÍNH XÁC, không round2. Hai bảng này bị CỘNG LẠI ở màn kết quả và
+    // màn bài làm của giáo viên; cộng các số đã làm tròn thì sai số dồn lên tới
+    // vài xu trên thang 10. Mọi chỗ hiển thị đã làm tròn bằng `formatScore`.
+    // Xem ghi chú "Vì sao KHÔNG làm tròn" trong exam-forms/lib/materialize.ts.
+    perQuestion[q.id] = w;
     const ratio = gradeQuestionRatio(q, answers[q.id], policy);
     if (ratio == null) continue; // tự luận — chấm tay
     autoGradedCount += 1;
     maxPoints += w;
     points += w * ratio;
-    earnedPerQuestion[q.id] = round2(w * ratio);
+    earnedPerQuestion[q.id] = w * ratio;
     if (ratio >= 1) correctCount += 1;
   }
   return {

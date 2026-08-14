@@ -1,8 +1,57 @@
-import type { ScoringConfig } from "../data/types";
+import type { ScorePart, ScoringConfig } from "../data/types";
 import type {
   Difficulty,
   Question,
 } from "@/features/question-bank/data/seed-questions";
+import type { QuestionType } from "@/features/question-bank/data/question-types";
+
+/**
+ * Phần chứa một dạng câu hỏi. Phần ĐỨNG TRƯỚC thắng khi hai phần cùng khai một
+ * dạng, để kết quả xác định thay vì phụ thuộc thứ tự duyệt câu hỏi.
+ */
+export function partIdForScoreType(
+  parts: ScorePart[],
+  t: QuestionType,
+): string | null {
+  for (const p of parts) if (p.questionTypes.includes(t)) return p.id;
+  return null;
+}
+
+/**
+ * Chia TỔNG điểm của từng phần đều cho số câu THỰC TẾ của phần đó.
+ *
+ * Dùng chung cho hai đường: xem trước trong bước cài điểm, và đóng băng vào đề
+ * ở `materializeExamForm`. Một bản cài đặt duy nhất để hai chỗ không lệch nhau
+ * — bởi nếu lệch thì giáo viên thấy một đằng, học sinh bị chấm một nẻo.
+ *
+ * Câu có dạng không thuộc phần nào nhận 0. Phần không bốc được câu nào thì điểm
+ * của phần đó không rơi vào đâu cả, và hàm này KHÔNG tự phân phối lại — bước
+ * cài điểm phải cảnh báo, vì im lặng đổi thang điểm còn tệ hơn.
+ */
+export function pointsByScorePart(
+  items: { id: string; type: QuestionType }[],
+  parts: ScorePart[],
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  const idsInPart = new Map<string, string[]>();
+  for (const it of items) {
+    const pid = partIdForScoreType(parts, it.type);
+    if (!pid) {
+      out[it.id] = 0;
+      continue;
+    }
+    const list = idsInPart.get(pid);
+    if (list) list.push(it.id);
+    else idsInPart.set(pid, [it.id]);
+  }
+  for (const part of parts) {
+    const ids = idsInPart.get(part.id);
+    if (!ids || ids.length === 0) continue;
+    const per = part.points / ids.length;
+    for (const id of ids) out[id] = per;
+  }
+  return out;
+}
 
 /**
  * Compute the per-question score map under a given ScoringConfig for a
@@ -51,6 +100,17 @@ export function computePerQuestionScores(
         out[q.id] = Number.isFinite(pq[q.id]) ? (pq[q.id] as number) : 0;
       }
       return out;
+    }
+    case "by-part": {
+      const parts = scoring.parts ?? [];
+      if (parts.length === 0) {
+        // Chưa cài phần nào thì lùi về chia đều, để bản nháp dở dang không hiện
+        // toàn số 0 làm giáo viên tưởng hỏng.
+        const each = scoring.maxScore / questions.length;
+        for (const q of questions) out[q.id] = each;
+        return out;
+      }
+      return pointsByScorePart(questions, parts);
     }
   }
 }
