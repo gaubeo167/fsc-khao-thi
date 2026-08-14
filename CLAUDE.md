@@ -29,6 +29,7 @@ Chạy các script hồi quy trước khi deploy:
 node scripts/test-short-answer.mjs     # so khớp đáp án trả lời ngắn
 node scripts/test-grade.mjs            # chấm điểm theo chuẩn Bộ
 node scripts/test-ai-error.mjs         # phân loại lỗi AI
+node scripts/test-math-xss.mjs         # XSS ở bộ render công thức toán
 node scripts/check-design-tokens.mjs   # bánh cóc thang chữ (xem dưới)
 ```
 
