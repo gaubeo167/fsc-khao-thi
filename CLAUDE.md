@@ -26,12 +26,19 @@ Khi chạy QA hoặc review, báo lại mọi chỗ code lệch DESIGN.md.
 Chạy các script hồi quy trước khi deploy:
 
 ```bash
-node scripts/test-short-answer.mjs   # so khớp đáp án trả lời ngắn
-node scripts/test-grade.mjs          # chấm điểm theo chuẩn Bộ
-node scripts/test-ai-error.mjs       # phân loại lỗi AI
+node scripts/test-short-answer.mjs     # so khớp đáp án trả lời ngắn
+node scripts/test-grade.mjs            # chấm điểm theo chuẩn Bộ
+node scripts/test-ai-error.mjs         # phân loại lỗi AI
+node scripts/check-design-tokens.mjs   # bánh cóc thang chữ (xem dưới)
 ```
 
 Sửa lỗi thì viết thêm ca hồi quy khoá lại đúng lỗi đó.
+
+`check-design-tokens.mjs` là **bánh cóc quay một chiều**: số chỗ dùng cỡ chữ
+tự chế (`text-[Npx]`) và số chỗ dùng nửa pixel chỉ được GIẢM, không được tăng.
+Mốc nằm ở `scripts/design-tokens-baseline.json`. Di cư xong một mảng thì chạy
+`node scripts/check-design-tokens.mjs --update` để hạ mốc. Đừng bao giờ nâng
+mốc lên để cho qua.
 
 ## Lưu ý môi trường
 
