@@ -111,7 +111,7 @@ export function ScorePartsEditor({ parts, maxScore, pool, onChange }: Props) {
 
   return (
     <div className="space-y-2.5">
-      <p className="text-[11px] text-muted-foreground">
+      <p className="text-hint">
         Đặt TỔNG điểm cho từng phần — hệ thống chia đều cho số câu thực tế của
         phần đó. Phần xác định bằng dạng câu hỏi, mỗi dạng chỉ thuộc một phần.
       </p>
@@ -122,14 +122,14 @@ export function ScorePartsEditor({ parts, maxScore, pool, onChange }: Props) {
           return (
             <li key={part.id} className="rounded-lg border bg-card p-2.5">
               <div className="flex items-center gap-2">
-                <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-bold text-foreground/70">
+                <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-dense font-bold text-foreground/70">
                   {idx + 1}
                 </span>
                 <Input
                   value={part.label}
                   onChange={(e) => patch(part.id, { label: e.target.value })}
                   placeholder="Tên phần"
-                  className="h-7 flex-1 text-[12px]"
+                  className="h-7 flex-1 text-meta"
                 />
                 <Input
                   type="number"
@@ -140,9 +140,9 @@ export function ScorePartsEditor({ parts, maxScore, pool, onChange }: Props) {
                     const v = Number(e.target.value);
                     if (Number.isFinite(v) && v >= 0) patch(part.id, { points: v });
                   }}
-                  className="h-7 w-20 text-right text-[12px]"
+                  className="h-7 w-20 text-right text-meta"
                 />
-                <span className="text-[10px] text-muted-foreground">đ</span>
+                <span className="text-dense text-muted-foreground">đ</span>
                 <button
                   type="button"
                   onClick={() => onChange(parts.filter((p) => p.id !== part.id))}
@@ -162,7 +162,7 @@ export function ScorePartsEditor({ parts, maxScore, pool, onChange }: Props) {
                       type="button"
                       onClick={() => toggleType(part.id, t.id)}
                       className={cn(
-                        "rounded-md border px-1.5 py-0.5 text-[10px] font-semibold transition",
+                        "rounded-md border px-1.5 py-0.5 text-dense font-semibold transition",
                         on
                           ? "border-primary bg-primary/10 text-primary"
                           : "border-border bg-card text-muted-foreground hover:bg-accent/30",
@@ -174,7 +174,7 @@ export function ScorePartsEditor({ parts, maxScore, pool, onChange }: Props) {
                 })}
               </div>
 
-              <p className="mt-1.5 text-[11px] text-muted-foreground">
+              <p className="mt-1.5 text-hint">
                 {n === 0 ? (
                   <span className="font-semibold text-amber-700">
                     Chưa có câu nào thuộc phần này
@@ -196,14 +196,14 @@ export function ScorePartsEditor({ parts, maxScore, pool, onChange }: Props) {
       <button
         type="button"
         onClick={addPart}
-        className="inline-flex items-center gap-1.5 rounded-md border border-dashed px-2.5 py-1 text-[12px] font-semibold text-muted-foreground hover:bg-accent/30 hover:text-foreground"
+        className="inline-flex items-center gap-1.5 rounded-md border border-dashed px-2.5 py-1 text-meta font-semibold hover:bg-accent/30 hover:text-foreground"
       >
         <Plus className="h-3.5 w-3.5" strokeWidth={2} /> Thêm phần
       </button>
 
       <div
         className={cn(
-          "rounded-md border px-3 py-2 text-[12px]",
+          "rounded-md border px-3 py-2 text-meta",
           totalOk
             ? "border-emerald-200 bg-emerald-50/60 text-emerald-800"
             : "border-rose-200 bg-rose-50/60 text-rose-800",
@@ -215,7 +215,7 @@ export function ScorePartsEditor({ parts, maxScore, pool, onChange }: Props) {
       </div>
 
       {(emptyParts.length > 0 || counts.orphan > 0 || unevenParts.length > 0) && (
-        <ul className="space-y-1 rounded-md border border-amber-200 bg-amber-50/60 px-3 py-2 text-[11px] text-amber-900">
+        <ul className="space-y-1 rounded-md border border-amber-200 bg-amber-50/60 px-3 py-2 text-hint text-amber-900">
           {emptyParts.map((p) => (
             <li key={p.id} className="flex items-start gap-1.5">
               <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" strokeWidth={2} />

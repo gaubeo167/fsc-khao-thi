@@ -98,6 +98,8 @@ import {
   sumManualPerQuestion,
 } from "../lib/scoring";
 import { ScorePartsEditor } from "../components/score-parts-editor";
+import { ScoringPolicyEditor } from "@/features/exams/components/scoring-policy-editor";
+import { DEFAULT_DS_GRADUATED } from "@/features/exams/data/types";
 import { gradeNumber, tierForGrade } from "../lib/grade-tier";
 import { useShiftsStore } from "../state/shifts-store";
 
@@ -1670,6 +1672,9 @@ function ScoringPanel({
     return countByDifficulty(pool);
   }, [activeVariant, pkg, pool]);
   const scoring = state.scoring;
+  // Đề có dạng câu nào thì mới hỏi cách chấm dạng đó.
+  const hasMcqMulti = pool.some((q) => q.type === "mcq-multi");
+  const hasMultiTf = pool.some((q) => q.type === "multi-tf");
   // Number of câu per đề the student actually takes. With a generated
   // variant selected, that's exactly questionIds.length. Without a
   // variant (pre-generation) we fall back to the package matrix sum
@@ -2013,6 +2018,30 @@ function ScoringPanel({
             pool={pool}
             onChange={(parts) => patchScoring({ parts })}
           />
+        )}
+
+        {/* Cách chấm mcq-multi / Đúng–Sai. Chỉ hiện khi đề THỰC SỰ có dạng câu
+            đó — cài đặt cho dạng câu không tồn tại chỉ làm rối bước này. */}
+        {(hasMcqMulti || hasMultiTf) && (
+          <div className="mt-3">
+            <ScoringPolicyEditor
+              value={{
+                mcqMulti: scoring.mcqMulti ?? "full",
+                ds: scoring.ds ?? "full",
+                dsGraduatedTable:
+                  scoring.dsGraduatedTable ?? DEFAULT_DS_GRADUATED,
+              }}
+              showMcqMulti={hasMcqMulti}
+              showMultiTf={hasMultiTf}
+              onChange={(v) =>
+                patchScoring({
+                  mcqMulti: v.mcqMulti,
+                  ds: v.ds,
+                  dsGraduatedTable: v.dsGraduatedTable,
+                })
+              }
+            />
+          </div>
         )}
 
         {scoring.mode === "by-difficulty" && (

@@ -156,8 +156,12 @@ export function materializeExamForm(input: MaterializeInput): ExamForm {
     campusId,
     maxScore: yccd ? yccd.scoringPolicy.maxScore : scoring.maxScore,
     // Đóng băng cách chấm theo đề (Đúng–Sai lũy tiến, mcq-multi từng phần).
-    // Không có = đề khung → chấm toàn phần như cũ.
-    scoringPolicy: yccd ? yccd.scoringPolicy : null,
+    // Đề YCCĐ lấy từ gói đề; đề khung lấy từ cấu hình ca thi nếu giáo viên có
+    // cài. Ca thi chưa cài thì vẫn null = chấm toàn phần, đúng như trước, nên
+    // ca thi cũ không đổi kết quả.
+    scoringPolicy: yccd
+      ? yccd.scoringPolicy
+      : policyFromScoringConfig(scoring),
     durationMinutes: pkg.duration || blueprint.duration,
     variants,
     orderStrategy,
@@ -235,6 +239,27 @@ function computeYccdPerQuestion(
     out[snap.snapshotId] = pid ? pts[pid] ?? 0 : 0;
   }
   return out;
+}
+
+/**
+ * Cách chấm của đề tạo từ khung đề, dựng từ cấu hình ca thi.
+ *
+ * Trả `null` khi giáo viên KHÔNG cài gì — và đó là điểm quan trọng: null nghĩa
+ * là chấm toàn phần y như trước, nên mọi ca thi tạo trước tính năng này giữ
+ * nguyên kết quả. Chỉ ca thi có cài mới đổi cách chấm.
+ */
+function policyFromScoringConfig(
+  scoring: ScoringConfig,
+): ExamForm["scoringPolicy"] {
+  if (!scoring.mcqMulti && !scoring.ds) return null;
+  return {
+    mcqMulti: scoring.mcqMulti ?? "full",
+    ds: scoring.ds ?? "full",
+    ...(scoring.dsGraduatedTable
+      ? { dsGraduatedTable: scoring.dsGraduatedTable }
+      : {}),
+    maxScore: scoring.maxScore,
+  };
 }
 
 /**

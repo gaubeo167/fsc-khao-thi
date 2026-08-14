@@ -140,6 +140,19 @@ export interface ScoringConfig {
   perQuestion?: Record<string, number>;
   /** Các phần khi `mode === "by-part"`. Σ points phải bằng `maxScore`. */
   parts?: ScorePart[];
+
+  /**
+   * Cách chấm hai dạng câu mà đúng/sai không đủ mô tả — trắc nghiệm nhiều đáp
+   * án và Đúng/Sai nhiều ý.
+   *
+   * Không khai báo = chấm TOÀN PHẦN như trước, nên ca thi cũ giữ nguyên kết
+   * quả. Trước đây chỉ đề YCCĐ cài được mấy thứ này; giáo viên ra đề kiểm tra
+   * ngắn không cần dựng bộ YCCĐ chi tiết nhưng vẫn cần Đúng/Sai lũy tiến.
+   */
+  mcqMulti?: "full" | "partial";
+  ds?: "graduated" | "weighted" | "full";
+  /** Số ý đúng → phần điểm (0..1), khi `ds === "graduated"`. */
+  dsGraduatedTable?: Record<number, number>;
 }
 
 /**

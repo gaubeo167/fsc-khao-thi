@@ -270,5 +270,39 @@ const PARTS_3 = [
      sum(v.questions.map((s) => v.perQuestion[s.snapshotId])), 8);
 }
 
+/* ═══════════ NHÓM 4 — CÁCH CHẤM Đ/S + NHIỀU ĐÁP ÁN CHO ĐỀ KHUNG ═══════════
+ * Trước đây chỉ đề YCCĐ cài được. Điều PHẢI giữ: ca thi cũ (không cài gì)
+ * vẫn đóng băng policy = null, tức chấm toàn phần y như trước.
+ */
+console.log("\n── Nhóm 4: cách chấm Đúng–Sai cho đề khung ──");
+
+{
+  const pool = [q("Q1", "easy"), q("Q2", "easy")];
+  const form = materializeExamForm(makeInput({
+    pool, easy: 2, scoring: { maxScore: 10, mode: "even" },
+  }));
+  eq("ca thi CŨ không cài gì → policy null (chấm toàn phần như trước)",
+     form.scoringPolicy, null);
+}
+
+{
+  const pool = [q("Q1", "easy", "multi-tf"), q("Q2", "easy", "multi-tf")];
+  const form = materializeExamForm(makeInput({
+    pool, easy: 2,
+    scoring: {
+      maxScore: 10, mode: "even",
+      ds: "graduated",
+      dsGraduatedTable: { 1: 0.1, 2: 0.25, 3: 0.75, 4: 1 },
+    },
+  }));
+  eq("có cài → đóng băng chế độ Đúng–Sai", form.scoringPolicy?.ds, "graduated");
+  eq("có cài → đóng băng đúng bảng lũy tiến giáo viên đặt",
+     form.scoringPolicy?.dsGraduatedTable, { 1: 0.1, 2: 0.25, 3: 0.75, 4: 1 });
+  eq("có cài → mcqMulti chưa đặt thì mặc định toàn phần",
+     form.scoringPolicy?.mcqMulti, "full");
+  eq("có cài → maxScore đi theo thang của ca thi",
+     form.scoringPolicy?.maxScore, 10);
+}
+
 console.log(`\n${pass} pass · ${fail} fail`);
 process.exit(fail === 0 ? 0 : 1);
