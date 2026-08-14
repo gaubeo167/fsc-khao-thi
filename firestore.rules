@@ -424,13 +424,23 @@ service cloud.firestore {
       // Students autosave answers/marks while in progress but MUST NOT set
       // their own correctCount/submittedAt/totalQuestions — those are
       // written server-side by /api/homework/[id]/submit (Admin SDK).
+      //
+      // Danh sách TRẮNG, không phải danh sách đen. Bản trước liệt kê từng
+      // trường cấm đổi (submittedAt, correctCount, totalQuestions) và đó đúng
+      // là cái bẫy đã sập một lần ở /attempts: thêm trường điểm mới mà quên
+      // sửa rule là học sinh tự ghi điểm được. Ở /attempts từng thêm points,
+      // maxPoints, perQuestionPoints, earnedPerQuestion và rule cũ không hề
+      // chặn. Liệt kê thứ ĐƯỢC PHÉP đổi thì trường mới mặc định bị cấm.
+      //
+      // Ba trường này là toàn bộ những gì trình duyệt học sinh ghi ở
+      // production: answers (tự lưu), markedForReview (đánh dấu xem lại), và
+      // updatedAt do patchDoc tự đính kèm. Chấm bài đi đường server.
       allow update: if isSignedIn() && (
         isTeacherOrAbove() ||
         (resource.data.studentId == uid() &&
           resource.data.submittedAt == null &&
-          request.resource.data.submittedAt == resource.data.submittedAt &&
-          request.resource.data.correctCount == resource.data.correctCount &&
-          request.resource.data.totalQuestions == resource.data.totalQuestions)
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['answers', 'markedForReview', 'updatedAt']))
       );
       // Hard delete forbidden once attempted — preserve report data.
       allow delete: if isAdmin();
