@@ -17,7 +17,7 @@
  */
 
 import { AlertTriangle, CheckCircle2, FileText, Loader2, Upload, X } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -90,6 +90,19 @@ export function ImportQuestionsDialog({
   const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
+  // Mở lại hộp thoại là bắt đầu lại từ đầu.
+  //
+  // Hộp thoại được nạp động và KHÔNG bị gỡ khi đóng, nên `phase` sống sót qua
+  // lần đóng — bấm Hủy rồi mở lại vẫn thấy nguyên bản chỉnh sửa của đề cũ, và
+  // không có đường nào tải đề khác. Đặt lại lúc MỞ chứ không lúc đóng để
+  // không thấy nội dung nháy đổi giữa lúc hộp thoại đang biến mất.
+  useEffect(() => {
+    if (!open) return;
+    setPhase({ kind: "pick" });
+    setSelected(0);
+    if (fileRef.current) fileRef.current.value = "";
+  }, [open]);
+
   const drafts = phase.kind === "review" ? phase.drafts : [];
 
   /**
@@ -115,7 +128,9 @@ export function ImportQuestionsDialog({
 
   // Có mã chuyên đề trong file thì mới đòi khớp. Đề Word thường không có mã,
   // đòi khớp là chặn oan cả file.
-  const requireChuyenDe = drafts.some((d) => d.chuyenDeCode != null);
+  const withCode = drafts.filter((d) => d.chuyenDeCode != null).length;
+  const matched = drafts.filter((d) => d.chuyenDeId != null).length;
+  const requireChuyenDe = withCode > 0;
 
   const issuesByIdx = useMemo(
     () => drafts.map((d) => validateDraft(d, { requireChuyenDe })),
@@ -256,10 +271,32 @@ export function ImportQuestionsDialog({
       <DialogContent
         srTitle="Tải đề lên ngân hàng câu hỏi"
         srDescription="Thả file Word, hệ thống tự nhận dạng rồi tách câu hỏi để bạn kiểm tra và bổ sung."
-        className="max-w-6xl p-0"
+        // Khung cố định: DialogContent gốc không giới hạn chiều cao, nên
+        // đề 21 câu làm hộp thoại dài quá khung nhìn và chân trang trôi đè
+        // lên danh sách. Cột dọc + `min-h-0` ở phần giữa mới cho vùng cuộn
+        // hoạt động đúng trong flexbox.
+        className="flex max-h-[90vh] max-w-6xl flex-col overflow-hidden p-0"
       >
+        {/* Ô chọn file để NGOÀI nhánh điều kiện: nút "Chọn file khác" ở màn
+            sửa cũng bấm vào chính ô này, mà bước 2 thì khối bước 1 không
+            render — để trong đó thì ref rỗng và nút bấm không ra gì. */}
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".docx"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            // Xoá value ngay: <input type=file> KHÔNG bắn `change` khi chọn
+            // lại đúng file vừa chọn, nên sửa file trong Word rồi tải lại
+            // cùng tên là không có gì xảy ra.
+            e.target.value = "";
+            void handleFile(f);
+          }}
+        />
+
         {/* ───── Đầu trang ───── */}
-        <header className="flex items-start gap-3 border-b px-5 py-3 pr-12">
+        <header className="flex shrink-0 items-start gap-3 border-b px-5 py-3 pr-12">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 ring-1 ring-indigo-200">
             <FileText className="h-4 w-4" aria-hidden />
           </span>
@@ -283,7 +320,7 @@ export function ImportQuestionsDialog({
 
         {/* ───── Bước 1: chọn phạm vi + thả file ───── */}
         {phase.kind !== "review" && (
-          <div className="space-y-4 px-5 py-5">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-5">
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="block">
                 <span className="text-meta font-semibold text-foreground/70">
@@ -345,13 +382,6 @@ export function ImportQuestionsDialog({
                 </>
               )}
             </button>
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".docx"
-              className="hidden"
-              onChange={(e) => void handleFile(e.target.files?.[0])}
-            />
 
             {phase.kind === "error" && (
               <div className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2.5">
@@ -377,11 +407,40 @@ export function ImportQuestionsDialog({
           </div>
         )}
 
+        {/* File CÓ mã YCCĐ mà không khớp node nào — gần như luôn là chọn sai
+            Môn/Khối, vì mã đã mang sẵn môn và lớp (SI10 = Sinh, lớp 10).
+            Không nói ra thì người dùng thấy cả 21 câu "Chưa chọn mức độ" mà
+            không hiểu vì sao, rồi ngồi chọn tay từng câu — trong khi hệ thống
+            đã có sẵn thông tin, chỉ là đang tra nhầm khung. */}
+        {phase.kind === "review" && withCode > 0 && matched === 0 && (
+          <div className="shrink-0 border-b border-amber-300 bg-amber-50 px-5 py-2.5">
+            <p className="text-small font-semibold text-amber-900">
+              {withCode} câu có mã YCCĐ nhưng không khớp khung năng lực của{" "}
+              {subjects.find((x) => x.id === subjectId)?.name ?? "môn đã chọn"} ·{" "}
+              {grades.find((x) => x.id === gradeId)?.name ?? "khối đã chọn"}
+            </p>
+            <p className="text-meta mt-0.5 text-amber-800">
+              Mã dạng <code>{drafts.find((d) => d.rawCode)?.rawCode}</code> đã
+              mang sẵn môn và lớp. Nhiều khả năng bạn chọn nhầm Môn/Khối ở bước
+              trước — đóng lại và chọn đúng thì độ khó sẽ tự điền theo khung.
+              Cũng có thể khung năng lực của môn này chưa được nhập.
+            </p>
+          </div>
+        )}
+        {phase.kind === "review" && withCode > 0 && matched > 0 && matched < withCode && (
+          <div className="shrink-0 border-b border-amber-300 bg-amber-50 px-5 py-2">
+            <p className="text-meta font-semibold text-amber-900">
+              Khớp khung năng lực {matched}/{withCode} câu — {withCode - matched}{" "}
+              mã không có trong khung, cần chọn mức độ tay.
+            </p>
+          </div>
+        )}
+
         {/* ───── Bước 2: trái danh sách, phải chi tiết ───── */}
         {phase.kind === "review" && (
-          <div className="grid max-h-[68vh] grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
+          <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,320px)_minmax(0,1fr)] overflow-hidden">
             {/* Trái */}
-            <aside className="overflow-y-auto border-r">
+            <aside className="min-h-0 overflow-y-auto border-r">
               <div className="sticky top-0 flex items-center justify-between border-b bg-card px-3 py-2">
                 <span className="text-meta font-bold uppercase tracking-[0.06em] text-foreground/60">
                   Danh sách câu hỏi
@@ -443,7 +502,7 @@ export function ImportQuestionsDialog({
             </aside>
 
             {/* Phải */}
-            <section className="overflow-y-auto px-5 py-4">
+            <section className="min-h-0 overflow-y-auto px-5 py-4">
               {cur && (
                 <QuestionEditor
                   q={cur}
@@ -459,7 +518,7 @@ export function ImportQuestionsDialog({
 
         {/* ───── Chân trang ───── */}
         {phase.kind === "review" && (
-          <footer className="flex flex-wrap items-center gap-2 border-t px-5 py-3">
+          <footer className="flex shrink-0 flex-wrap items-center gap-2 border-t px-5 py-3">
             <span
               className={cn(
                 "inline-flex items-center gap-1.5 text-small font-semibold",
@@ -470,6 +529,14 @@ export function ImportQuestionsDialog({
               {validCount}/{drafts.length} câu hợp lệ
             </span>
             <div className="ml-auto flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => fileRef.current?.click()}
+                title="Bỏ kết quả hiện tại và đọc lại một file khác"
+              >
+                Chọn file khác
+              </Button>
               <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
                 Hủy
               </Button>
