@@ -296,6 +296,29 @@ export default function ExamResultPage() {
         <ArrowLeft className="h-3 w-3" /> Lịch thi
       </Link>
 
+      {/* Vì sao bài bị nộp sớm. Suy từ chính dữ liệu bài làm nên F5 vẫn còn.
+          HS bị nộp tự động mà không biết lý do sẽ đi hỏi giám thị, và giám
+          thị cũng không có gì để trả lời. */}
+      {(() => {
+        const limit = shift.antiCheat.fullscreenExitLimit ?? 0;
+        const exits = attempt?.violations.fullscreenExits ?? 0;
+        if (!shift.antiCheat.requireFullscreen || limit <= 0) return null;
+        if (exits < limit) return null;
+        return (
+          <div className="mb-4 rounded-xl border-2 border-rose-300 bg-rose-50 px-4 py-3">
+            <p className="text-body font-bold text-rose-900">
+              🚨 Bài thi đã được nộp tự động
+            </p>
+            <p className="mt-1 text-meta text-rose-800">
+              Bạn đã thoát chế độ toàn màn hình {exits} lần, đạt mức tự động
+              nộp bài của ca thi này ({limit} lần). Toàn bộ lần thoát đã được
+              ghi lại và gửi tới giám thị. Nếu do sự cố thiết bị, liên hệ giám
+              thị hoặc giáo viên phụ trách.
+            </p>
+          </div>
+        );
+      })()}
+
       {/* Score hero */}
       <section className="mb-5 rounded-2xl border bg-card p-6 text-center">
         <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-amber-50">

@@ -221,7 +221,26 @@ export interface AntiCheatConfig {
   faceDetection: boolean;
   /** Student can't pause / resume — single linear attempt. */
   oneTimeStart: boolean;
+  /**
+   * Số lần thoát toàn màn hình thì TỰ NỘP BÀI. `0` (mặc định) = không bao
+   * giờ tự nộp, chỉ chặn màn hình + ghi vi phạm cho giám thị. `1` = thoát
+   * phát nộp luôn.
+   *
+   * Vì sao mặc định TẮT và vì sao là hạn mức chứ không phải cờ bật/tắt:
+   * tự nộp là cửa một chiều, bài của HS mất không lấy lại được. Trình
+   * duyệt rớt fullscreen vì nhiều lý do KHÔNG phải lỗi HS — Esc nhỡ tay,
+   * khoá màn hình, ngủ màn hình, rút màn hình ngoài, hộp thoại hệ điều
+   * hành. Trên quy mô 1700 HS thì tỉ lệ dương tính giả dù nhỏ vẫn ra vài
+   * em bị huỷ bài oan. Hạn mức cho phép cảnh báo leo thang trước khi tới
+   * bước không thể lùi; giáo viên nào cần gắt thì đặt 1.
+   *
+   * Không có ở ca thi tạo trước bản này → coi như 0, hành vi cũ giữ nguyên.
+   */
+  fullscreenExitLimit?: number;
 }
+
+/** Trần cứng để một cú gõ nhầm trong wizard không thành chính sách vô lý. */
+export const MAX_FULLSCREEN_EXIT_LIMIT = 10;
 
 export const DEFAULT_ANTI_CHEAT: AntiCheatConfig = {
   randomizeQuestions: true,
@@ -233,6 +252,11 @@ export const DEFAULT_ANTI_CHEAT: AntiCheatConfig = {
   requireWebcam: false,
   faceDetection: false,
   oneTimeStart: true,
+  // 2 = lần thoát đầu hiện pop-up cảnh báo, lần thứ hai nộp bài ngay.
+  // Ca thi TẠO TRƯỚC bản này không có trường này và được đọc là 0 (không tự
+  // nộp) — bật tự nộp cho những ca đã lên lịch từ trước là kiểu bất ngờ
+  // không được phép xảy ra với thứ huỷ bài thi.
+  fullscreenExitLimit: 2,
 };
 
 export interface ExamShift {
