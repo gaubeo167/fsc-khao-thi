@@ -26,7 +26,7 @@ import type { ParsedBankQuestion } from "./parse-exam-bank";
 export type DraftDifficulty = "easy" | "medium" | "hard";
 
 /** Khuôn file mà bộ nhận dạng kết luận. */
-export type ImportFormat = "fsc" | "ma-de";
+export type ImportFormat = "fsc" | "ma-de" | "generic";
 
 export interface DraftOption {
   content: string;
@@ -229,5 +229,42 @@ export function draftFromMaDe(
     chuyenDeId: null,
     sourceFormat: "ma-de",
     parserWarnings: q.warnings ?? [],
+  };
+}
+
+/**
+ * Khuôn TỔNG QUÁT (đề giáo viên tự soạn) → dạng chung.
+ *
+ * Khác hai khuôn kia ở chỗ hầu hết trường đều có thể thiếu: đề thật thường
+ * không đánh dấu đáp án đúng và không ghi mức độ. Để `null` đúng chỗ để màn
+ * sửa bắt bổ sung, thay vì điền đại.
+ */
+export function draftFromGeneric(
+  q: import("./parse-generic").GenericQuestion,
+  index: number,
+): DraftQuestion {
+  const correct = q.options.filter((o) => o.isCorrect).length;
+  return {
+    id: nextId(),
+    index,
+    // Có phương án → trắc nghiệm. Nhiều dấu đúng → nhiều đáp án. Không có
+    // phương án nào thì KHÔNG đoán (tự luận hay trả lời ngắn đều có thể).
+    type:
+      q.options.length >= 2
+        ? correct > 1
+          ? "mcq-multi"
+          : "mcq-single"
+        : null,
+    difficulty: q.difficulty,
+    content: q.content,
+    options: q.options.map((o) => ({ content: o.content, isCorrect: o.isCorrect })),
+    subQuestions: [],
+    acceptedAnswers: [],
+    explanation: q.explanation,
+    chuyenDeCode: q.chuyenDeCode,
+    rawCode: q.rawCode,
+    chuyenDeId: null,
+    sourceFormat: "generic",
+    parserWarnings: q.warnings,
   };
 }
