@@ -16,8 +16,19 @@
  *    lúc nào cũng được, còn Gửi duyệt thì bị chặn tới khi đủ.
  */
 
-import { AlertTriangle, CheckCircle2, FileText, Loader2, Upload, X } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  FileText,
+  ListChecks,
+  Loader2,
+  Settings2,
+  Target,
+  Upload,
+  X,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Controller, useForm } from "react-hook-form";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -29,6 +40,12 @@ import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import { authHeaders } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
+import { QuestionCompetencyField } from "@/features/competencies/components/question-competency-field";
+import { BLOOM_LEVELS } from "@/features/competencies/data/types";
+
+import { ContentEditor } from "../components/content-editor";
+import { SectionCard } from "../components/section-card";
+import { TypeSpecificFields } from "../components/forms/type-specific-fields";
 import { QUESTION_TYPES } from "../data/question-types";
 import type { QuestionType } from "../data/question-types";
 import { draftToQuestion } from "../lib/draft-to-question";
@@ -43,11 +60,22 @@ import { useQuestionsStore } from "../state/questions-store";
 const typeLabel = (t: QuestionType): string =>
   QUESTION_TYPES.find((x) => x.id === t)?.name ?? t;
 
-const DIFFICULTY_LABEL: Record<string, string> = {
-  easy: "Nhận biết",
-  medium: "Thông hiểu",
-  hard: "Vận dụng",
-};
+/**
+ * Thang mức độ = thang Bloom, dùng chung MỘT nguồn màu với khung năng lực
+ * (`BLOOM_LEVELS`): NB xanh · TH cam · VD đỏ.
+ *
+ * Không tự đặt lại nhãn "Dễ / Trung bình / Khó": gọi khác tên cùng một thứ ở
+ * hai màn là cách chắc chắn để giáo viên hiểu nhầm, và màu thì mỗi nơi một
+ * kiểu.
+ */
+const DIFFICULTY_SCALE = [
+  { value: "easy" as const, bloom: 1 },
+  { value: "medium" as const, bloom: 2 },
+  { value: "hard" as const, bloom: 3 },
+].map((d) => {
+  const meta = BLOOM_LEVELS.find((b) => b.level === d.bloom)!;
+  return { ...d, ...meta };
+});
 
 /** Dạng câu mà luồng nhập ghi được vào kho (xem draftToQuestion). */
 const SUPPORTED_TYPES: QuestionType[] = [
@@ -598,7 +626,10 @@ export function ImportQuestionsDialog({
             <section className="min-h-0 overflow-y-auto px-5 py-4">
               {cur && (
                 <QuestionEditor
+                  key={cur.id}
                   q={cur}
+                  subjectId={subjectId}
+                  gradeId={gradeId}
                   index={selected}
                   total={drafts.length}
                   issues={curIssues}
@@ -678,117 +709,119 @@ export function ImportQuestionsDialog({
   );
 }
 
+/* ────────────────────── ô chỉnh chi tiết từng câu ────────────────────── */
+
 /**
- * Ô sửa đề bài, TÁCH ảnh ra khỏi ô chữ.
+ * Trình soạn thảo cho MỘT câu trong lúc nhập đề.
  *
- * Ảnh trong file Word được nhúng thành data URI base64. Đổ nguyên vào
- * textarea thì một câu có ảnh ra 183KB chuỗi rác che kín đề bài, không đọc
- * nổi mà cũng không sửa nổi — đúng cái người dùng gặp.
+ * Dùng ĐÚNG bộ component của màn "Tạo câu hỏi" thay vì tự viết lại:
+ * `ContentEditor` (có công thức toán, ảnh), `TypeSpecificFields` (phương án,
+ * ý Đúng/Sai, đáp án trả lời ngắn kèm % và lời nhắc), `QuestionCompetencyField`
+ * (chọn lại YCCĐ), `TocTagFields`, `KhoSelector`.
  *
- * Ở đây: chữ vào ô chữ, ảnh hiện thành ảnh thật kèm nút xoá. Lúc ghi lại thì
- * ghép ảnh xuống cuối phần chữ, giữ nguyên cú pháp markdown mà phần hiển thị
- * câu hỏi vẫn đọc được.
+ * Bản trước tôi tự dựng lại mấy ô này bằng input thuần. Kết quả: giáo viên
+ * gặp hai giao diện khác nhau cho cùng một việc, và bản nhập đề thiếu hẳn
+ * những thứ bản kia có — % điểm cho đáp án trả lời ngắn, chọn YCCĐ, công thức
+ * toán. Dùng chung component là cách duy nhất để hai màn không lệch nhau nữa
+ * sau mỗi lần sửa.
+ *
+ * Các component này ăn `react-hook-form`, nên ở đây dựng một form cho câu đang
+ * chọn. Component được `key` theo id câu ở phía cha, nên đổi câu là dựng lại
+ * form mới — khỏi phải reset thủ công và khỏi vòng lặp cập nhật.
  */
-const IMG_RE = /!\[[^\]]*\]\((data:[^)]+)\)/g;
-
-function ContentEditor({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange(v: string): void;
-}) {
-  const images = [...value.matchAll(IMG_RE)].map((m) => m[1]);
-  const text = value.replace(IMG_RE, "").replace(/\n{3,}/g, "\n\n").trim();
-  const rebuild = (nextText: string, nextImages: string[]) =>
-    [nextText, ...nextImages.map((src) => `![](${src})`)]
-      .filter(Boolean)
-      .join("\n\n");
-
-  return (
-    <div>
-      <span className="text-meta font-semibold text-foreground/70">
-        Đề bài câu hỏi *
-      </span>
-      <textarea
-        value={text}
-        onChange={(e) => onChange(rebuild(e.target.value, images))}
-        rows={5}
-        className="mt-1 w-full rounded-md border bg-card px-3 py-2 text-small leading-relaxed"
-      />
-      {images.length > 0 && (
-        <div className="mt-2">
-          <span className="text-hint text-muted-foreground">
-            {images.length} ảnh đính kèm từ file Word
-          </span>
-          <ul className="mt-1 flex flex-wrap gap-2">
-            {images.map((src, i) => (
-              <li key={i} className="relative">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={src}
-                  alt={`Ảnh ${i + 1}`}
-                  className="h-24 w-auto rounded border bg-card object-contain"
-                />
-                <button
-                  type="button"
-                  onClick={() =>
-                    onChange(rebuild(text, images.filter((_, x) => x !== i)))
-                  }
-                  className="absolute -right-1.5 -top-1.5 rounded-full border bg-card p-0.5 text-muted-foreground shadow-sm hover:bg-accent/30"
-                  title="Xoá ảnh này"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ───────────────────────── ô chỉnh chi tiết ───────────────────────── */
-
 function QuestionEditor({
   q,
   index,
   total,
   issues,
+  subjectId,
+  gradeId,
   onPatch,
 }: {
   q: DraftQuestion;
   index: number;
   total: number;
   issues: DraftIssue[];
+  subjectId: string;
+  gradeId: string;
   onPatch(edit: Partial<DraftQuestion>): void;
 }) {
+  const form = useForm<Record<string, unknown>>({
+    defaultValues: {
+      type: q.type ?? "mcq-single",
+      // "" = chưa chọn. Khác với màn Tạo câu hỏi (mặc định "medium"): ở đây
+      // "chưa chọn" là trạng thái CÓ THẬT và phải chặn gửi duyệt, không được
+      // lặng lẽ nhận "trung bình" cho cả đề.
+      difficulty: q.difficulty ?? "",
+      content: q.content,
+      explanation: q.explanation,
+      options: q.options.map((o, i) => ({ id: `o${i + 1}`, ...o })),
+      subQuestions: q.subQuestions.map((sq, i) => ({ id: `s${i + 1}`, ...sq })),
+      acceptedAnswers: q.acceptedAnswers,
+      caseSensitive: false,
+      competencyIds: q.chuyenDeId ? [q.chuyenDeId] : [],
+      bloomLevel: null,
+      tocNodeId: null,
+      tags: [],
+      kho: "campus",
+      subjectId,
+      gradeId,
+    },
+  });
+
+  // Mọi thay đổi trong form chảy ngược về bản nháp để danh sách bên trái và
+  // bộ đếm "n/N câu hợp lệ" cập nhật ngay.
+  useEffect(() => {
+    const sub = form.watch((v) => {
+      onPatch({
+        type: (v.type as DraftQuestion["type"]) ?? null,
+        difficulty: (v.difficulty || null) as DraftQuestion["difficulty"],
+        content: (v.content as string) ?? "",
+        explanation: (v.explanation as string) ?? "",
+        options: ((v.options ?? []) as Array<{ content: string; isCorrect: boolean }>).map(
+          (o) => ({ content: o?.content ?? "", isCorrect: !!o?.isCorrect }),
+        ),
+        subQuestions: (
+          (v.subQuestions ?? []) as Array<{ statement: string; correctAnswer: boolean }>
+        ).map((x) => ({
+          statement: x?.statement ?? "",
+          correctAnswer: !!x?.correctAnswer,
+        })),
+        acceptedAnswers: (v.acceptedAnswers ?? []) as DraftQuestion["acceptedAnswers"],
+        chuyenDeId:
+          ((v.competencyIds as string[] | undefined)?.[0] ?? null) || null,
+      });
+    });
+    return () => sub.unsubscribe();
+  }, [form, onPatch]);
+
+  const type = form.watch("type") as QuestionType;
+
   return (
     <div className="space-y-4">
       <div className="flex items-baseline gap-2">
         <span className="text-section-title">Câu {index + 1}</span>
         <span className="text-meta text-muted-foreground">/ {total}</span>
         {q.rawCode && (
-          <span className="ml-auto rounded bg-muted px-1.5 py-0.5 text-hint font-semibold text-foreground/70">
+          <span
+            className="ml-auto rounded bg-muted px-1.5 py-0.5 text-hint font-semibold text-foreground/70"
+            title="Mã YCCĐ đọc được từ file"
+          >
             {q.rawCode}
           </span>
         )}
       </div>
 
+      <SectionCard icon={Settings2} tone="violet" title="Phân loại câu hỏi" required>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="block">
           <span className="text-meta font-semibold text-foreground/70">
             Loại câu hỏi *
           </span>
           <select
-            value={q.type ?? ""}
-            onChange={(e) =>
-              onPatch({ type: (e.target.value || null) as QuestionType | null })
-            }
+            {...form.register("type")}
             className="mt-1 h-9 w-full rounded-md border bg-card px-2 text-small"
           >
-            <option value="">— Chưa nhận ra dạng —</option>
             {SUPPORTED_TYPES.map((t) => (
               <option key={t} value={t}>
                 {typeLabel(t)}
@@ -796,28 +829,41 @@ function QuestionEditor({
             ))}
           </select>
         </label>
-        <label className="block">
+        <div>
           <span className="text-meta font-semibold text-foreground/70">
-            Mức độ nhận biết *
+            Mức độ (Bloom) *
           </span>
-          <select
-            value={q.difficulty ?? ""}
-            onChange={(e) =>
-              onPatch({
-                difficulty: (e.target.value || null) as DraftQuestion["difficulty"],
-              })
-            }
-            className="mt-1 h-9 w-full rounded-md border bg-card px-2 text-small"
-          >
-            <option value="">— Chưa chọn mức độ —</option>
-            {Object.entries(DIFFICULTY_LABEL).map(([v, label]) => (
-              <option key={v} value={v}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
+          <Controller
+            control={form.control}
+            name="difficulty"
+            render={({ field }) => (
+              <div className="mt-1 flex gap-1.5">
+                {DIFFICULTY_SCALE.map((d) => {
+                  const on = field.value === d.value;
+                  return (
+                    <button
+                      key={d.value}
+                      type="button"
+                      onClick={() => field.onChange(on ? "" : d.value)}
+                      title={d.full}
+                      className={cn(
+                        "flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md border-2 text-small font-semibold transition",
+                        on
+                          ? cn(d.border, d.chipBg, d.chipFg)
+                          : "border-border bg-card text-muted-foreground hover:bg-accent/20",
+                      )}
+                    >
+                      <span className="text-meta font-bold">{d.short}</span>
+                      <span>{d.full}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          />
+        </div>
       </div>
+      </SectionCard>
 
       {issues.length > 0 && (
         <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5">
@@ -834,221 +880,42 @@ function QuestionEditor({
         </div>
       )}
 
-      <ContentEditor
-        value={q.content}
-        onChange={(content) => onPatch({ content })}
-      />
-
-      {(q.type === "mcq-single" || q.type === "mcq-multi") && (
-        <div>
-          <span className="text-meta font-semibold text-foreground/70">
-            Đáp án * — tick vào phương án đúng
-          </span>
-          <ul className="mt-1 space-y-1.5">
-            {q.options.map((o, oi) => (
-              <li key={oi} className="flex items-start gap-2">
-                <input
-                  type={q.type === "mcq-single" ? "radio" : "checkbox"}
-                  name={`opt-${q.id}`}
-                  checked={o.isCorrect}
-                  onChange={(e) =>
-                    onPatch({
-                      options: q.options.map((x, xi) =>
-                        xi === oi
-                          ? { ...x, isCorrect: e.target.checked }
-                          : q.type === "mcq-single"
-                            ? { ...x, isCorrect: false }
-                            : x,
-                      ),
-                    })
-                  }
-                  className="mt-2 h-4 w-4 shrink-0 accent-[var(--color-primary)]"
-                />
-                <input
-                  value={o.content}
-                  onChange={(e) =>
-                    onPatch({
-                      options: q.options.map((x, xi) =>
-                        xi === oi ? { ...x, content: e.target.value } : x,
-                      ),
-                    })
-                  }
-                  placeholder={`Phương án ${String.fromCharCode(65 + oi)}`}
-                  className="h-9 w-full rounded-md border bg-card px-2 text-small"
-                />
-                <button
-                  type="button"
-                  onClick={() =>
-                    onPatch({ options: q.options.filter((_, xi) => xi !== oi) })
-                  }
-                  className="mt-1 rounded p-1 text-muted-foreground hover:bg-accent/30"
-                  title="Xoá phương án"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </li>
-            ))}
-          </ul>
-          <Button
-            variant="outline"
-            size="sm"
-            className="mt-2"
-            onClick={() =>
-              onPatch({
-                options: [...q.options, { content: "", isCorrect: false }],
-              })
-            }
-          >
-            Thêm phương án
-          </Button>
-        </div>
-      )}
-
-      {/* Ý con Đúng/Sai — mỗi ý một dòng, chọn Đúng hoặc Sai. */}
-      {q.type === "multi-tf" && (
-        <div>
-          <span className="text-meta font-semibold text-foreground/70">
-            Các ý Đúng/Sai * — chọn đáp án cho từng ý
-          </span>
-          <ul className="mt-1 space-y-1.5">
-            {q.subQuestions.map((sq, si) => (
-              <li key={si} className="flex items-start gap-2">
-                <span className="mt-2 w-4 shrink-0 text-meta font-semibold text-muted-foreground">
-                  {String.fromCharCode(97 + si)})
-                </span>
-                <input
-                  value={sq.statement}
-                  onChange={(e) =>
-                    onPatch({
-                      subQuestions: q.subQuestions.map((x, xi) =>
-                        xi === si ? { ...x, statement: e.target.value } : x,
-                      ),
-                    })
-                  }
-                  placeholder="Nội dung ý"
-                  className="h-9 w-full rounded-md border bg-card px-2 text-small"
-                />
-                <div className="mt-1 flex shrink-0 gap-1">
-                  {[true, false].map((v) => (
-                    <button
-                      key={String(v)}
-                      type="button"
-                      onClick={() =>
-                        onPatch({
-                          subQuestions: q.subQuestions.map((x, xi) =>
-                            xi === si ? { ...x, correctAnswer: v } : x,
-                          ),
-                        })
-                      }
-                      className={cn(
-                        "rounded-md border-2 px-2 py-1 text-meta font-semibold transition",
-                        sq.correctAnswer === v
-                          ? v
-                            ? "border-emerald-300 bg-emerald-50 text-emerald-900"
-                            : "border-rose-300 bg-rose-50 text-rose-900"
-                          : "border-border bg-card text-muted-foreground hover:bg-accent/20",
-                      )}
-                    >
-                      {v ? "Đúng" : "Sai"}
-                    </button>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    onPatch({
-                      subQuestions: q.subQuestions.filter((_, xi) => xi !== si),
-                    })
-                  }
-                  className="mt-1 rounded p-1 text-muted-foreground hover:bg-accent/30"
-                  title="Xoá ý này"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </li>
-            ))}
-          </ul>
-          <Button
-            variant="outline"
-            size="sm"
-            className="mt-2"
-            onClick={() =>
-              onPatch({
-                subQuestions: [
-                  ...q.subQuestions,
-                  { statement: "", correctAnswer: false },
-                ],
-              })
-            }
-          >
-            Thêm ý
-          </Button>
-        </div>
-      )}
-
-      {/* Đáp án chấm máy của câu trả lời ngắn. Đọc từ <Key=…> trong file; mỗi
-          đáp án một dòng vì một câu có thể chấp nhận nhiều cách viết. */}
-      {q.type === "short-answer" && (
-        <div>
-          <span className="text-meta font-semibold text-foreground/70">
-            Đáp án chấp nhận * — mỗi dòng một cách viết được tính đúng
-          </span>
-          <ul className="mt-1 space-y-1.5">
-            {q.acceptedAnswers.map((a, ai) => (
-              <li key={ai} className="flex items-center gap-2">
-                <input
-                  value={typeof a === "string" ? a : (a.text ?? "")}
-                  onChange={(e) =>
-                    onPatch({
-                      acceptedAnswers: q.acceptedAnswers.map((x, xi) =>
-                        xi === ai ? e.target.value : x,
-                      ),
-                    })
-                  }
-                  placeholder="vd: 42"
-                  className="h-9 w-full rounded-md border bg-card px-2 text-small"
-                />
-                <button
-                  type="button"
-                  onClick={() =>
-                    onPatch({
-                      acceptedAnswers: q.acceptedAnswers.filter(
-                        (_, xi) => xi !== ai,
-                      ),
-                    })
-                  }
-                  className="rounded p-1 text-muted-foreground hover:bg-accent/30"
-                  title="Xoá đáp án này"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </li>
-            ))}
-          </ul>
-          <Button
-            variant="outline"
-            size="sm"
-            className="mt-2"
-            onClick={() =>
-              onPatch({ acceptedAnswers: [...q.acceptedAnswers, ""] })
-            }
-          >
-            Thêm đáp án
-          </Button>
-        </div>
-      )}
-
-      <label className="block">
-        <span className="text-meta font-semibold text-foreground/70">
-          Lời giải / giải thích
-        </span>
-        <textarea
-          value={q.explanation}
-          onChange={(e) => onPatch({ explanation: e.target.value })}
-          rows={3}
-          className="mt-1 w-full rounded-md border bg-card px-3 py-2 text-small leading-relaxed"
+      {/* YCCĐ: đọc sẵn từ mã trong file, nhưng người dùng sửa và chọn lại
+          được — cùng ô với màn Tạo câu hỏi nên có đủ ghi chú nội dung YCCĐ. */}
+      <SectionCard
+        icon={Target}
+        tone="orange"
+        title="Yêu cầu cần đạt (YCCĐ)"
+        subtitle="Đọc sẵn từ mã trong file — chọn lại được nếu chưa đúng"
+      >
+        <QuestionCompetencyField
+          control={form.control}
+          watch={form.watch}
+          setValue={form.setValue}
         />
-      </label>
+      </SectionCard>
+
+      <SectionCard icon={FileText} tone="blue" title="Đề bài câu hỏi" required>
+        <Controller
+          control={form.control}
+          name="content"
+          render={({ field }) => (
+            <ContentEditor
+              value={(field.value as string) ?? ""}
+              onChange={field.onChange}
+            />
+          )}
+        />
+      </SectionCard>
+
+      <SectionCard icon={ListChecks} tone="emerald" title="Đáp án" required>
+        <TypeSpecificFields
+          type={type}
+          control={form.control}
+          setValue={form.setValue}
+          errors={form.formState.errors}
+        />
+      </SectionCard>
 
       {q.parserWarnings.length > 0 && (
         <p className="text-hint text-muted-foreground">
