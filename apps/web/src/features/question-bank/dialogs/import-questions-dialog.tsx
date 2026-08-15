@@ -1,0 +1,654 @@
+"use client";
+
+/**
+ * MỘT cửa nhập câu hỏi, thay cho hai dialog cũ ("Import từ Word" 911 dòng +
+ * "Upload đề theo mã" 888 dòng).
+ *
+ * Hai thay đổi về nguyên tắc so với bản cũ:
+ *
+ * 1. KHÔNG bắt chọn khuôn trước. Người dùng thả file, server tự nhận dạng.
+ *    Bản cũ bắt đoán đúng nút TRƯỚC khi biết hệ thống đọc được file hay
+ *    không, đoán sai thì được báo "sai mẫu, bấm nút kia".
+ *
+ * 2. KHÔNG bỏ qua câu lỗi. Bản cũ ghi thẳng câu hợp lệ vào kho và lặng lẽ bỏ
+ *    câu lỗi ("N câu cần sửa (bỏ qua khi import)") — giáo viên tưởng nhập 20
+ *    câu mà thực tế vào kho 12. Nay câu lỗi hiện rõ trong danh sách, lưu nháp
+ *    lúc nào cũng được, còn Gửi duyệt thì bị chặn tới khi đủ.
+ */
+
+import { AlertTriangle, CheckCircle2, FileText, Loader2, Upload, X } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { useAuthStore } from "@/features/auth/state/auth-store";
+import { useCampusStore } from "@/features/campus/state/campus-store";
+import { useCompetenciesStore } from "@/features/competencies/state/competencies-store";
+import { useGradesStore } from "@/features/grades/state/grades-store";
+import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
+import { authHeaders } from "@/lib/api-client";
+import { cn } from "@/lib/utils";
+
+import { QUESTION_TYPES } from "../data/question-types";
+import type { QuestionType } from "../data/question-types";
+import { draftToQuestion } from "../lib/draft-to-question";
+import {
+  validateDraft,
+  type DraftIssue,
+  type DraftQuestion,
+} from "../lib/import-draft";
+import { useQuestionsStore } from "../state/questions-store";
+
+/** Nhãn tiếng Việt của dạng câu, tra từ bảng dùng chung của kho câu hỏi. */
+const typeLabel = (t: QuestionType): string =>
+  QUESTION_TYPES.find((x) => x.id === t)?.name ?? t;
+
+const DIFFICULTY_LABEL: Record<string, string> = {
+  easy: "Nhận biết",
+  medium: "Thông hiểu",
+  hard: "Vận dụng",
+};
+
+/** Dạng câu mà luồng nhập ghi được vào kho (xem draftToQuestion). */
+const SUPPORTED_TYPES: QuestionType[] = [
+  "mcq-single",
+  "mcq-multi",
+  "multi-tf",
+  "short-answer",
+  "essay",
+];
+
+type Phase =
+  | { kind: "pick" }
+  | { kind: "loading"; fileName: string }
+  | { kind: "error"; message: string; preview?: string[] }
+  | {
+      kind: "review";
+      fileName: string;
+      formatLabel: string;
+      drafts: DraftQuestion[];
+    };
+
+export function ImportQuestionsDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange(v: boolean): void;
+}) {
+  const session = useAuthStore((s) => s.session);
+  const activeCampusId = useCampusStore((s) => s.activeCampusId);
+  const subjects = useSubjectsStore((s) => s.subjects);
+  const grades = useGradesStore((s) => s.grades);
+  const competencies = useCompetenciesStore((s) => s.competencies);
+  const createQuestion = useQuestionsStore((s) => s.create);
+
+  const [subjectId, setSubjectId] = useState("");
+  const [gradeId, setGradeId] = useState("");
+  const [phase, setPhase] = useState<Phase>({ kind: "pick" });
+  const [selected, setSelected] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+
+  const drafts = phase.kind === "review" ? phase.drafts : [];
+
+  /**
+   * Mã chuyên đề trong file → id trong khung năng lực. Khớp ở CLIENT vì mục
+   * lục nằm trong store trình duyệt, server không có.
+   */
+  const compByCode = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of competencies) {
+      if (c.subjectId === subjectId && c.gradeId === gradeId && c.code) {
+        m.set(c.code.toUpperCase(), c.id);
+      }
+    }
+    return m;
+  }, [competencies, subjectId, gradeId]);
+
+  // Có mã chuyên đề trong file thì mới đòi khớp. Đề Word thường không có mã,
+  // đòi khớp là chặn oan cả file.
+  const requireChuyenDe = drafts.some((d) => d.chuyenDeCode != null);
+
+  const issuesByIdx = useMemo(
+    () => drafts.map((d) => validateDraft(d, { requireChuyenDe })),
+    [drafts, requireChuyenDe],
+  );
+  const validCount = issuesByIdx.filter((i) => i.length === 0).length;
+
+  function patch(idx: number, edit: Partial<DraftQuestion>) {
+    setPhase((p) =>
+      p.kind === "review"
+        ? {
+            ...p,
+            drafts: p.drafts.map((d, i) => (i === idx ? { ...d, ...edit } : d)),
+          }
+        : p,
+    );
+  }
+
+  async function handleFile(file: File | undefined) {
+    if (!file) return;
+    if (!subjectId || !gradeId) {
+      setPhase({ kind: "error", message: "Chọn Môn học và Khối trước khi tải đề." });
+      return;
+    }
+    setPhase({ kind: "loading", fileName: file.name });
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/import/parse-questions", {
+        method: "POST",
+        headers: { ...(await authHeaders()) },
+        body: fd,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setPhase({
+          kind: "error",
+          message: data?.message ?? "Không đọc được file.",
+          preview: data?.preview,
+        });
+        return;
+      }
+      // Khớp chuyên đề ngay khi nhận, để badge lỗi phản ánh đúng từ đầu.
+      const withComp: DraftQuestion[] = (data.questions as DraftQuestion[]).map(
+        (d) => ({
+          ...d,
+          chuyenDeId: d.chuyenDeCode
+            ? (compByCode.get(d.chuyenDeCode.toUpperCase()) ?? null)
+            : null,
+        }),
+      );
+      setSelected(0);
+      setPhase({
+        kind: "review",
+        fileName: file.name,
+        formatLabel: data.formatLabel ?? "",
+        drafts: withComp,
+      });
+    } catch (e) {
+      setPhase({
+        kind: "error",
+        message: e instanceof Error ? e.message : "Lỗi không xác định.",
+      });
+    }
+  }
+
+  function save(target: "draft" | "submit") {
+    if (!session) return;
+    setSaving(true);
+    try {
+      const campusId = session.campusId ?? activeCampusId ?? null;
+      let written = 0;
+      drafts.forEach((d, i) => {
+        // Gửi duyệt: chỉ ghi câu đã đủ. Lưu nháp: ghi tất cả những câu ghi
+        // được, câu chưa chọn dạng thì draftToQuestion trả null và bị bỏ —
+        // đó là lý do số câu đã lưu được báo lại rõ ràng bên dưới.
+        if (target === "submit" && issuesByIdx[i].length > 0) return;
+        const q = draftToQuestion(d, {
+          subjectId,
+          gradeId,
+          tocNodeId: null,
+          ownerId: session.userId,
+          ownerName: session.name ?? "—",
+          campusId,
+          kho: target === "submit" ? "campus" : "personal",
+          status: target === "submit" ? "pending" : "draft",
+        });
+        if (q) {
+          createQuestion(q);
+          written += 1;
+        }
+      });
+      setPhase({
+        kind: "error",
+        message:
+          written === drafts.length
+            ? `Đã lưu ${written} câu.`
+            : `Đã lưu ${written}/${drafts.length} câu. Số còn lại chưa chọn được dạng câu hỏi nên không ghi được.`,
+      });
+      if (written > 0) onOpenChange(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const cur = drafts[selected];
+  const curIssues = issuesByIdx[selected] ?? [];
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        srTitle="Tải đề lên ngân hàng câu hỏi"
+        srDescription="Thả file Word, hệ thống tự nhận dạng rồi tách câu hỏi để bạn kiểm tra và bổ sung."
+        className="max-w-6xl p-0"
+      >
+        {/* ───── Đầu trang ───── */}
+        <header className="flex items-start gap-3 border-b px-5 py-3 pr-12">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 ring-1 ring-indigo-200">
+            <FileText className="h-4 w-4" aria-hidden />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-section-title truncate">
+              {phase.kind === "review" ? phase.fileName : "Tải đề lên ngân hàng câu hỏi"}
+            </h2>
+            <p className="text-meta mt-0.5 truncate">
+              {phase.kind === "review"
+                ? `${phase.formatLabel} · ${drafts.length} câu`
+                : "Một cửa cho mọi file .docx — hệ thống tự nhận dạng khuôn đề."}
+            </p>
+          </div>
+          {phase.kind === "review" && drafts.length - validCount > 0 && (
+            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-meta font-semibold text-amber-800">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              {drafts.length - validCount} câu chưa hợp lệ
+            </span>
+          )}
+        </header>
+
+        {/* ───── Bước 1: chọn phạm vi + thả file ───── */}
+        {phase.kind !== "review" && (
+          <div className="space-y-4 px-5 py-5">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block">
+                <span className="text-meta font-semibold text-foreground/70">
+                  Môn học *
+                </span>
+                <select
+                  value={subjectId}
+                  onChange={(e) => setSubjectId(e.target.value)}
+                  className="mt-1 h-9 w-full rounded-md border bg-card px-2 text-small"
+                >
+                  <option value="">— Chọn môn —</option>
+                  {subjects.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="text-meta font-semibold text-foreground/70">
+                  Khối *
+                </span>
+                <select
+                  value={gradeId}
+                  onChange={(e) => setGradeId(e.target.value)}
+                  className="mt-1 h-9 w-full rounded-md border bg-card px-2 text-small"
+                >
+                  <option value="">— Chọn khối —</option>
+                  {grades.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              disabled={phase.kind === "loading"}
+              className="flex w-full flex-col items-center gap-2 rounded-xl border-2 border-dashed bg-surface-2/40 px-6 py-10 transition hover:bg-accent/20 disabled:opacity-60"
+            >
+              {phase.kind === "loading" ? (
+                <>
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  <span className="text-small">Đang đọc {phase.fileName}…</span>
+                </>
+              ) : (
+                <>
+                  <Upload className="h-6 w-6 text-muted-foreground" />
+                  <span className="text-small font-semibold">
+                    Chọn file Word (.docx)
+                  </span>
+                  <span className="text-hint text-muted-foreground">
+                    Đề theo mẫu FSC, đề theo mã chuyên đề, hay đề tự soạn — không
+                    cần chọn loại, hệ thống tự nhận.
+                  </span>
+                </>
+              )}
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".docx"
+              className="hidden"
+              onChange={(e) => void handleFile(e.target.files?.[0])}
+            />
+
+            {phase.kind === "error" && (
+              <div className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2.5">
+                <p className="text-small font-semibold text-rose-900">
+                  {phase.message}
+                </p>
+                {phase.preview && phase.preview.length > 0 && (
+                  <>
+                    <p className="text-hint mt-2 font-semibold text-rose-800">
+                      Vài dòng hệ thống đọc được từ file:
+                    </p>
+                    <ul className="mt-1 space-y-0.5">
+                      {phase.preview.map((l, i) => (
+                        <li key={i} className="text-hint text-rose-800">
+                          {l}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ───── Bước 2: trái danh sách, phải chi tiết ───── */}
+        {phase.kind === "review" && (
+          <div className="grid max-h-[68vh] grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
+            {/* Trái */}
+            <aside className="overflow-y-auto border-r">
+              <div className="sticky top-0 flex items-center justify-between border-b bg-card px-3 py-2">
+                <span className="text-meta font-bold uppercase tracking-[0.06em] text-foreground/60">
+                  Danh sách câu hỏi
+                </span>
+                <span className="text-meta text-muted-foreground">
+                  {drafts.length}
+                </span>
+              </div>
+              <ul>
+                {drafts.map((d, i) => {
+                  const iss = issuesByIdx[i] ?? [];
+                  return (
+                    <li key={d.id}>
+                      <button
+                        type="button"
+                        onClick={() => setSelected(i)}
+                        className={cn(
+                          "flex w-full gap-2 border-b px-3 py-2.5 text-left transition",
+                          i === selected ? "bg-blue-50" : "hover:bg-accent/20",
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "flex h-6 w-6 shrink-0 items-center justify-center rounded text-meta font-bold",
+                            i === selected
+                              ? "bg-blue-600 text-white"
+                              : "bg-muted text-foreground/70",
+                          )}
+                        >
+                          {i + 1}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center gap-1.5">
+                            <span className="text-hint font-bold uppercase text-blue-700">
+                              {d.type ? typeLabel(d.type) : "Chưa rõ dạng"}
+                            </span>
+                            {iss.length > 0 && (
+                              <AlertTriangle className="h-3 w-3 shrink-0 text-amber-500" />
+                            )}
+                          </span>
+                          <span className="mt-0.5 line-clamp-2 block text-small text-foreground/80">
+                            {d.content.replace(/!\[[^\]]*\]\([^)]*\)/g, "🖼 ") ||
+                              "(đề bài trống)"}
+                          </span>
+                          {iss.slice(0, 1).map((x) => (
+                            <span
+                              key={x.field}
+                              className="text-hint mt-0.5 block text-rose-600"
+                            >
+                              • {x.message}
+                            </span>
+                          ))}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </aside>
+
+            {/* Phải */}
+            <section className="overflow-y-auto px-5 py-4">
+              {cur && (
+                <QuestionEditor
+                  q={cur}
+                  index={selected}
+                  total={drafts.length}
+                  issues={curIssues}
+                  onPatch={(e) => patch(selected, e)}
+                />
+              )}
+            </section>
+          </div>
+        )}
+
+        {/* ───── Chân trang ───── */}
+        {phase.kind === "review" && (
+          <footer className="flex flex-wrap items-center gap-2 border-t px-5 py-3">
+            <span
+              className={cn(
+                "inline-flex items-center gap-1.5 text-small font-semibold",
+                validCount === drafts.length ? "text-emerald-700" : "text-foreground/70",
+              )}
+            >
+              {validCount === drafts.length && <CheckCircle2 className="h-4 w-4" />}
+              {validCount}/{drafts.length} câu hợp lệ
+            </span>
+            <div className="ml-auto flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+                Hủy
+              </Button>
+              {/* Lưu nháp KHÔNG bị chặn: giáo viên nhập nửa chừng phải cất được
+                  việc đang làm, nếu không họ sẽ ngồi sửa 20 câu một mạch hoặc
+                  bỏ cuộc. */}
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={saving}
+                onClick={() => save("draft")}
+              >
+                Lưu bản nháp
+              </Button>
+              <Button
+                size="sm"
+                disabled={saving || validCount === 0}
+                title={
+                  validCount === 0
+                    ? "Chưa câu nào đủ điều kiện gửi duyệt"
+                    : undefined
+                }
+                onClick={() => save("submit")}
+              >
+                Lưu và Gửi duyệt ({validCount})
+              </Button>
+            </div>
+          </footer>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ───────────────────────── ô chỉnh chi tiết ───────────────────────── */
+
+function QuestionEditor({
+  q,
+  index,
+  total,
+  issues,
+  onPatch,
+}: {
+  q: DraftQuestion;
+  index: number;
+  total: number;
+  issues: DraftIssue[];
+  onPatch(edit: Partial<DraftQuestion>): void;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-baseline gap-2">
+        <span className="text-section-title">Câu {index + 1}</span>
+        <span className="text-meta text-muted-foreground">/ {total}</span>
+        {q.rawCode && (
+          <span className="ml-auto rounded bg-muted px-1.5 py-0.5 text-hint font-semibold text-foreground/70">
+            {q.rawCode}
+          </span>
+        )}
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="block">
+          <span className="text-meta font-semibold text-foreground/70">
+            Loại câu hỏi *
+          </span>
+          <select
+            value={q.type ?? ""}
+            onChange={(e) =>
+              onPatch({ type: (e.target.value || null) as QuestionType | null })
+            }
+            className="mt-1 h-9 w-full rounded-md border bg-card px-2 text-small"
+          >
+            <option value="">— Chưa nhận ra dạng —</option>
+            {SUPPORTED_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {typeLabel(t)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          <span className="text-meta font-semibold text-foreground/70">
+            Mức độ nhận biết *
+          </span>
+          <select
+            value={q.difficulty ?? ""}
+            onChange={(e) =>
+              onPatch({
+                difficulty: (e.target.value || null) as DraftQuestion["difficulty"],
+              })
+            }
+            className="mt-1 h-9 w-full rounded-md border bg-card px-2 text-small"
+          >
+            <option value="">— Chưa chọn mức độ —</option>
+            {Object.entries(DIFFICULTY_LABEL).map(([v, label]) => (
+              <option key={v} value={v}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      {issues.length > 0 && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5">
+          <p className="inline-flex items-center gap-1.5 text-small font-semibold text-amber-900">
+            <AlertTriangle className="h-3.5 w-3.5" /> Cần kiểm tra lại
+          </p>
+          <ul className="mt-1 space-y-0.5">
+            {issues.map((i) => (
+              <li key={i.field} className="text-meta text-amber-800">
+                • {i.message}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <label className="block">
+        <span className="text-meta font-semibold text-foreground/70">
+          Đề bài câu hỏi *
+        </span>
+        <textarea
+          value={q.content}
+          onChange={(e) => onPatch({ content: e.target.value })}
+          rows={5}
+          className="mt-1 w-full rounded-md border bg-card px-3 py-2 text-small leading-relaxed"
+        />
+      </label>
+
+      {(q.type === "mcq-single" || q.type === "mcq-multi") && (
+        <div>
+          <span className="text-meta font-semibold text-foreground/70">
+            Đáp án * — tick vào phương án đúng
+          </span>
+          <ul className="mt-1 space-y-1.5">
+            {q.options.map((o, oi) => (
+              <li key={oi} className="flex items-start gap-2">
+                <input
+                  type={q.type === "mcq-single" ? "radio" : "checkbox"}
+                  name={`opt-${q.id}`}
+                  checked={o.isCorrect}
+                  onChange={(e) =>
+                    onPatch({
+                      options: q.options.map((x, xi) =>
+                        xi === oi
+                          ? { ...x, isCorrect: e.target.checked }
+                          : q.type === "mcq-single"
+                            ? { ...x, isCorrect: false }
+                            : x,
+                      ),
+                    })
+                  }
+                  className="mt-2 h-4 w-4 shrink-0 accent-[var(--color-primary)]"
+                />
+                <input
+                  value={o.content}
+                  onChange={(e) =>
+                    onPatch({
+                      options: q.options.map((x, xi) =>
+                        xi === oi ? { ...x, content: e.target.value } : x,
+                      ),
+                    })
+                  }
+                  placeholder={`Phương án ${String.fromCharCode(65 + oi)}`}
+                  className="h-9 w-full rounded-md border bg-card px-2 text-small"
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    onPatch({ options: q.options.filter((_, xi) => xi !== oi) })
+                  }
+                  className="mt-1 rounded p-1 text-muted-foreground hover:bg-accent/30"
+                  title="Xoá phương án"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </li>
+            ))}
+          </ul>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-2"
+            onClick={() =>
+              onPatch({
+                options: [...q.options, { content: "", isCorrect: false }],
+              })
+            }
+          >
+            Thêm phương án
+          </Button>
+        </div>
+      )}
+
+      <label className="block">
+        <span className="text-meta font-semibold text-foreground/70">
+          Lời giải / giải thích
+        </span>
+        <textarea
+          value={q.explanation}
+          onChange={(e) => onPatch({ explanation: e.target.value })}
+          rows={3}
+          className="mt-1 w-full rounded-md border bg-card px-3 py-2 text-small leading-relaxed"
+        />
+      </label>
+
+      {q.parserWarnings.length > 0 && (
+        <p className="text-hint text-muted-foreground">
+          Ghi chú khi đọc file: {q.parserWarnings.join(" · ")}
+        </p>
+      )}
+    </div>
+  );
+}

@@ -43,19 +43,12 @@ const CreateQuestionDialog = dynamic(
     ),
   { ssr: false, loading: () => null },
 );
-const ImportWordDialog = dynamic(
+const ImportQuestionsDialog = dynamic(
   () =>
-    import("@/features/question-bank/dialogs/import-word-dialog").then(
-      (m) => m.ImportWordDialog,
+    import("@/features/question-bank/dialogs/import-questions-dialog").then(
+      (m) => m.ImportQuestionsDialog,
     ),
-  { ssr: false, loading: () => null },
-);
-const ExamBankImportDialog = dynamic(
-  () =>
-    import("@/features/question-bank/dialogs/exam-bank-import-dialog").then(
-      (m) => m.ExamBankImportDialog,
-    ),
-  { ssr: false, loading: () => null },
+  { ssr: false },
 );
 const ViewQuestionDialog = dynamic(
   () =>
@@ -160,7 +153,6 @@ export default function QuestionBankPage() {
   const [khoView, setKhoView] = useState<KhoView>("campus");
   const [editorOpen, setEditorOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
-  const [examBankOpen, setExamBankOpen] = useState(false);
   const [editing, setEditing] = useState<Question | null>(null);
   const [viewing, setViewing] = useState<Question | null>(null);
   const [deleting, setDeleting] = useState<Question | null>(null);
@@ -346,29 +338,22 @@ export default function QuestionBankPage() {
               />
               Hiển thị đã lưu trữ
             </label>
+            {/* MỘT nút thay cho hai. Trước đây giáo viên phải tự biết file
+                của mình thuộc mẫu nào TRƯỚC khi tải lên; chọn sai thì được
+                báo "sai mẫu, bấm nút kia". Nay hệ thống tự nhận dạng. */}
             <Button
               size="sm"
               variant="outline"
               onClick={() => setImportOpen(true)}
               disabled={!canMutate}
-              title={!canMutate ? "Chọn 1 campus để import" : undefined}
-            >
-              <ListChecks className="h-4 w-4" />
-              Import từ Word
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setExamBankOpen(true)}
-              disabled={!canMutate}
               title={
                 !canMutate
-                  ? "Chọn 1 campus để upload"
-                  : "Upload đề theo mã (tự nhận chuyên đề/dạng/độ khó, đáp án gạch chân)"
+                  ? "Chọn 1 campus để tải đề"
+                  : "Thả file .docx bất kỳ — hệ thống tự nhận dạng khuôn đề"
               }
             >
               <FileText className="h-4 w-4" />
-              Upload đề theo mã
+              Tải đề lên
             </Button>
             <Button
               size="sm"
@@ -551,8 +536,7 @@ export default function QuestionBankPage() {
         editing={editing}
         onSaved={setKhoView}
       />
-      <ImportWordDialog open={importOpen} onOpenChange={setImportOpen} />
-      <ExamBankImportDialog open={examBankOpen} onOpenChange={setExamBankOpen} />
+      <ImportQuestionsDialog open={importOpen} onOpenChange={setImportOpen} />
       <ViewQuestionDialog question={viewing} onClose={() => setViewing(null)} />
 
       <ConfirmActionDialog
