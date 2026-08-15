@@ -331,7 +331,46 @@ for (const [label, src] of [
   );
 }
 
-/* ───────── 6. Rules of Hooks ở trang giám sát ───────── */
+/* ───────── 6. Không trang nào 404 trước khi store hydrate ───────── */
+
+// Lần render đầu, các kho Zustand còn rỗng (snapshot Firestore về sau
+// ~200–500ms). Gọi `notFound()` ngay lúc đó là ném 404 vào mặt người dùng dù
+// dữ liệu tồn tại. Đã bắt được ngoài thực tế: HS nộp bài xong thấy trang 404
+// trắng, và HS bấm F5 giữa giờ thi thì mất luôn màn làm bài.
+const PAGES_404 = [
+  "apps/web/src/app/(authenticated)/exam/[shiftId]/page.tsx",
+  "apps/web/src/app/(authenticated)/exam/[shiftId]/result/page.tsx",
+  "apps/web/src/app/(authenticated)/grading/[attemptId]/page.tsx",
+  "apps/web/src/app/(authenticated)/reports/[shiftId]/page.tsx",
+  "apps/web/src/app/(authenticated)/reports/[shiftId]/attempts/[attemptId]/page.tsx",
+  "apps/web/src/app/(authenticated)/admin/shifts/[id]/monitor/page.tsx",
+];
+// Kiểm THEO VỊ TRÍ, không kiểm "file có chứa chữ Hydrated": bản đầu của ca
+// này vẫn xanh khi tôi cố tình xoá dòng khai báo `const shiftsHydrated`, vì
+// tên biến còn sót trong thân guard. Nay mỗi `notFound()` phải có một tham
+// chiếu `Hydrated` đứng ngay trước nó.
+// Bỏ chú thích trước khi quét: `notFound()` nằm trong comment không phải lời
+// gọi thật. Và chỉ đòi cổng hydrate xuất hiện ĐÂU ĐÓ TRƯỚC lời gọi, không đòi
+// kề sát — trang giám sát gom các cổng vào biến `gate` cách đó 250 dòng, đòi
+// kề sát là báo nhầm một trang đã đúng.
+const boChuThich = (s) =>
+  s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+for (const p of PAGES_404) {
+  const src = boChuThich(read(p));
+  const ten = p.split("(authenticated)/")[1];
+  const viTri = [...src.matchAll(/notFound\(\)/g)].map((m) => m.index);
+  const khaiBao = /const \w*[Hh]ydrated = use\w+Store/.test(src);
+  const moiCaiDeuCoCong = viTri.every((i) =>
+    /[Hh]ydrated/.test(src.slice(0, i)),
+  );
+  check(
+    `${ten} chờ hydrate trước khi 404`,
+    viTri.length === 0 || (khaiBao && moiCaiDeuCoCong),
+    "404 nhầm khi kho còn rỗng ở lần render đầu",
+  );
+}
+
+/* ───────── 7. Rules of Hooks ở trang giám sát ───────── */
 
 // Mọi useMemo phải đứng TRƯỚC câu return đầu tiên, nếu không React ném
 // "Rendered more hooks than during the previous render" đúng lúc store

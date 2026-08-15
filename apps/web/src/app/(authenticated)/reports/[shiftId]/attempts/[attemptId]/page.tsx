@@ -63,9 +63,11 @@ export default function ReportAttemptDetailPage() {
       : session?.campusId ?? null;
 
   const shift = useShiftsStore((s) => s.shifts.find((x) => x.id === shiftId));
+  const shiftsHydrated = useShiftsStore((s) => s.hydrated);
   const attempt = useAttemptsStore((s) =>
     s.attempts.find((a) => a.id === attemptId),
   );
+  const attemptsHydrated = useAttemptsStore((s) => s.hydrated);
   const allQuestions = useQuestionsStore((s) => s.questions);
   const subjects = useSubjectsStore((s) => s.subjects);
   const users = useUsersStore((s) => s.users);
@@ -77,7 +79,19 @@ export default function ReportAttemptDetailPage() {
     [essayGradesAll, attempt],
   );
 
-  if (!shift || !attempt || attempt.shiftId !== shift.id) return notFound();
+  // Chờ hydrate rồi mới kết luận "không tìm thấy" (xem ghi chú cùng loại ở
+  // reports/[shiftId]/page.tsx).
+  if (!shift || !attempt) {
+    if (!shiftsHydrated || !attemptsHydrated) {
+      return (
+        <div className="flex items-center justify-center py-20 text-muted-foreground">
+          Đang tải bài làm…
+        </div>
+      );
+    }
+    return notFound();
+  }
+  if (attempt.shiftId !== shift.id) return notFound();
   if (campusId && shift.campusId !== campusId) {
     return (
       <div className="rounded-xl border bg-card p-6 text-center text-sm text-muted-foreground">

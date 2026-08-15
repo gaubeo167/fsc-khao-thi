@@ -41,7 +41,9 @@ export default function GradingWorkspacePage() {
   const session = useAuthStore((s) => s.session);
 
   const attempts = useAttemptsStore((s) => s.attempts);
+  const attemptsHydrated = useAttemptsStore((s) => s.hydrated);
   const shifts = useShiftsStore((s) => s.shifts);
+  const shiftsHydrated = useShiftsStore((s) => s.hydrated);
   const allQuestions = useQuestionsStore((s) => s.questions);
   const subjects = useSubjectsStore((s) => s.subjects);
   const packages = usePackagesStore((s) => s.packages);
@@ -91,7 +93,18 @@ export default function GradingWorkspacePage() {
 
   // Auth guard.
   if (!session) return null;
-  if (!attempt || !shift) return notFound();
+  // Chờ hydrate rồi mới kết luận "không tìm thấy" — lần render đầu hai kho
+  // này còn rỗng, ném 404 nhầm vào bài giáo viên đang định chấm.
+  if (!attempt || !shift) {
+    if (!shiftsHydrated || !attemptsHydrated) {
+      return (
+        <div className="flex items-center justify-center py-20 text-muted-foreground">
+          Đang tải bài làm…
+        </div>
+      );
+    }
+    return notFound();
+  }
   if (!isAssigned(shift.id, session.userId)) {
     return (
       <div className="mx-auto max-w-md rounded-xl border bg-card p-6 text-center">
