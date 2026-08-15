@@ -73,6 +73,26 @@ for (const fn of ["startOrResume", "saveAnswer", "toggleMark"]) {
   );
 }
 
+// Mất bài khi F5 giữa giờ thi: lúc tải lại, store rỗng và effect khởi tạo
+// chạy TRƯỚC khi snapshot về, nên `startOrResume` dựng một bản rỗng. Nếu
+// merge thay CẢ CỤM `answers` thì bản rỗng đó đè lên dữ liệu server và HS
+// mất sạch bài. Gộp theo từng câu mới giữ được cả hai chiều.
+check(
+  "answers gộp theo từng câu, không thay cả cụm",
+  /answers: \{ \.\.\.row\.answers, \.\.\.local\.answers \}/.test(store),
+  "thay cả cụm = HS bấm F5 giữa giờ thi là mất sạch bài đang làm",
+);
+check(
+  "markedForReview hợp nhất, không thay cả cụm",
+  /markedForReview: Array\.from\(\s*new Set\(/.test(store),
+  "thay cả cụm = mất các câu HS đã đánh dấu xem lại",
+);
+check(
+  "không còn nhánh trả thẳng local.answers",
+  !/answers: local\.answers,/.test(store),
+  "còn nhánh cũ nghĩa là vẫn đè mất dữ liệu server",
+);
+
 check(
   "hàng cục bộ mồ côi chỉ được giữ nếu là bài của chính tab này",
   /!seen\.has\(a\.id\) && a\.submittedAt == null && locallyEdited\.has\(a\.id\)/.test(
