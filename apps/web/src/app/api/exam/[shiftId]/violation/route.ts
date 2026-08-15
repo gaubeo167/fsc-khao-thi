@@ -1,7 +1,8 @@
 /**
  * POST /api/exam/[shiftId]/violation
  *
- * Body: { kind: "tabSwitch" | "fullscreenExit" | "pasteAttempt", at?: string }
+ * Body: { kind: "tabSwitches" | "fullscreenExits" | "pasteAttempts", at?: string }
+ *        (vẫn nhận lối viết số ít cũ: "tabSwitch" | "fullscreenExit" | "pasteAttempt")
  *
  * Ghi một vi phạm chống gian lận vào bài làm của CHÍNH người gọi, bằng Admin
  * SDK, chỉ CỘNG DỒN (FieldValue.increment) và chỉ NỐI THÊM vào nhật ký.
@@ -18,10 +19,24 @@ import { NextResponse } from "next/server";
 import { verifyCaller } from "@/lib/api-auth";
 import { getAdmin } from "@/lib/firebase-admin";
 
+/**
+ * Chuẩn hoá `kind` về đúng tên trường trong `attempts.violations`.
+ *
+ * Nhận CẢ hai lối viết: client (`attempts-store.recordViolation`) gửi tên
+ * trường số nhiều — `tabSwitches` — còn bản đầu của route này chỉ nhận số
+ * ít. Lệch nhau nên MỌI lần ghi vi phạm bị trả 400 `bad_kind`, và vì fetch
+ * không ném lỗi ở 4xx nên client nuốt luôn: đếm vi phạm chỉ tăng trong máy
+ * HS, phòng giám sát không thấy gì. Nhận cả hai để bản cũ đang chạy không
+ * gãy, nhưng LƯU thì chỉ lưu một dạng số nhiều — đúng khoá mà màn giám sát
+ * tra nhãn (`VIOLATION_LABEL`).
+ */
 const KINDS = {
   tabSwitch: "tabSwitches",
   fullscreenExit: "fullscreenExits",
   pasteAttempt: "pasteAttempts",
+  tabSwitches: "tabSwitches",
+  fullscreenExits: "fullscreenExits",
+  pasteAttempts: "pasteAttempts",
 } as const;
 
 type Kind = keyof typeof KINDS;
@@ -75,9 +90,13 @@ export async function POST(
 
   const at = typeof body.at === "string" ? body.at : new Date().toISOString();
   const events = (snap.data()?.recentEvents as unknown[]) ?? [];
+  // Ghi tên trường đã chuẩn hoá, KHÔNG ghi `kind` thô của request: màn giám
+  // sát tra `VIOLATION_LABEL[ev.kind]` bằng khoá số nhiều, lưu "tabSwitch"
+  // thì dòng sự kiện hiện nhãn rỗng.
+  const canonical = KINDS[kind];
   await ref.update({
-    [`violations.${KINDS[kind]}`]: FieldValue.increment(1),
-    recentEvents: [...events, { kind, at }].slice(-MAX_EVENTS),
+    [`violations.${canonical}`]: FieldValue.increment(1),
+    recentEvents: [...events, { kind: canonical, at }].slice(-MAX_EVENTS),
     updatedAt: FieldValue.serverTimestamp(),
   });
 

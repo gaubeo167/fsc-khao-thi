@@ -132,6 +132,19 @@ function newAttemptId(shiftId: string, studentId: string): string {
   return `att-${shiftId}-${studentId}`;
 }
 
+/**
+ * Bài làm mà CHÍNH tab này đang gõ.
+ *
+ * `_applySnapshot` phải giữ `answers` cục bộ cho những bài trong tập này
+ * (snapshot Firestore về sau mỗi lần ghi ~50–500ms, trả lại bản cũ hơn thì
+ * nuốt mất chữ vừa gõ). Nhưng CHỈ những bài này — trước đây điều kiện là
+ * "mọi bài chưa nộp", nên trên máy giám thị mọi bài của mọi HS đều chưa nộp
+ * → snapshot bị vứt `answers`, và tiến độ trên phòng giám sát đứng im ở con
+ * số lúc mở trang. Giám thị không bao giờ gọi saveAnswer cho bài của HS, nên
+ * tập này rỗng với họ và snapshot luôn được nhận nguyên vẹn.
+ */
+const locallyEdited = new Set<string>();
+
 function gradeOne(
   q: Question,
   a: Answer | undefined,
@@ -257,7 +270,10 @@ export const useAttemptsStore = create<State & Actions>()((set, get) => ({
     const existing = get().attempts.find(
       (a) => a.shiftId === shiftId && a.studentId === studentId,
     );
-    if (existing) return existing;
+    if (existing) {
+      locallyEdited.add(existing.id);
+      return existing;
+    }
     const att: StudentAttempt = {
       id: newAttemptId(shiftId, studentId),
       shiftId,
@@ -276,12 +292,14 @@ export const useAttemptsStore = create<State & Actions>()((set, get) => ({
       violations: { tabSwitches: 0, fullscreenExits: 0, pasteAttempts: 0 },
       recentEvents: [],
     };
+    locallyEdited.add(att.id);
     set({ attempts: [att, ...get().attempts] });
     writeDoc(COLLECTIONS.attempts, att.id, toDoc(att));
     return att;
   },
 
   saveAnswer(attemptId, questionId, answer) {
+    locallyEdited.add(attemptId);
     let nextDoc: StudentAttempt | undefined;
     set({
       attempts: get().attempts.map((a) => {
@@ -300,6 +318,7 @@ export const useAttemptsStore = create<State & Actions>()((set, get) => ({
   },
 
   toggleMark(attemptId, questionId) {
+    locallyEdited.add(attemptId);
     let nextMarks: string[] | undefined;
     set({
       attempts: get().attempts.map((a) => {
@@ -343,7 +362,7 @@ export const useAttemptsStore = create<State & Actions>()((set, get) => ({
         void (async () => {
           try {
             const { authHeaders } = await import("@/lib/api-client");
-            await fetch(`/api/exam/${att.shiftId}/violation`, {
+            const res = await fetch(`/api/exam/${att.shiftId}/violation`, {
               method: "POST",
               headers: {
                 "content-type": "application/json",
@@ -351,6 +370,17 @@ export const useAttemptsStore = create<State & Actions>()((set, get) => ({
               },
               body: JSON.stringify({ kind, at: new Date().toISOString() }),
             });
+            // fetch KHÔNG ném lỗi ở 4xx/5xx. Không kiểm tra ở đây thì một
+            // route đổi hợp đồng sẽ làm chết đường ghi vi phạm mà không ai
+            // biết — đúng cách bug 400 `bad_kind` sống sót qua nhiều bản.
+            // 409 = bài đã nộp, không phải lỗi.
+            if (!res.ok && res.status !== 409) {
+              // eslint-disable-next-line no-console
+              console.error(
+                `[attempts] ghi vi phạm bị từ chối: HTTP ${res.status}`,
+                await res.text().catch(() => ""),
+              );
+            }
           } catch (e) {
             // eslint-disable-next-line no-console
             console.warn("[attempts] ghi vi phạm thất bại", e);
@@ -460,15 +490,14 @@ export const useAttemptsStore = create<State & Actions>()((set, get) => ({
     // resets innerHTML, and the caret jumps to the start (caused the
     // "đẹp rất quê Làng" reverse-typing bug).
     //
-    // Strategy: for attempts currently being worked on (submittedAt
-    // null) keep the LOCAL copy — the local state already has every
-    // keystroke. For everyone else (submitted attempts, attempts
-    // belonging to other students viewable by staff), trust the
-    // snapshot.
+    // Strategy: chỉ giữ bản LOCAL cho bài mà CHÍNH tab này đang gõ
+    // (`locallyEdited`) và chưa nộp — bản cục bộ đã có đủ từng phím.
+    // Mọi bài còn lại (bài đã nộp, và bài của HS khác mà giám thị đang
+    // xem) tin theo snapshot, nếu không màn giám sát sẽ đứng im.
     const localById = new Map(get().attempts.map((a) => [a.id, a]));
     const merged = rows.map((row) => {
       const local = localById.get(row.id);
-      if (local && local.submittedAt == null) {
+      if (local && local.submittedAt == null && locallyEdited.has(row.id)) {
         // Pull non-answer fields from snapshot (e.g. proctor flags an
         // attempt → recentEvents grows) but keep local answers /
         // markedForReview so in-flight edits aren't lost.
@@ -481,10 +510,12 @@ export const useAttemptsStore = create<State & Actions>()((set, get) => ({
       return row;
     });
     // Append local-only in-progress attempts the snapshot doesn't
-    // know about yet (just-created, write hasn't landed).
+    // know about yet (just-created, write hasn't landed). Chỉ áp cho bài
+    // của chính tab này — nếu không, hàng cũ trên máy giám thị sẽ sống mãi
+    // kể cả khi bài đã bị xoá khỏi Firestore.
     const seen = new Set(merged.map((a) => a.id));
     for (const a of get().attempts) {
-      if (!seen.has(a.id) && a.submittedAt == null) {
+      if (!seen.has(a.id) && a.submittedAt == null && locallyEdited.has(a.id)) {
         merged.push(a);
       }
     }
