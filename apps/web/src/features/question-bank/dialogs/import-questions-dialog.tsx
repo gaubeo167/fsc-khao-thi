@@ -482,7 +482,7 @@ export function ImportQuestionsDialog({
                             )}
                           </span>
                           <span className="mt-0.5 line-clamp-2 block text-small text-foreground/80">
-                            {d.content.replace(/!\[[^\]]*\]\([^)]*\)/g, "🖼 ") ||
+                            {d.content.replace(/!\[[^\]]*\]\([^)]*\)/g, "🖼 ").trim() ||
                               "(đề bài trống)"}
                           </span>
                           {iss.slice(0, 1).map((x) => (
@@ -571,6 +571,77 @@ export function ImportQuestionsDialog({
   );
 }
 
+/**
+ * Ô sửa đề bài, TÁCH ảnh ra khỏi ô chữ.
+ *
+ * Ảnh trong file Word được nhúng thành data URI base64. Đổ nguyên vào
+ * textarea thì một câu có ảnh ra 183KB chuỗi rác che kín đề bài, không đọc
+ * nổi mà cũng không sửa nổi — đúng cái người dùng gặp.
+ *
+ * Ở đây: chữ vào ô chữ, ảnh hiện thành ảnh thật kèm nút xoá. Lúc ghi lại thì
+ * ghép ảnh xuống cuối phần chữ, giữ nguyên cú pháp markdown mà phần hiển thị
+ * câu hỏi vẫn đọc được.
+ */
+const IMG_RE = /!\[[^\]]*\]\((data:[^)]+)\)/g;
+
+function ContentEditor({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange(v: string): void;
+}) {
+  const images = [...value.matchAll(IMG_RE)].map((m) => m[1]);
+  const text = value.replace(IMG_RE, "").replace(/\n{3,}/g, "\n\n").trim();
+  const rebuild = (nextText: string, nextImages: string[]) =>
+    [nextText, ...nextImages.map((src) => `![](${src})`)]
+      .filter(Boolean)
+      .join("\n\n");
+
+  return (
+    <div>
+      <span className="text-meta font-semibold text-foreground/70">
+        Đề bài câu hỏi *
+      </span>
+      <textarea
+        value={text}
+        onChange={(e) => onChange(rebuild(e.target.value, images))}
+        rows={5}
+        className="mt-1 w-full rounded-md border bg-card px-3 py-2 text-small leading-relaxed"
+      />
+      {images.length > 0 && (
+        <div className="mt-2">
+          <span className="text-hint text-muted-foreground">
+            {images.length} ảnh đính kèm từ file Word
+          </span>
+          <ul className="mt-1 flex flex-wrap gap-2">
+            {images.map((src, i) => (
+              <li key={i} className="relative">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={src}
+                  alt={`Ảnh ${i + 1}`}
+                  className="h-24 w-auto rounded border bg-card object-contain"
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    onChange(rebuild(text, images.filter((_, x) => x !== i)))
+                  }
+                  className="absolute -right-1.5 -top-1.5 rounded-full border bg-card p-0.5 text-muted-foreground shadow-sm hover:bg-accent/30"
+                  title="Xoá ảnh này"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ───────────────────────── ô chỉnh chi tiết ───────────────────────── */
 
 function QuestionEditor({
@@ -656,17 +727,10 @@ function QuestionEditor({
         </div>
       )}
 
-      <label className="block">
-        <span className="text-meta font-semibold text-foreground/70">
-          Đề bài câu hỏi *
-        </span>
-        <textarea
-          value={q.content}
-          onChange={(e) => onPatch({ content: e.target.value })}
-          rows={5}
-          className="mt-1 w-full rounded-md border bg-card px-3 py-2 text-small leading-relaxed"
-        />
-      </label>
+      <ContentEditor
+        value={q.content}
+        onChange={(content) => onPatch({ content })}
+      />
 
       {(q.type === "mcq-single" || q.type === "mcq-multi") && (
         <div>

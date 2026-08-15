@@ -247,14 +247,29 @@ export function draftFromGeneric(
   return {
     id: nextId(),
     index,
-    // Có phương án → trắc nghiệm. Nhiều dấu đúng → nhiều đáp án. Không có
-    // phương án nào thì KHÔNG đoán (tự luận hay trả lời ngắn đều có thể).
+    // Thứ tự ưu tiên: chữ LOẠI trong mã YCCĐ trước, rồi mới tới việc đếm
+    // phương án.
+    //
+    // Mã là nguồn đáng tin hơn vì câu Đúng/Sai và trả lời ngắn không có
+    // A/B/C/D nào để đếm — dựa vào phương án thì đúng những câu đó ra "chưa
+    // nhận ra dạng" dù đề đã ghi rõ loại ngay trong mã.
+    //
+    // Riêng chữ D vẫn để việc đếm quyết định giữa một/nhiều đáp án, vì mã chỉ
+    // nói "trắc nghiệm" chứ không nói mấy đáp án đúng.
     type:
-      q.options.length >= 2
-        ? correct > 1
-          ? "mcq-multi"
-          : "mcq-single"
-        : null,
+      q.typeLetter === "F"
+        ? "multi-tf"
+        : q.typeLetter === "S"
+          ? "short-answer"
+          : q.typeLetter === "E"
+            ? "essay"
+            : q.options.length >= 2
+              ? correct > 1
+                ? "mcq-multi"
+                : "mcq-single"
+              : q.typeLetter === "D"
+                ? "mcq-single"
+                : null,
     difficulty: q.difficulty,
     content: q.content,
     options: q.options.map((o) => ({ content: o.content, isCorrect: o.isCorrect })),

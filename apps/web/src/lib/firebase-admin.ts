@@ -58,12 +58,33 @@ function loadCredential() {
   );
 }
 
+/**
+ * Đang chạy với Firebase Emulator hay không.
+ *
+ * Emulator KHÔNG kiểm chữ ký, nên Admin SDK chỉ cần `projectId` — đòi service
+ * account ở chế độ này là chặn oan: máy lập trình viên không có (và không nên
+ * có) khoá production nằm sẵn trên đĩa.
+ */
+function usingEmulator(): boolean {
+  return Boolean(
+    process.env.FIRESTORE_EMULATOR_HOST ??
+      process.env.FIREBASE_AUTH_EMULATOR_HOST,
+  );
+}
+
 export function getAdmin(): AdminBundle {
   if (cached) return cached;
   const app =
     getApps().length > 0
       ? getApps()[0]!
-      : initializeApp({ credential: cert(loadCredential()) });
+      : initializeApp(
+          usingEmulator()
+            ? {
+                projectId:
+                  process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ?? "demo-fsc",
+              }
+            : { credential: cert(loadCredential()) },
+        );
   cached = { app, auth: getAuth(app), db: getFirestore(app) };
   return cached;
 }
