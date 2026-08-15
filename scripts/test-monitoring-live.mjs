@@ -231,6 +231,31 @@ check(
   "lần cuối chỉ là một cú Esc rồi bài biến mất không báo trước",
 );
 
+// Ctrl+Tab trong Chrome làm rớt fullscreen CÙNG LÚC với ẩn tab, nên cả hai
+// cờ cùng bật. Nếu màn chặn kiểm `fullscreenLost` trước thì HS chuyển tab
+// lại đọc lời nhắn về fullscreen, không hề nhắc chuyển tab — trông y như
+// chuyển tab chẳng bị xử lý gì.
+const overlayBlock = runtime.slice(
+  runtime.indexOf("Gọi ĐÚNG TÊN việc HS vừa làm"),
+  runtime.indexOf("Vi phạm đã được ghi lại"),
+);
+// Khoá ĐÚNG thẻ <h3>. Trước đây ca này quét cả khối nên vẫn xanh khi tiêu đề
+// bị đổi về fullscreen — vì `{tabAway` còn xuất hiện ở đoạn văn bên dưới.
+const h3 = overlayBlock.slice(
+  overlayBlock.indexOf("<h3"),
+  overlayBlock.indexOf("</h3>"),
+);
+check(
+  "TIÊU ĐỀ màn chặn gọi tên chuyển tab TRƯỚC fullscreen",
+  h3.length > 0 && /\{tabAway/.test(h3) && !/\{fullscreenLost/.test(h3),
+  "HS chuyển tab mà tiêu đề chỉ nói fullscreen = tưởng chuyển tab không bị xử lý",
+);
+check(
+  "khi dính cả hai thì nhắc luôn cả fullscreen",
+  /tabAway && fullscreenLost/.test(overlayBlock),
+  "mất thông tin: HS không biết mình vi phạm mấy lỗi",
+);
+
 check(
   "luật mất-bài được nói ở màn hình trước khi bắt đầu",
   /autoSubmitOnExit/.test(runtime),
