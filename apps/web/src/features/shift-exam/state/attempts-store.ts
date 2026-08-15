@@ -68,6 +68,17 @@ export interface StudentAttempt {
   answers: Record<string, Answer>;
   /** questionIds the student flagged to revisit before submitting. */
   markedForReview: string[];
+  /**
+   * Câu HS đang xem lần cuối. Để máy mất điện / khởi động lại giữa giờ thi
+   * thì vào lại đúng chỗ đang làm dở, không bị ném về câu 1.
+   *
+   * Lưu ID chứ không lưu chỉ số: chỉ số chỉ đúng khi mảng câu hỏi giữ nguyên
+   * thứ tự, mà ca thi có bật đảo thứ tự câu. ID thì sai cũng không nguy hiểm
+   * — tìm không thấy thì lùi về câu chưa trả lời đầu tiên.
+   *
+   * Bài làm cũ không có trường này → lùi về cách suy từ `answers`.
+   */
+  lastQuestionId?: string | null;
   startedAt: string;
   submittedAt: string | null;
   /** Filled at submit time — `null` for unsubmitted runs. */
@@ -110,6 +121,8 @@ interface Actions {
   }): StudentAttempt;
   saveAnswer(attemptId: string, questionId: string, answer: Answer): void;
   toggleMark(attemptId: string, questionId: string): void;
+  /** Ghi nhớ câu HS đang xem, để vào lại sau sự cố thì về đúng chỗ. */
+  setLastQuestion(attemptId: string, questionId: string): void;
   recordViolation(
     attemptId: string,
     kind: keyof StudentAttempt["violations"],
@@ -144,6 +157,9 @@ function newAttemptId(shiftId: string, studentId: string): string {
  * tập này rỗng với họ và snapshot luôn được nhận nguyên vẹn.
  */
 const locallyEdited = new Set<string>();
+
+/** Bộ hẹn giờ giãn ghi cho `setLastQuestion`. Xem ghi chú tại đó. */
+let lastQTimer: ReturnType<typeof setTimeout> | null = null;
 
 function gradeOne(
   q: Question,
@@ -336,6 +352,26 @@ export const useAttemptsStore = create<State & Actions>()((set, get) => ({
         markedForReview: nextMarks,
       });
     }
+  },
+
+  setLastQuestion(attemptId, questionId) {
+    // KHÔNG đụng vào state cục bộ. `currentIdx` trong ExamRuntime mới là
+    // nguồn sự thật cho UI; ghi ngược vào store sẽ làm liveAttempt đổi tham
+    // chiếu mỗi lần bấm sang câu khác và kéo theo một vòng render vô ích.
+    // Trường này chỉ để ĐỌC MỘT LẦN lúc vào lại bài.
+    if (!isFirebaseConfigured()) return;
+    const att = get().attempts.find((a) => a.id === attemptId);
+    if (!att || att.submittedAt != null) return;
+    if (att.lastQuestionId === questionId) return;
+    // Giãn 2s: HS bấm "câu sau" liên tục để dò đề thì không sinh một lượt ghi
+    // cho mỗi lần bấm, và mỗi lượt ghi còn bắn snapshot tới máy giám thị.
+    if (lastQTimer) clearTimeout(lastQTimer);
+    lastQTimer = setTimeout(() => {
+      lastQTimer = null;
+      const live = get().attempts.find((a) => a.id === attemptId);
+      if (!live || live.submittedAt != null) return; // nộp rồi thì rules chặn
+      patchDoc(COLLECTIONS.attempts, attemptId, { lastQuestionId: questionId });
+    }, 2_000);
   },
 
   recordViolation(attemptId, kind) {

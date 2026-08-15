@@ -60,6 +60,7 @@ export function ExamRuntime({
   const toggleMark = useAttemptsStore((s) => s.toggleMark);
   const submit = useAttemptsStore((s) => s.submit);
   const recordViolation = useAttemptsStore((s) => s.recordViolation);
+  const setLastQuestion = useAttemptsStore((s) => s.setLastQuestion);
   // Proctor-issued warnings/violations targeted at this student for this
   // shift. We read the *raw* events array (stable reference between
   // unrelated mutations) and filter in `useMemo` — selecting
@@ -319,6 +320,37 @@ export function ExamRuntime({
     ? Object.keys(liveAttempt.answers).length
     : 0;
   const markedSet = new Set(liveAttempt?.markedForReview ?? []);
+
+  // ───── Vào lại sau sự cố thì về đúng câu đang làm dở.
+  //
+  // Chạy ĐÚNG MỘT LẦN. Nếu để nó theo dõi `lastQuestionId` liên tục thì mỗi
+  // lần snapshot về sẽ kéo HS ngược lại câu đã ghi, đúng lúc họ vừa bấm sang
+  // câu khác — giằng co con trỏ ngay giữa giờ thi.
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current || !liveAttempt || questions.length === 0) return;
+    restoredRef.current = true;
+    let idx = liveAttempt.lastQuestionId
+      ? questions.findIndex((q) => q.id === liveAttempt.lastQuestionId)
+      : -1;
+    // Bài làm cũ chưa có trường này, hoặc ID không còn trong đề (đảo thứ tự,
+    // đổi bộ đề): lùi về câu chưa trả lời đầu tiên — vẫn sát "câu đang làm dở"
+    // hơn nhiều so với ném về câu 1.
+    if (idx < 0) {
+      idx = questions.findIndex((q) => !liveAttempt.answers[q.id]);
+    }
+    if (idx > 0) setCurrentIdx(idx);
+  }, [liveAttempt, questions]);
+
+  // Ghi lại câu đang xem. Store tự giãn 2s nên bấm dò đề không sinh mỗi lần
+  // bấm một lượt ghi.
+  useEffect(() => {
+    if (!hasStarted || submitted) return;
+    const att = attemptRef.current;
+    const q = questions[currentIdx];
+    if (!att || !q) return;
+    setLastQuestion(att.id, q.id);
+  }, [currentIdx, hasStarted, submitted, questions, setLastQuestion]);
 
   // Auto-submit when time runs out (only if not already submitted).
   useEffect(() => {

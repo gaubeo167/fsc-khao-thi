@@ -331,6 +331,59 @@ for (const [label, src] of [
   );
 }
 
+/* ───────── 5b. Vào lại sau sự cố thì về đúng câu đang làm dở ───────── */
+
+check(
+  "lastQuestionId là tuỳ chọn (bài làm cũ không có)",
+  /lastQuestionId\?: string \| null/.test(store),
+  "bắt buộc thì bài làm đang chạy vỡ kiểu",
+);
+check(
+  "rules cho HS ghi lastQuestionId",
+  /hasOnly\(\['answers', 'markedForReview', 'lastQuestionId', 'updatedAt'\]\)/.test(
+    read("firestore.rules"),
+  ),
+  "thiếu trong danh sách trắng → Firestore từ chối ghi, tính năng chết ÂM THẦM",
+);
+check(
+  "ghi vị trí có giãn nhịp",
+  /setTimeout\(/.test(store.slice(store.indexOf("setLastQuestion("))) &&
+    /lastQTimer/.test(store),
+  "mỗi lần bấm sang câu khác một lượt ghi + một snapshot tới máy giám thị",
+);
+check(
+  "không ghi vị trí sau khi đã nộp",
+  /submittedAt != null\) return; \/\/ nộp rồi thì rules chặn/.test(store),
+  "rules chặn ghi lên bài đã nộp → log lỗi vô ích",
+);
+check(
+  "khôi phục vị trí chỉ chạy MỘT lần",
+  /restoredRef\.current/.test(runtime),
+  "theo dõi liên tục sẽ kéo HS ngược lại câu cũ mỗi lần snapshot về",
+);
+check(
+  "không có lastQuestionId thì lùi về câu chưa trả lời đầu tiên",
+  /questions\.findIndex\(\(q\) => !liveAttempt\.answers\[q\.id\]\)/.test(runtime),
+  "bài làm cũ / đổi máy sẽ bị ném về câu 1",
+);
+
+/* ───────── 5c. Màn giám thị tách vi phạm theo loại ───────── */
+
+check(
+  "dòng HS hiện chip RIÊNG cho từng loại vi phạm",
+  /row\.attempt\?\.violations\.tabSwitches/.test(monitor) &&
+    /row\.attempt\?\.violations\.fullscreenExits/.test(monitor),
+  "một con số tổng không cho biết HS sắp chạm hạn mức NÀO",
+);
+check(
+  "cảnh báo tổng hợp bóc tách theo loại",
+  /chuyển tab ×/.test(read("apps/web/src/features/shift-exam/lib/anomaly-detection.ts")) &&
+    /thoát fullscreen ×/.test(
+      read("apps/web/src/features/shift-exam/lib/anomaly-detection.ts"),
+    ),
+  "'3 vi phạm' có thể là 3 lần tra cứu ngoài hoặc 3 lần máy dở chứng — hai việc khác hẳn",
+);
+
 /* ───────── 6. Không trang nào 404 trước khi store hydrate ───────── */
 
 // Lần render đầu, các kho Zustand còn rỗng (snapshot Firestore về sau
