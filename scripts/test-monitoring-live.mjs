@@ -229,7 +229,28 @@ check(
   "thêm tuỳ chọn không phải boolean sẽ render ra ô tick câm",
 );
 
-/* ───────── 5. Rules of Hooks ở trang giám sát ───────── */
+/* ───────── 5. Không có cờ anti-cheat giả ───────── */
+
+// `requireWebcam` / `faceDetection` từng là cờ bật được trong wizard, hiện
+// dòng "Yêu cầu webcam" cho HS, nhưng không có getUserMedia hay nhận diện
+// khuôn mặt ở đâu cả. Giáo viên bật rồi tưởng đang giám sát camera. Nguy
+// hiểm hơn cả không có tính năng. Ca này chặn nó quay lại.
+const wizard = read("apps/web/src/features/exam-shifts/dialogs/shift-wizard.tsx");
+const seed = read("apps/web/src/features/exam-shifts/data/seed-shifts.ts");
+for (const [label, src] of [
+  ["AntiCheatConfig", types.slice(types.indexOf("export interface AntiCheatConfig"))],
+  ["wizard", wizard],
+  ["exam-runtime", runtime],
+  ["seed-shifts", seed],
+]) {
+  check(
+    `${label} không còn cờ webcam/nhận diện khuôn mặt`,
+    !/\brequireWebcam\b\s*[:.]|\bfaceDetection\b\s*[:.]/.test(src),
+    "cờ bật được nhưng không có code cưỡng chế = giáo viên tưởng đang giám sát camera",
+  );
+}
+
+/* ───────── 6. Rules of Hooks ở trang giám sát ───────── */
 
 // Mọi useMemo phải đứng TRƯỚC câu return đầu tiên, nếu không React ném
 // "Rendered more hooks than during the previous render" đúng lúc store

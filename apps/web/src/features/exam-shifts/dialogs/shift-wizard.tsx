@@ -3433,18 +3433,6 @@ const ANTI_CHEAT_FLAGS: Array<{
     tone: "low",
   },
   {
-    key: "requireWebcam",
-    label: "Yêu cầu webcam",
-    description: "Stream webcam suốt ca thi để giám thị review.",
-    tone: "high",
-  },
-  {
-    key: "faceDetection",
-    label: "Phát hiện khuôn mặt",
-    description: "Lấy mẫu định kỳ — phát hiện vắng mặt / có người khác.",
-    tone: "high",
-  },
-  {
     key: "oneTimeStart",
     label: "Vào thi 1 lần duy nhất",
     description: "Không cho pause/resume — phải làm liền mạch.",

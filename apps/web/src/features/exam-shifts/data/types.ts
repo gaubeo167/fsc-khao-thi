@@ -202,6 +202,17 @@ export type StudentResultVisibility = "full" | "score-only" | "hidden";
 
 export const DEFAULT_RESULT_VISIBILITY: StudentResultVisibility = "full";
 
+/**
+ * Chính sách chống gian lận áp lên máy HS trong ca thi.
+ *
+ * MỌI cờ ở đây phải có code cưỡng chế thật. Trước đây có `requireWebcam` và
+ * `faceDetection`: giáo viên bật được trong wizard, HS thấy dòng "Yêu cầu
+ * webcam" ở màn hình quy định, nhưng không có `getUserMedia`, không luồng
+ * camera, không nhận diện khuôn mặt ở bất kỳ đâu. Giáo viên bật lên rồi yên
+ * tâm là đang giám sát camera, thực tế không giám sát gì — nguy hiểm hơn cả
+ * không có tính năng. Đã gỡ. Đừng thêm cờ vào đây trước khi phần cưỡng chế
+ * chạy được.
+ */
 export interface AntiCheatConfig {
   /** Reshuffle question order per student. */
   randomizeQuestions: boolean;
@@ -215,10 +226,6 @@ export interface AntiCheatConfig {
   blockCopyPaste: boolean;
   /** Disable right-click context menu. */
   blockRightClick: boolean;
-  /** Webcam stream required throughout the shift. */
-  requireWebcam: boolean;
-  /** Periodic face detection sample. */
-  faceDetection: boolean;
   /** Student can't pause / resume — single linear attempt. */
   oneTimeStart: boolean;
   /**
@@ -249,8 +256,6 @@ export const DEFAULT_ANTI_CHEAT: AntiCheatConfig = {
   blockTabSwitch: true,
   blockCopyPaste: true,
   blockRightClick: true,
-  requireWebcam: false,
-  faceDetection: false,
   oneTimeStart: true,
   // 2 = lần thoát đầu hiện pop-up cảnh báo, lần thứ hai nộp bài ngay.
   // Ca thi TẠO TRƯỚC bản này không có trường này và được đọc là 0 (không tự

@@ -20,8 +20,6 @@ const NO_CHEAT: AntiCheatConfig = {
   blockTabSwitch: false,
   blockCopyPaste: false,
   blockRightClick: false,
-  requireWebcam: false,
-  faceDetection: false,
   oneTimeStart: true,
 };
 

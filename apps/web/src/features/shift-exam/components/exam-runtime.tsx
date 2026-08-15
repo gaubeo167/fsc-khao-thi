@@ -654,7 +654,6 @@ export function ExamRuntime({
             {shift.antiCheat.blockTabSwitch && <li>• Chặn đổi tab</li>}
             {shift.antiCheat.blockCopyPaste && <li>• Chặn copy/paste</li>}
             {shift.antiCheat.blockRightClick && <li>• Chặn chuột phải</li>}
-            {shift.antiCheat.requireWebcam && <li>• Yêu cầu webcam</li>}
             {shift.antiCheat.oneTimeStart && <li>• Chỉ vào thi 1 lần</li>}
           </ul>
         </div>
@@ -978,7 +977,6 @@ function StartOverlay({
     { on: shift.antiCheat.blockTabSwitch, label: "Chặn chuyển tab" },
     { on: shift.antiCheat.blockCopyPaste, label: "Chặn copy / paste" },
     { on: shift.antiCheat.blockRightClick, label: "Chặn chuột phải" },
-    { on: shift.antiCheat.requireWebcam, label: "Yêu cầu webcam" },
     { on: shift.antiCheat.randomizeQuestions, label: "Đảo thứ tự câu" },
     { on: shift.antiCheat.randomizeOptions, label: "Đảo thứ tự đáp án" },
     { on: shift.antiCheat.oneTimeStart, label: "Chỉ vào thi 1 lần" },
