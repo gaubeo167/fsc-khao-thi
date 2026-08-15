@@ -26,6 +26,7 @@ export default function ExamPage() {
   const shift = useShiftsStore((s) =>
     s.shifts.find((x) => x.id === shiftId),
   );
+  const shiftsHydrated = useShiftsStore((s) => s.hydrated);
   const packages = usePackagesStore((s) => s.packages);
   const blueprints = useBlueprintsStore((s) => s.blueprints);
   const allQuestions = useQuestionsStore((s) => s.questions);
@@ -189,7 +190,19 @@ export default function ExamPage() {
   // Questions actually shown: server-stripped (prod student) or local.
   const effectiveQuestions = useServer ? serverQuestions ?? [] : questions;
 
-  if (!shift) return notFound();
+  // Chờ hydrate rồi mới kết luận "không tìm thấy". Đây là màn NGUY HIỂM NHẤT
+  // để 404 nhầm: HS bấm F5 giữa giờ thi, lần render đầu `shifts` còn rỗng,
+  // và bản cũ ném 404 thay vì trả lại bài đang làm.
+  if (!shift) {
+    if (!shiftsHydrated) {
+      return (
+        <div className="flex items-center justify-center py-20 text-muted-foreground">
+          Đang tải ca thi…
+        </div>
+      );
+    }
+    return notFound();
+  }
   if (!session) {
     return (
       <Gate

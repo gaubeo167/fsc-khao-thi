@@ -39,6 +39,7 @@ export default function ExamResultPage() {
   const shift = useShiftsStore((s) =>
     s.shifts.find((x) => x.id === shiftId),
   );
+  const shiftsHydrated = useShiftsStore((s) => s.hydrated);
   const attempt = useAttemptsStore((s) =>
     session
       ? s.attempts.find(
@@ -122,7 +123,21 @@ export default function ExamResultPage() {
     return { points, max };
   }, [essayGrades]);
 
-  if (!shift) return notFound();
+  // Chờ kho ca thi hydrate xong rồi mới kết luận "không tìm thấy". Lần render
+  // đầu `shifts` còn rỗng (snapshot Firestore về sau ~200–500ms), nên bản cũ
+  // ném notFound() ngay và HS VỪA NỘP BÀI XONG thì thấy trang 404 trắng.
+  // Trớ trêu: nhánh `!attempt` ngay dưới còn khuyên HS "thử Refresh trang một
+  // lần" — làm theo là rơi thẳng vào đúng cái 404 này.
+  if (!shift) {
+    if (!shiftsHydrated) {
+      return (
+        <div className="flex items-center justify-center py-20 text-muted-foreground">
+          Đang tải kết quả…
+        </div>
+      );
+    }
+    return notFound();
+  }
   if (!attempt) {
     return (
       <div className="mx-auto max-w-md rounded-2xl border bg-card p-8 text-center">
