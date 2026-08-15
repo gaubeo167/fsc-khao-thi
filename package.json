@@ -10,12 +10,13 @@
     "dev": "turbo run dev",
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
-
     "dev:api": "npm run dev --workspace @fsc/api",
     "dev:worker": "npm run dev --workspace @fsc/worker",
-
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev"
+    "prisma:migrate": "prisma migrate dev",
+    "emu:start": "export PATH=\"/Users/vietnb/.nvm/versions/node/v20.20.2/bin:$PATH\"; firebase emulators:start --only auth,firestore,storage --project demo-fsc",
+    "emu:seed": "node scripts/seed-emulator.mjs",
+    "emu": "export PATH=\"/Users/vietnb/.nvm/versions/node/v20.20.2/bin:$PATH\"; firebase emulators:exec --only auth,firestore,storage --project demo-fsc \"node scripts/seed-emulator.mjs && echo 'Emulator sẵn sàng. Mở terminal khác chạy: cd apps/web && npm run dev' && tail -f /dev/null\""
   },
   "devDependencies": {
     "@types/pg": "^8.20.0",

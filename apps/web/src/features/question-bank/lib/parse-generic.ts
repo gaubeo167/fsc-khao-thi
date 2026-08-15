@@ -39,6 +39,15 @@ export interface GenericQuestion {
   rawCode: string | null;
   /** Suy từ nhãn [NB]/[TH]/[VD], `null` nếu đề không ghi. */
   difficulty: "easy" | "medium" | "hard" | null;
+  /**
+   * Chữ LOẠI CÂU trong mã YCCĐ — đoạn thứ ba, vd `D` của [SI10.02.15.D01]:
+   *   D = trắc nghiệm · F = Đúng/Sai nhiều ý · S = trả lời ngắn · E = tự luận
+   *
+   * Đây là nguồn đáng tin hơn việc đếm phương án: câu Đúng/Sai và trả lời
+   * ngắn KHÔNG có A/B/C/D nào để đếm, nên nếu bỏ chữ này thì đúng những câu
+   * đó ra "chưa nhận ra dạng" dù đề đã ghi rõ loại ngay trong mã.
+   */
+  typeLetter: "D" | "F" | "S" | "E" | null;
   warnings: string[];
 }
 
@@ -297,6 +306,7 @@ function parseBlock(
   const w: string[] = [];
   let chuyenDeCode: string | null = null;
   let rawCode: string | null = null;
+  let typeLetter: GenericQuestion["typeLetter"] = null;
   let difficulty: "easy" | "medium" | "hard" | null = null;
 
   const contentLines: string[] = [];
@@ -318,6 +328,10 @@ function parseBlock(
     if (codeM && !rawCode) {
       rawCode = codeM[1];
       chuyenDeCode = codeM[1].replace(/\.[DFSEdfse]\d+(?:\.[abcABC])?$/, "");
+      const lm = codeM[1].match(/\.([DFSEdfse])\d+(?:\.[abcABC])?$/);
+      if (lm) {
+        typeLetter = lm[1].toUpperCase() as GenericQuestion["typeLetter"];
+      }
       line = line.replace(CODE_ANYWHERE_RE, " ");
     }
 
@@ -368,6 +382,7 @@ function parseBlock(
     explanation: explanationLines.join("\n").trim(),
     chuyenDeCode,
     rawCode,
+    typeLetter,
     difficulty,
     warnings: w,
   };

@@ -186,6 +186,42 @@ const Uc = "⟦/U⟧";
   check("Không có mốc chia câu → trả rỗng, không đoán", r.questions.length === 0 && r.strategy === null);
 }
 
+/* ── Chữ LOẠI trong mã YCCĐ quyết định dạng câu ── */
+{
+  // Câu Đúng/Sai và trả lời ngắn KHÔNG có A/B/C/D nào để đếm. Bỏ chữ loại
+  // trong mã thì đúng những câu đó ra "chưa nhận ra dạng" dù đề ghi rõ.
+  // Trên đề SHOC thật: 9/21 câu bị như vậy trước khi sửa.
+  const mk = (letter) =>
+    parseGeneric(
+      [`Câu 1. [SI10.02.15.${letter}01] Nội dung câu hỏi?`].join("\n"),
+    ).questions[0];
+  check("mã .F → Đúng/Sai nhiều ý", mk("F")?.typeLetter === "F", mk("F")?.typeLetter);
+  check("mã .S → trả lời ngắn", mk("S")?.typeLetter === "S", mk("S")?.typeLetter);
+  check("mã .E → tự luận", mk("E")?.typeLetter === "E", mk("E")?.typeLetter);
+  check("mã .D → trắc nghiệm", mk("D")?.typeLetter === "D", mk("D")?.typeLetter);
+  check(
+    "không có mã thì không bịa chữ loại",
+    parseGeneric("Câu 1. Nội dung?\nA. x\nB. y").questions[0]?.typeLetter === null,
+  );
+}
+
+/* ── Ảnh phải bám đúng câu, không rơi mất ── */
+{
+  const doc = [
+    "Câu 1. Hình bên mô tả quá trình nào?",
+    "![](data:image/png;base64,AAAA)",
+    "A. Cách một.",
+    "B. Cách hai.",
+  ].join("\n");
+  const q = parseGeneric(doc).questions[0];
+  check(
+    "ảnh nằm trong đề bài của đúng câu",
+    /!\[\]\(data:image\/png;base64,AAAA\)/.test(q?.content ?? ""),
+    q?.content?.slice(0, 60),
+  );
+  check("ảnh không bị hiểu nhầm thành phương án", q?.options.length === 2, `ra ${q?.options.length}`);
+}
+
 /* ── Route phải NỐI parser, không chỉ nối bộ nhận dạng ── */
 {
   const { readFileSync } = await import("node:fs");
