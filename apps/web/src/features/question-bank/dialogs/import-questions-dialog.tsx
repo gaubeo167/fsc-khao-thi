@@ -79,12 +79,17 @@ export function ImportQuestionsDialog({
   const session = useAuthStore((s) => s.session);
   const activeCampusId = useCampusStore((s) => s.activeCampusId);
   const subjects = useSubjectsStore((s) => s.subjects);
+  const tocNodes = useSubjectsStore((s) => s.tocNodes);
   const grades = useGradesStore((s) => s.grades);
   const competencies = useCompetenciesStore((s) => s.competencies);
   const createQuestion = useQuestionsStore((s) => s.create);
 
   const [subjectId, setSubjectId] = useState("");
   const [gradeId, setGradeId] = useState("");
+  /** Mục lục = CHỖ CẤT câu hỏi trong kho, khác với chuyên đề YCCĐ. */
+  const [tocNodeId, setTocNodeId] = useState("");
+  /** Kho cá nhân (chỉ mình thấy) hay kho campus (cả trường dùng chung). */
+  const [kho, setKho] = useState<"personal" | "campus">("campus");
   const [phase, setPhase] = useState<Phase>({ kind: "pick" });
   const [selected, setSelected] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -100,6 +105,7 @@ export function ImportQuestionsDialog({
     if (!open) return;
     setPhase({ kind: "pick" });
     setSelected(0);
+    setTocNodeId("");
     if (fileRef.current) fileRef.current.value = "";
   }, [open]);
 
@@ -125,6 +131,24 @@ export function ImportQuestionsDialog({
     }
     return m;
   }, [competencies, subjectId, gradeId]);
+
+  /**
+   * Mục lục của môn đang chọn. Chỉ lấy nhánh khớp khối (hoặc dùng chung cho
+   * mọi khối), sắp theo thứ tự người soạn đặt.
+   */
+  const tocOptions = useMemo(
+    () =>
+      tocNodes
+        .filter(
+          (n) =>
+            n.subjectId === subjectId &&
+            (n.gradeId == null || n.gradeId === gradeId),
+        )
+        .sort((a, b) => a.order - b.order),
+    [tocNodes, subjectId, gradeId],
+  );
+  /** Môn có mục lục thì BẮT chọn chỗ cất trước khi tải file. */
+  const needToc = tocOptions.length > 0;
 
   // Có mã chuyên đề trong file thì mới đòi khớp. Đề Word thường không có mã,
   // đòi khớp là chặn oan cả file.
@@ -171,6 +195,16 @@ export function ImportQuestionsDialog({
     if (!file) return;
     if (!subjectId || !gradeId) {
       setPhase({ kind: "error", message: "Chọn Môn học và Khối trước khi tải đề." });
+      return;
+    }
+    // Môn có mục lục mà không chọn chỗ cất thì câu hỏi vào kho không nằm ở
+    // đâu cả — tìm lại rất khổ. Chặn ngay từ đầu thay vì để phát hiện sau khi
+    // đã nhập 21 câu.
+    if (needToc && !tocNodeId) {
+      setPhase({
+        kind: "error",
+        message: "Môn này có mục lục — chọn chỗ cất câu hỏi trước khi tải đề.",
+      });
       return;
     }
     setPhase({ kind: "loading", fileName: file.name });
@@ -256,12 +290,15 @@ export function ImportQuestionsDialog({
         const q = draftToQuestion(d, {
           subjectId,
           gradeId,
-          tocNodeId: null,
+          tocNodeId: tocNodeId || null,
           ownerId: session.userId,
           ownerName: session.name ?? "—",
           campusId,
-          kho: target === "submit" ? "campus" : "personal",
-          status: target === "submit" ? "pending" : "draft",
+          kho,
+          // Kho cá nhân: câu vào thẳng, chỉ mình thấy nên không cần duyệt.
+          // Kho campus: cả trường dùng chung nên phải qua duyệt.
+          status:
+            target === "draft" ? "draft" : kho === "personal" ? "approved" : "pending",
         });
         if (q) {
           createQuestion(q);
@@ -375,6 +412,30 @@ export function ImportQuestionsDialog({
                 </select>
               </label>
             </div>
+
+            {needToc && (
+              <label className="block">
+                <span className="text-meta font-semibold text-foreground/70">
+                  Chỗ cất trong mục lục *
+                </span>
+                <select
+                  value={tocNodeId}
+                  onChange={(e) => setTocNodeId(e.target.value)}
+                  className="mt-1 h-9 w-full rounded-md border bg-card px-2 text-small"
+                >
+                  <option value="">— Chọn chỗ cất —</option>
+                  {tocOptions.map((n) => (
+                    <option key={n.id} value={n.id}>
+                      {n.code ? `${n.code} — ${n.name}` : n.name}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-hint mt-0.5 block text-muted-foreground">
+                  Mục lục là chỗ CẤT câu hỏi trong kho. Khác với mã YCCĐ trong
+                  đề — mã đó dùng để gắn chuyên đề và suy mức độ.
+                </span>
+              </label>
+            )}
 
             <button
               type="button"
@@ -560,6 +621,18 @@ export function ImportQuestionsDialog({
               {validCount === drafts.length && <CheckCircle2 className="h-4 w-4" />}
               {validCount}/{drafts.length} câu hợp lệ
             </span>
+            <label className="flex items-center gap-1.5">
+              <span className="text-meta text-muted-foreground">Lưu vào</span>
+              <select
+                value={kho}
+                onChange={(e) => setKho(e.target.value as "personal" | "campus")}
+                className="h-8 rounded-md border bg-card px-2 text-meta font-semibold"
+              >
+                <option value="campus">Kho toàn trường (cần duyệt)</option>
+                <option value="personal">Kho cá nhân của tôi</option>
+              </select>
+            </label>
+
             <div className="ml-auto flex items-center gap-2">
               <Button
                 variant="outline"
@@ -593,7 +666,9 @@ export function ImportQuestionsDialog({
                 }
                 onClick={() => save("submit")}
               >
-                Lưu và Gửi duyệt ({validCount})
+                {kho === "personal"
+                  ? `Lưu vào kho cá nhân (${validCount})`
+                  : `Lưu và Gửi duyệt (${validCount})`}
               </Button>
             </div>
           </footer>
