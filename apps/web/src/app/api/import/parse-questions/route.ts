@@ -29,9 +29,11 @@ import {
 } from "@/features/question-bank/lib/import-detect";
 import {
   draftFromFsc,
+  draftFromGeneric,
   draftFromMaDe,
   type DraftQuestion,
 } from "@/features/question-bank/lib/import-draft";
+import { parseGeneric } from "@/features/question-bank/lib/parse-generic";
 import { parseImportText } from "@/features/question-bank/lib/parse-import";
 import {
   htmlToMarkedText,
@@ -114,10 +116,30 @@ export async function POST(req: Request) {
     const r = parseExamBank(markedText);
     warnings = r.warnings;
     questions = r.questions.map((q, i) => draftFromMaDe(q, i + 1));
+  } else if (detect.format === "generic") {
+    const r = parseGeneric(markedText);
+    questions = r.questions.map((q, i) => draftFromGeneric(q, i + 1));
   } else {
     const r = parseImportText(fscText);
     warnings = r.warnings;
     questions = r.questions.map((q, i) => draftFromFsc(q, i + 1));
+  }
+
+  // Parser chuyên dụng nhận ra khuôn nhưng không tách được câu nào → thử lại
+  // bằng parser tổng quát trước khi báo lỗi.
+  //
+  // Không có bước này thì file "Đề mẫu.docx" chết đúng kiểu vô lý nhất: bộ
+  // nhận dạng nói "đây là mẫu FSC", parser FSC trả 0 câu vì file thiếu dòng
+  // `Dạng:`, và người dùng nhận thông báo "nhận ra khuôn nhưng không tách
+  // được câu nào" — trong khi parser tổng quát đọc file đó ngon lành.
+  if (questions.length === 0 && detect.format !== "generic") {
+    const r = parseGeneric(markedText);
+    if (r.questions.length > 0) {
+      questions = r.questions.map((q, i) => draftFromGeneric(q, i + 1));
+      warnings = [
+        `File khai theo ${FORMAT_LABEL[detect.format]} nhưng thiếu trường bắt buộc của mẫu đó — đã đọc theo cấu trúc chung.`,
+      ];
+    }
   }
 
   if (questions.length === 0) {

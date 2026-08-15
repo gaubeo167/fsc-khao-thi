@@ -186,5 +186,30 @@ const Uc = "⟦/U⟧";
   check("Không có mốc chia câu → trả rỗng, không đoán", r.questions.length === 0 && r.strategy === null);
 }
 
+/* ── Route phải NỐI parser, không chỉ nối bộ nhận dạng ── */
+{
+  const { readFileSync } = await import("node:fs");
+  const route = readFileSync(
+    "apps/web/src/app/api/import/parse-questions/route.ts",
+    "utf8",
+  );
+  // Lỗi đã xảy ra thật trên production: bộ nhận dạng biết "đây là đề tự
+  // soạn", nhưng route không có nhánh nào gọi parseGeneric nên vẫn chạy
+  // parser FSC và trả 0 câu. Người dùng nhận đúng câu vô lý nhất: "Nhận ra
+  // file theo Đề tự soạn nhưng không tách được câu hỏi nào."
+  check(
+    'route có nhánh dispatch cho khuôn "generic"',
+    /detect\.format === "generic"[\s\S]{0,200}parseGeneric\(/.test(route),
+    "nhận dạng ra khuôn mà không gọi parser tương ứng → 0 câu, lỗi im lặng",
+  );
+  check(
+    "route lùi về parser tổng quát khi parser chuyên dụng ra 0 câu",
+    /questions\.length === 0 && detect\.format !== "generic"[\s\S]{0,300}parseGeneric\(/.test(
+      route,
+    ),
+    "file khai theo mẫu FSC mà thiếu trường bắt buộc sẽ chết oan",
+  );
+}
+
 console.log(`\n${pass} pass · ${fail} fail`);
 process.exit(fail === 0 ? 0 : 1);
