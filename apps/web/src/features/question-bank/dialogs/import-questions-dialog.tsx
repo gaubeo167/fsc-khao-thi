@@ -97,10 +97,17 @@ export function ImportQuestionsDialog({
    * lục nằm trong store trình duyệt, server không có.
    */
   const compByCode = useMemo(() => {
-    const m = new Map<string, string>();
+    const m = new Map<
+      string,
+      { id: string; bloomLevel?: number | null; title: string }
+    >();
     for (const c of competencies) {
       if (c.subjectId === subjectId && c.gradeId === gradeId && c.code) {
-        m.set(c.code.toUpperCase(), c.id);
+        m.set(c.code.toUpperCase(), {
+          id: c.id,
+          bloomLevel: c.bloomLevel ?? null,
+          title: c.title,
+        });
       }
     }
     return m;
@@ -151,14 +158,41 @@ export function ImportQuestionsDialog({
         });
         return;
       }
-      // Khớp chuyên đề ngay khi nhận, để badge lỗi phản ánh đúng từ đầu.
+      // Khớp mã YCCĐ ngay khi nhận, để badge lỗi phản ánh đúng từ đầu.
+      //
+      // Mã trong đề (vd [SI10.02.15.D01]) trỏ tới một YCCĐ của khung năng
+      // lực. Node đó đã mang sẵn mức Bloom, nên ĐỘ KHÓ suy ra được từ mã —
+      // đề chuẩn không cần ghi thêm. Đó là lý do đề SHOC có đủ ID nhưng
+      // không ghi mức độ: mức độ nằm trong khung, không nằm trong đề.
+      //
+      // Bloom 1/2/3 → Nhận biết / Thông hiểu / Vận dụng.
+      const byBloom: Record<number, DraftQuestion["difficulty"]> = {
+        1: "easy",
+        2: "medium",
+        3: "hard",
+      };
       const withComp: DraftQuestion[] = (data.questions as DraftQuestion[]).map(
-        (d) => ({
-          ...d,
-          chuyenDeId: d.chuyenDeCode
-            ? (compByCode.get(d.chuyenDeCode.toUpperCase()) ?? null)
-            : null,
-        }),
+        (d) => {
+          if (!d.chuyenDeCode) return d;
+          // Thử cả mã đầy đủ lẫn mã đã cắt phần loại câu + số thứ tự, vì
+          // khung năng lực đánh mã tới cấp YCCĐ còn đề đánh tới cấp câu.
+          const hit =
+            compByCode.get(d.chuyenDeCode.toUpperCase()) ??
+            (d.rawCode
+              ? compByCode.get(
+                  d.rawCode.replace(/\.[a-c]$/i, "").toUpperCase(),
+                )
+              : undefined);
+          if (!hit) return d;
+          return {
+            ...d,
+            chuyenDeId: hit.id,
+            // Chỉ điền khi đề CHƯA ghi mức độ — đề ghi rõ thì tôn trọng đề.
+            difficulty:
+              d.difficulty ??
+              (hit.bloomLevel ? byBloom[hit.bloomLevel] : null),
+          };
+        },
       );
       setSelected(0);
       setPhase({
