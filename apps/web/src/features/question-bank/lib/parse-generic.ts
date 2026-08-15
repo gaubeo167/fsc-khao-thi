@@ -19,7 +19,8 @@
  * là gieo đáp án sai vào ngân hàng, không ai phát hiện.
  */
 
-import { U_CLOSE, U_OPEN } from "./parse-exam-bank";
+import { parseAnswerKey, U_CLOSE, U_OPEN } from "./parse-exam-bank";
+import type { ShortAnswerKey } from "@/lib/exam/short-answer-match";
 
 export type GenericStrategy = "cau-n" | "ma-de-inline" | "solution-block";
 
@@ -33,6 +34,10 @@ export interface GenericQuestion {
   index: number;
   content: string;
   options: GenericOption[];
+  /** Ý con của câu Đúng/Sai (mã .F) — gạch chân = Đúng. */
+  subQuestions: Array<{ statement: string; correctAnswer: boolean }>;
+  /** Đáp án câu trả lời ngắn (mã .S), đọc từ `<Key=…>`. */
+  acceptedAnswers: ShortAnswerKey[];
   explanation: string;
   /** Mã chuyên đề đọc được ở bất kỳ đâu trong câu, `null` nếu không có. */
   chuyenDeCode: string | null;
@@ -69,6 +74,12 @@ const CODE_AT_START_RE = /^\s*\[\s*[A-Za-z]+\d+(?:\.\d+)+\.[DFSEdfse]\d+/;
 
 /** Khối lời giải: kết thúc câu hiện tại. */
 const SOLUTION_RE = /^\s*(Solution|Lời giải|Hướng dẫn giải|Giải thích|Đáp án)\s*[:.]/i;
+
+/** Ý con của câu Đúng/Sai: `a) …` `b) …`. Cùng quy ước với parser mã đề. */
+const SUBITEM_RE = /^\s*([a-dA-D])\)\s*(.*)$/;
+
+/** Đáp án trả lời ngắn: `<Key=42>` hoặc `<Key=42|50%|gợi ý>`. */
+const KEY_RE = /<Key\s*=\s*([^>]*)>/i;
 
 /** Nhãn mức độ theo chuẩn Bộ, viết trong ngoặc vuông. */
 const DIFFICULTY_RE = /\[\s*(NB|TH|VDC|VD)\s*\]/i;
@@ -156,6 +167,11 @@ function splitOptions(
       text: clean.slice(h.end, segEnd).trim(),
     };
   });
+}
+
+/** Gỡ ký hiệu gạch chân, chỉ để kiểm tra dòng có chữ thật hay không. */
+function stripMarks(s: string): string {
+  return s.split(U_OPEN).join("").split(U_CLOSE).join("");
 }
 
 /** Bỏ ký hiệu gạch chân, trả về text sạch + có được gạch chân hay không. */
@@ -311,6 +327,10 @@ function parseBlock(
 
   const contentLines: string[] = [];
   const options: GenericOption[] = [];
+  const subQuestions: GenericQuestion["subQuestions"] = [];
+  /** Chỉ số ý Đúng/Sai đang chờ nội dung ở dòng kế tiếp. */
+  let pendingSub: number | null = null;
+  const acceptedAnswers: ShortAnswerKey[] = [];
   const explanationLines: string[] = [];
   let inExplanation = false;
 
@@ -352,12 +372,57 @@ function parseBlock(
       return;
     }
 
-    const opts = splitOptions(line);
-    if (opts.length > 0) {
-      for (const o of opts) {
-        options.push({ label: o.label, content: o.text, isCorrect: o.underlined });
+    // Đáp án trả lời ngắn: xét TRƯỚC lời giải, để `<Key=…>` viết lẫn trong
+    // phần giải thích vẫn được nhận là đáp án chấm máy.
+    const keyM = line.match(KEY_RE);
+    if (keyM) {
+      acceptedAnswers.push(parseAnswerKey(keyM[1] ?? ""));
+      line = line.replace(KEY_RE, " ");
+      // Dòng chỉ có mỗi <Key=…> thì bỏ luôn, đừng để "<KEY=3>" nằm trong đề.
+      if (!stripMarks(line).trim()) return;
+    }
+
+    // Câu Đúng/Sai (mã .F): các dòng `a) …` là Ý CON, không phải phương án.
+    // Bản trước không tách nên chúng trôi hết vào đề bài và câu nào cũng báo
+    // "Cần ít nhất 2 ý Đúng/Sai" dù đề viết đủ.
+    if (typeLetter === "F") {
+      const { clean, marked } = stripUnderline(line);
+      const sub = SUBITEM_RE.exec(clean);
+      if (sub) {
+        const text = (sub[2] ?? "").trim();
+        subQuestions.push({
+          statement: text,
+          // Gạch chân = Đúng, đúng quy ước của khuôn mã đề.
+          correctAnswer: marked.some(Boolean),
+        });
+        // Nhãn `a)` đứng MỘT MÌNH, câu chữ nằm dòng dưới — kiểu trình bày
+        // rất phổ biến trong đề Word. Không xử lý thì mọi ý ra rỗng và câu
+        // nào cũng báo "Cần ít nhất 2 ý Đúng/Sai" dù đề viết đủ.
+        if (!text) pendingSub = subQuestions.length - 1;
+        return;
       }
-      return;
+      // Dòng ngay sau một nhãn ý rỗng chính là nội dung của ý đó.
+      if (pendingSub != null) {
+        const target = subQuestions[pendingSub];
+        if (target) {
+          target.statement = clean.trim();
+          // Gạch chân có thể nằm ở dòng nội dung thay vì ở nhãn.
+          if (marked.some(Boolean)) target.correctAnswer = true;
+        }
+        pendingSub = null;
+        return;
+      }
+    }
+
+    // Trả lời ngắn và tự luận không có phương án — đừng cắt nhầm câu văn.
+    if (typeLetter !== "S" && typeLetter !== "E") {
+      const opts = splitOptions(line);
+      if (opts.length > 0) {
+        for (const o of opts) {
+          options.push({ label: o.label, content: o.text, isCorrect: o.underlined });
+        }
+        return;
+      }
     }
 
     // Dòng "Đề bài:" của mẫu nội bộ — bỏ nhãn, giữ nội dung.
@@ -367,7 +432,7 @@ function parseBlock(
   });
 
   const content = contentLines.join("\n").trim();
-  if (!content && options.length === 0) return null;
+  if (!content && options.length === 0 && subQuestions.length === 0) return null;
 
   if (options.length > 0 && !options.some((o) => o.isCorrect)) {
     // KHÔNG đoán. Đề thật thường không đánh dấu đáp án; người dùng sẽ chọn.
@@ -379,6 +444,8 @@ function parseBlock(
     index,
     content,
     options,
+    subQuestions,
+    acceptedAnswers,
     explanation: explanationLines.join("\n").trim(),
     chuyenDeCode,
     rawCode,

@@ -149,6 +149,24 @@ export function ImportQuestionsDialog({
     );
   }
 
+  async function downloadTemplate() {
+    // Route đòi xác thực nên không dùng thẻ <a href> được — phải kèm token.
+    const res = await fetch("/api/import/yccd-template", {
+      headers: { ...(await authHeaders()) },
+    });
+    if (!res.ok) {
+      setPhase({ kind: "error", message: "Không tải được file mẫu." });
+      return;
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "FSC-mau-soan-de-theo-YCCD.docx";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   async function handleFile(file: File | undefined) {
     if (!file) return;
     if (!subjectId || !gradeId) {
@@ -382,6 +400,20 @@ export function ImportQuestionsDialog({
                 </>
               )}
             </button>
+
+            {/* Tải mẫu: đặt ngay dưới ô thả file vì đây là lúc người dùng
+                nhận ra mình chưa biết viết đề thế nào cho hệ thống đọc được. */}
+            <p className="text-hint text-muted-foreground">
+              Chưa biết bắt đầu từ đâu?{" "}
+              <button
+                type="button"
+                onClick={() => void downloadTemplate()}
+                className="font-semibold text-blue-700 underline-offset-2 hover:underline"
+              >
+                Tải file mẫu soạn đề theo mã YCCĐ
+              </button>{" "}
+              — có sẵn hướng dẫn viết ngay trong file.
+            </p>
 
             {phase.kind === "error" && (
               <div className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2.5">
@@ -793,6 +825,140 @@ function QuestionEditor({
             }
           >
             Thêm phương án
+          </Button>
+        </div>
+      )}
+
+      {/* Ý con Đúng/Sai — mỗi ý một dòng, chọn Đúng hoặc Sai. */}
+      {q.type === "multi-tf" && (
+        <div>
+          <span className="text-meta font-semibold text-foreground/70">
+            Các ý Đúng/Sai * — chọn đáp án cho từng ý
+          </span>
+          <ul className="mt-1 space-y-1.5">
+            {q.subQuestions.map((sq, si) => (
+              <li key={si} className="flex items-start gap-2">
+                <span className="mt-2 w-4 shrink-0 text-meta font-semibold text-muted-foreground">
+                  {String.fromCharCode(97 + si)})
+                </span>
+                <input
+                  value={sq.statement}
+                  onChange={(e) =>
+                    onPatch({
+                      subQuestions: q.subQuestions.map((x, xi) =>
+                        xi === si ? { ...x, statement: e.target.value } : x,
+                      ),
+                    })
+                  }
+                  placeholder="Nội dung ý"
+                  className="h-9 w-full rounded-md border bg-card px-2 text-small"
+                />
+                <div className="mt-1 flex shrink-0 gap-1">
+                  {[true, false].map((v) => (
+                    <button
+                      key={String(v)}
+                      type="button"
+                      onClick={() =>
+                        onPatch({
+                          subQuestions: q.subQuestions.map((x, xi) =>
+                            xi === si ? { ...x, correctAnswer: v } : x,
+                          ),
+                        })
+                      }
+                      className={cn(
+                        "rounded-md border-2 px-2 py-1 text-meta font-semibold transition",
+                        sq.correctAnswer === v
+                          ? v
+                            ? "border-emerald-300 bg-emerald-50 text-emerald-900"
+                            : "border-rose-300 bg-rose-50 text-rose-900"
+                          : "border-border bg-card text-muted-foreground hover:bg-accent/20",
+                      )}
+                    >
+                      {v ? "Đúng" : "Sai"}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onPatch({
+                      subQuestions: q.subQuestions.filter((_, xi) => xi !== si),
+                    })
+                  }
+                  className="mt-1 rounded p-1 text-muted-foreground hover:bg-accent/30"
+                  title="Xoá ý này"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </li>
+            ))}
+          </ul>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-2"
+            onClick={() =>
+              onPatch({
+                subQuestions: [
+                  ...q.subQuestions,
+                  { statement: "", correctAnswer: false },
+                ],
+              })
+            }
+          >
+            Thêm ý
+          </Button>
+        </div>
+      )}
+
+      {/* Đáp án chấm máy của câu trả lời ngắn. Đọc từ <Key=…> trong file; mỗi
+          đáp án một dòng vì một câu có thể chấp nhận nhiều cách viết. */}
+      {q.type === "short-answer" && (
+        <div>
+          <span className="text-meta font-semibold text-foreground/70">
+            Đáp án chấp nhận * — mỗi dòng một cách viết được tính đúng
+          </span>
+          <ul className="mt-1 space-y-1.5">
+            {q.acceptedAnswers.map((a, ai) => (
+              <li key={ai} className="flex items-center gap-2">
+                <input
+                  value={typeof a === "string" ? a : (a.text ?? "")}
+                  onChange={(e) =>
+                    onPatch({
+                      acceptedAnswers: q.acceptedAnswers.map((x, xi) =>
+                        xi === ai ? e.target.value : x,
+                      ),
+                    })
+                  }
+                  placeholder="vd: 42"
+                  className="h-9 w-full rounded-md border bg-card px-2 text-small"
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    onPatch({
+                      acceptedAnswers: q.acceptedAnswers.filter(
+                        (_, xi) => xi !== ai,
+                      ),
+                    })
+                  }
+                  className="rounded p-1 text-muted-foreground hover:bg-accent/30"
+                  title="Xoá đáp án này"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </li>
+            ))}
+          </ul>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-2"
+            onClick={() =>
+              onPatch({ acceptedAnswers: [...q.acceptedAnswers, ""] })
+            }
+          >
+            Thêm đáp án
           </Button>
         </div>
       )}

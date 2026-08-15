@@ -222,6 +222,60 @@ const Uc = "⟦/U⟧";
   check("ảnh không bị hiểu nhầm thành phương án", q?.options.length === 2, `ra ${q?.options.length}`);
 }
 
+/* ── Câu Đúng/Sai (mã .F): tách ý con a) b) c) d) ── */
+{
+  // Nhãn `a)` đứng MỘT MÌNH, câu chữ nằm dòng dưới — kiểu trình bày rất phổ
+  // biến trong đề Word. Không xử lý thì mọi ý ra rỗng và câu nào cũng báo
+  // "Cần ít nhất 2 ý Đúng/Sai" dù đề viết đủ.
+  const doc = [
+    "Câu 14. [SI10.02.12.F03] Các nhận định sau đúng hay sai?",
+    "a)",
+    "Nhận định thứ nhất, sai.",
+    "b)",
+    `${U}Nhận định thứ hai, đúng.${Uc}`,
+    "c) Nhận định thứ ba viết cùng dòng, sai.",
+  ].join("\n");
+  const q = parseGeneric(doc).questions[0];
+  check("F: tách được 3 ý", q?.subQuestions.length === 3, `ra ${q?.subQuestions.length}`);
+  check(
+    "F: nhãn `a)` đứng riêng thì lấy nội dung ở dòng dưới",
+    q?.subQuestions[0]?.statement === "Nhận định thứ nhất, sai.",
+    q?.subQuestions[0]?.statement,
+  );
+  check(
+    "F: gạch chân ở dòng nội dung = ý Đúng",
+    q?.subQuestions[1]?.correctAnswer === true &&
+      q?.subQuestions[0]?.correctAnswer === false,
+    JSON.stringify(q?.subQuestions.map((x) => x.correctAnswer)),
+  );
+  check(
+    "F: ý viết cùng dòng với nhãn vẫn nhận",
+    q?.subQuestions[2]?.statement === "Nhận định thứ ba viết cùng dòng, sai.",
+    q?.subQuestions[2]?.statement,
+  );
+  check(
+    "F: ý con KHÔNG bị hiểu nhầm thành phương án trắc nghiệm",
+    q?.options.length === 0,
+    `ra ${q?.options.length} phương án`,
+  );
+}
+
+/* ── Câu trả lời ngắn (mã .S): đọc <Key=…> ── */
+{
+  const doc = [
+    "Câu 15. [SI10.02.12.S05] Nhóm ban đầu có bao nhiêu tế bào?",
+    "<KEY=3>",
+  ].join("\n");
+  const q = parseGeneric(doc).questions[0];
+  check("S: lấy được đáp án từ <Key=…>", q?.acceptedAnswers.length === 1, JSON.stringify(q?.acceptedAnswers));
+  check("S: đáp án đúng giá trị", q?.acceptedAnswers[0] === "3", JSON.stringify(q?.acceptedAnswers[0]));
+  check(
+    "S: chuỗi <KEY=…> KHÔNG còn sót trong đề bài",
+    !/KEY=/i.test(q?.content ?? ""),
+    q?.content,
+  );
+}
+
 /* ── Route phải NỐI parser, không chỉ nối bộ nhận dạng ── */
 {
   const { readFileSync } = await import("node:fs");
