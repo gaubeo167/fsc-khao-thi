@@ -736,15 +736,24 @@ export function ExamRuntime({
         >
           <div className="w-full max-w-md rounded-xl bg-card p-6 text-center shadow-xl">
             <ShieldAlert className="mx-auto h-9 w-9 text-rose-600" />
+            {/* Gọi ĐÚNG TÊN việc HS vừa làm.
+                Ctrl+Tab trong Chrome làm rớt fullscreen cùng lúc với ẩn tab,
+                nên cả hai cờ cùng bật. Bản cũ kiểm `fullscreenLost` trước nên
+                HS chuyển tab lại đọc được lời nhắn về fullscreen, không hề
+                nhắc chuyển tab — trông y như chuyển tab chẳng bị xử lý gì.
+                Chuyển tab là hành vi nặng hơn nên nó được nói trước. */}
             <h3 className="mt-3 text-[18px] font-bold">
-              {fullscreenLost
-                ? "Bạn đã thoát chế độ toàn màn hình"
-                : "Bạn đã rời khỏi màn hình làm bài"}
+              {tabAway
+                ? "Bạn đã rời khỏi bài thi"
+                : "Bạn đã thoát chế độ toàn màn hình"}
             </h3>
             <p className="mt-2 text-body text-muted-foreground">
-              {fullscreenLost
-                ? "Ca thi này yêu cầu làm bài ở chế độ toàn màn hình. Bấm “Quay lại làm bài” để vào lại toàn màn hình và tiếp tục. Bạn chỉ thoát hẳn được sau khi đã nộp bài."
-                : "Ca thi này không cho phép chuyển tab hay sang cửa sổ khác trong lúc làm bài."}
+              {tabAway
+                ? "Ca thi này không cho phép chuyển tab, chuyển cửa sổ hay sang ứng dụng khác trong lúc làm bài."
+                : "Ca thi này yêu cầu làm bài ở chế độ toàn màn hình."}
+              {tabAway && fullscreenLost && " Bạn cũng đã thoát chế độ toàn màn hình."}{" "}
+              Bấm “Quay lại làm bài” để tiếp tục. Bạn chỉ thoát hẳn được sau
+              khi đã nộp bài.
             </p>
             <p className="mt-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-meta font-semibold text-rose-800">
               ⚠ Vi phạm đã được ghi lại và gửi tới giám thị.
