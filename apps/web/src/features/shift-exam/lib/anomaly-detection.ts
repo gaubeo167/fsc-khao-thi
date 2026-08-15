@@ -46,26 +46,45 @@ export function detectAnomalies({
     attempt.violations.fullscreenExits +
     attempt.violations.pasteAttempts;
 
+  // Bóc tách theo loại cho phần mô tả. Con số TỔNG vẫn dùng để xếp mức độ
+  // nghiêm trọng, nhưng giám thị phải đọc được nó gồm những gì: "3 vi phạm"
+  // có thể là 3 lần chuyển tab (nghi tra cứu ngoài) hoặc 3 lần rớt fullscreen
+  // (rất có thể là máy dở chứng). Hai tình huống xử lý khác hẳn nhau, và nay
+  // chúng còn có hạn mức tự-nộp-bài riêng.
+  const boTach = [
+    attempt.violations.tabSwitches > 0
+      ? `chuyển tab ×${attempt.violations.tabSwitches}`
+      : null,
+    attempt.violations.fullscreenExits > 0
+      ? `thoát fullscreen ×${attempt.violations.fullscreenExits}`
+      : null,
+    attempt.violations.pasteAttempts > 0
+      ? `thử paste ×${attempt.violations.pasteAttempts}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   // 1. Critical mass of anti-cheat violations.
   if (totalViolations >= 8) {
     out.push({
       code: "violations-high",
       severity: "critical",
-      title: `${totalViolations} vi phạm anti-cheat`,
-      hint: "Số lượt vi phạm rất cao — đề nghị giám thị tới tận nơi kiểm tra.",
+      title: boTach,
+      hint: `Tổng ${totalViolations} lượt — rất cao, đề nghị giám thị tới tận nơi kiểm tra.`,
     });
   } else if (totalViolations >= 4) {
     out.push({
       code: "violations-medium",
       severity: "warn",
-      title: `${totalViolations} vi phạm anti-cheat`,
-      hint: "Học sinh có nhiều lượt vi phạm liên tiếp.",
+      title: boTach,
+      hint: `Tổng ${totalViolations} lượt vi phạm liên tiếp.`,
     });
   } else if (totalViolations >= 1) {
     out.push({
       code: "violations-low",
       severity: "info",
-      title: `${totalViolations} vi phạm`,
+      title: boTach,
       hint: "Mức bình thường nhưng nên để mắt.",
     });
   }

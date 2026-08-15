@@ -303,7 +303,11 @@ service cloud.firestore {
             // là bằng chứng chống gian lận, nay chỉ server ghi (cộng dồn) qua
             // /api/exam/[shiftId]/violation. Để client ghi nghĩa là người bị
             // giám sát tự xoá được bằng chứng của mình.
-            .hasOnly(['answers', 'markedForReview', 'updatedAt']))
+            // `lastQuestionId` chỉ là "em đang xem câu mấy", để máy mất điện
+            // giữa giờ thi thì vào lại đúng chỗ đang làm dở. Không dính điểm,
+            // không dính bằng chứng chống gian lận: HS sửa được nó thì cùng
+            // lắm là tự nhảy sang câu khác của chính mình.
+            .hasOnly(['answers', 'markedForReview', 'lastQuestionId', 'updatedAt']))
       );
       allow delete: if isAdmin();
     }

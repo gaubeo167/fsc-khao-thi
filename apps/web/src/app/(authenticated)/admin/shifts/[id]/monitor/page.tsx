@@ -1122,15 +1122,29 @@ function StudentListRow({
         </p>
       </div>
       <div className="flex items-center gap-1">
-        {row.violations > 0 && (
-          <span
-            className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9.5px] font-bold text-amber-900"
-            title={`${row.violations} vi phạm anti-cheat`}
-          >
-            <CircleAlert className="h-2.5 w-2.5" />
-            {row.violations}
-          </span>
-        )}
+        {/* MỘT CHIP CHO MỖI LOẠI, không gộp thành một con số tổng.
+            Hai loại nay có hạn mức tự-nộp-bài RIÊNG, nên giám thị cần biết HS
+            đang sắp chạm hạn mức NÀO. Con số tổng "3" không nói được điều đó:
+            3 lần chuyển tab và 3 lần thoát fullscreen là hai tình huống khác
+            hẳn nhau. */}
+        {(
+          [
+            { kind: "tabSwitches" as ViolationKind, n: row.attempt?.violations.tabSwitches ?? 0 },
+            { kind: "fullscreenExits" as ViolationKind, n: row.attempt?.violations.fullscreenExits ?? 0 },
+            { kind: "pasteAttempts" as ViolationKind, n: row.attempt?.violations.pasteAttempts ?? 0 },
+          ] as Array<{ kind: ViolationKind; n: number }>
+        )
+          .filter((v) => v.n > 0)
+          .map((v) => (
+            <span
+              key={v.kind}
+              className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9.5px] font-bold text-amber-900"
+              title={`${VIOLATION_LABEL[v.kind]} ${v.n} lần`}
+            >
+              <span>{VIOLATION_ICON[v.kind]}</span>
+              {v.n}
+            </span>
+          ))}
         {row.unreadProctorMsgs > 0 && (
           <span
             className="inline-flex items-center gap-0.5 rounded-full bg-blue-100 px-1.5 py-0.5 text-[9.5px] font-bold text-blue-800"
