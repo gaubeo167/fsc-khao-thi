@@ -127,6 +127,10 @@ export function ExamRuntime({
   // checklist before the timer starts.
   const [hasStarted, setHasStarted] = useState(false);
   const [fullscreenLost, setFullscreenLost] = useState(false);
+  // HS vừa rời tab / cửa sổ và quay lại — hiện màn chặn để giám thị có dấu
+  // vết và HS biết hành vi đã bị ghi. Tách khỏi `fullscreenLost` vì chuyển
+  // tab (Alt+Tab) KHÔNG làm rớt fullscreen trên phần lớn trình duyệt.
+  const [tabAway, setTabAway] = useState(false);
   // 1s tick for the timer.
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
@@ -140,17 +144,96 @@ export function ExamRuntime({
   // AuthBootstrap.
 
   // Anti-cheat: tab-switch detection.
+  //
+  // `blur` bổ sung cho `visibilitychange`: Alt+Tab sang ứng dụng khác, hoặc
+  // mở cửa sổ trình duyệt thứ hai đè lên, KHÔNG phải lúc nào cũng bắn
+  // visibilitychange — tab vẫn "visible" theo spec. Không bắt blur thì
+  // đường thoát dễ nhất lại là đường không bị ghi nhận.
   useEffect(() => {
     if (!hasStarted) return;
     if (!shift.antiCheat.blockTabSwitch) return;
     const id = attemptRef.current?.id;
     if (!id) return;
+    let away = false;
+    function leave() {
+      if (away) return; // gộp blur + visibilitychange thành MỘT vi phạm
+      away = true;
+      const live = useAttemptsStore
+        .getState()
+        .attempts.find((a) => a.id === id);
+      if (live?.submittedAt != null) return; // nộp xong rồi, rời đi là quyền của HS
+      recordViolation(id!, "tabSwitches");
+      setTabAway(true);
+    }
     function onVisibility() {
-      if (document.hidden) recordViolation(id!, "tabSwitches");
+      if (document.hidden) leave();
+      else away = false;
+    }
+    function onBlur() {
+      leave();
+    }
+    function onFocus() {
+      away = false;
     }
     document.addEventListener("visibilitychange", onVisibility);
-    return () => document.removeEventListener("visibilitychange", onVisibility);
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("focus", onFocus);
+    };
   }, [hasStarted, shift.antiCheat.blockTabSwitch, recordViolation]);
+
+  // Anti-cheat: chặn phím tắt thoát/đổi tab khi đang làm bài.
+  //
+  // GIỚI HẠN CỦA TRÌNH DUYỆT — đọc kỹ trước khi hứa với giáo viên: trang web
+  // KHÔNG chặn được Esc thoát fullscreen, Alt+Tab, hay Ctrl/Cmd+W ở Chrome
+  // (phím dành riêng cho trình duyệt/HĐH, preventDefault bị bỏ qua). Chặn
+  // được F11, Ctrl+T/N và menu chuột phải. Phần còn lại xử lý bằng phát
+  // hiện + màn chặn + ghi vi phạm cho giám thị, không phải bằng ngăn chặn.
+  useEffect(() => {
+    if (!hasStarted) return;
+    if (!shift.antiCheat.requireFullscreen && !shift.antiCheat.blockTabSwitch)
+      return;
+    function onKeyDown(e: KeyboardEvent) {
+      const mod = e.ctrlKey || e.metaKey;
+      const blocked =
+        e.key === "F11" ||
+        (mod && ["t", "n", "w", "Tab"].includes(e.key)) ||
+        (e.altKey && e.key === "Tab");
+      if (blocked) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [
+    hasStarted,
+    shift.antiCheat.requireFullscreen,
+    shift.antiCheat.blockTabSwitch,
+  ]);
+
+  // Chặn đóng tab / F5 / điều hướng đi khi bài chưa nộp. Trình duyệt chỉ cho
+  // hiện hộp thoại mặc định của nó, không cho tự đặt nội dung.
+  useEffect(() => {
+    if (!hasStarted) return;
+    function onBeforeUnload(e: BeforeUnloadEvent) {
+      const id = attemptRef.current?.id;
+      if (!id) return;
+      // Đọc thẳng từ store: `attemptRef` là bản chụp lúc tạo, `submittedAt`
+      // của nó không cập nhật, chặn nhầm cả khi HS đã nộp xong.
+      const live = useAttemptsStore
+        .getState()
+        .attempts.find((a) => a.id === id);
+      if (live?.submittedAt != null) return;
+      e.preventDefault();
+      e.returnValue = "";
+    }
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [hasStarted]);
 
   // Anti-cheat: block copy / cut / paste (and ctrl-C, ctrl-X, ctrl-V).
   // We attach to the document so the block is uniform across the whole
@@ -198,12 +281,20 @@ export function ExamRuntime({
     const id = attemptRef.current?.id;
     if (!id) return;
     function onFsChange() {
-      if (!document.fullscreenElement) {
-        recordViolation(id!, "fullscreenExits");
-        setFullscreenLost(true);
-      } else {
+      if (document.fullscreenElement) {
         setFullscreenLost(false);
+        return;
       }
+      // `handleSubmit` và auto-submit hết giờ đều gọi exitFullscreen() —
+      // lần thoát đó là hợp lệ, không phải gian lận. Trước đây vẫn ghi, chỉ
+      // là màn chặn bị `!submitted` giấu đi nên không ai thấy; nay đường ghi
+      // vi phạm đã thông thì nó sẽ hiện thành vi phạm ma trên phòng giám sát.
+      const live = useAttemptsStore
+        .getState()
+        .attempts.find((a) => a.id === id);
+      if (live?.submittedAt != null) return;
+      recordViolation(id!, "fullscreenExits");
+      setFullscreenLost(true);
     }
     document.addEventListener("fullscreenchange", onFsChange);
     return () =>
@@ -244,6 +335,36 @@ export function ExamRuntime({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOver, submitted]);
+
+  // ───── Tự nộp bài khi vượt hạn mức thoát toàn màn hình.
+  //
+  // Đếm lấy từ `liveAttempt.violations.fullscreenExits`, tức con số SERVER
+  // đã cộng dồn (route /violation dùng FieldValue.increment, snapshot ghi đè
+  // bản lạc quan ở client). Không tự đếm bằng biến cục bộ: HS mở devtools
+  // đặt lại biến đó là thoát được chính sách, và F5 giữa chừng sẽ reset về 0.
+  const fsExitLimit = shift.antiCheat.fullscreenExitLimit ?? 0;
+  const fsExits = liveAttempt?.violations.fullscreenExits ?? 0;
+  const fsExitsLeft =
+    fsExitLimit > 0 ? Math.max(0, fsExitLimit - fsExits) : null;
+  useEffect(() => {
+    if (!hasStarted || submitted) return;
+    if (!shift.antiCheat.requireFullscreen) return;
+    if (fsExitLimit <= 0) return; // 0 = không bao giờ tự nộp
+    if (fsExits < fsExitLimit) return;
+    const att = attemptRef.current;
+    if (!att) return;
+    void submit(att.id, questions).then((result) => {
+      if (result) {
+        if (document.fullscreenElement && document.exitFullscreen) {
+          document.exitFullscreen().catch(() => {});
+        }
+        // Không truyền lý do qua query param: trang kết quả suy ra từ chính
+        // `violations.fullscreenExits` của bài làm, nên F5 vẫn còn banner.
+        router.replace(`/exam/${shift.id}/result`);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasStarted, submitted, fsExits, fsExitLimit]);
 
   function go(dir: -1 | 1) {
     setCurrentIdx((i) => Math.max(0, Math.min(questions.length - 1, i + dir)));
@@ -606,37 +727,73 @@ export function ExamRuntime({
         </div>
       )}
 
-      {/* Fullscreen-lost overlay — non-dismissable until they re-enter. */}
-      {fullscreenLost && shift.antiCheat.requireFullscreen && !submitted && (
+      {/* Màn khoá — che kín bài thi, chỉ có HAI lối ra: quay lại toàn màn
+          hình, hoặc nộp bài. Không có nút đóng, không đóng bằng Esc. */}
+      {(fullscreenLost || tabAway) && !submitted && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
           role="dialog"
           aria-modal
         >
           <div className="w-full max-w-md rounded-xl bg-card p-6 text-center shadow-xl">
             <ShieldAlert className="mx-auto h-9 w-9 text-rose-600" />
             <h3 className="mt-3 text-[18px] font-bold">
-              Bạn đã thoát fullscreen
+              {fullscreenLost
+                ? "Bạn đã thoát chế độ toàn màn hình"
+                : "Bạn đã rời khỏi màn hình làm bài"}
             </h3>
-            <p className="mt-2 text-[13px] text-muted-foreground">
-              Cấu hình anti-cheat của ca thi yêu cầu chế độ toàn màn hình.
-              Vi phạm đã được ghi lại. Click để quay lại fullscreen và tiếp
-              tục làm bài.
+            <p className="mt-2 text-body text-muted-foreground">
+              {fullscreenLost
+                ? "Ca thi này yêu cầu làm bài ở chế độ toàn màn hình. Bấm “Quay lại làm bài” để vào lại toàn màn hình và tiếp tục. Bạn chỉ thoát hẳn được sau khi đã nộp bài."
+                : "Ca thi này không cho phép chuyển tab hay sang cửa sổ khác trong lúc làm bài."}
             </p>
-            <Button
-              size="sm"
-              className="mt-4 gap-1.5"
-              onClick={() => {
-                const el = document.documentElement;
-                if (el.requestFullscreen) {
-                  el.requestFullscreen().catch(() => setFullscreenLost(false));
-                } else {
-                  setFullscreenLost(false);
-                }
-              }}
-            >
-              Vào lại fullscreen
-            </Button>
+            <p className="mt-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-meta font-semibold text-rose-800">
+              ⚠ Vi phạm đã được ghi lại và gửi tới giám thị.
+            </p>
+            {/* Đếm ngược tới lần tự nộp. HS phải biết mình còn bao nhiêu lần
+                TRƯỚC khi tới bước không lùi được — nếu không thì lần cuối
+                cùng chỉ là một cú Esc rồi bài biến mất không báo trước. */}
+            {fullscreenLost && fsExitsLeft != null && (
+              <p
+                className={cn(
+                  "mt-2 rounded-md border px-3 py-2 text-meta font-bold",
+                  fsExitsLeft <= 1
+                    ? "border-rose-400 bg-rose-100 text-rose-900"
+                    : "border-amber-300 bg-amber-50 text-amber-900",
+                )}
+              >
+                {fsExitsLeft <= 1
+                  ? "🚨 Nếu bạn thoát toàn màn hình thêm MỘT lần nữa, bài thi sẽ được NỘP NGAY LẬP TỨC và không làm tiếp được."
+                  : `Còn ${fsExitsLeft} lần thoát nữa thì bài thi sẽ tự động nộp.`}
+              </p>
+            )}
+            <div className="mt-4 flex flex-col gap-2">
+              <Button
+                size="sm"
+                className="gap-1.5"
+                onClick={() => {
+                  setTabAway(false);
+                  if (!shift.antiCheat.requireFullscreen) return;
+                  const el = document.documentElement;
+                  if (el.requestFullscreen) {
+                    el.requestFullscreen().catch(() =>
+                      setFullscreenLost(false),
+                    );
+                  } else {
+                    setFullscreenLost(false);
+                  }
+                }}
+              >
+                Quay lại làm bài
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setConfirmingSubmit(true)}
+              >
+                Nộp bài để thoát
+              </Button>
+            </div>
           </div>
         </div>
       )}
@@ -826,6 +983,8 @@ function StartOverlay({
     { on: shift.antiCheat.randomizeOptions, label: "Đảo thứ tự đáp án" },
     { on: shift.antiCheat.oneTimeStart, label: "Chỉ vào thi 1 lần" },
   ].filter((f) => f.on);
+  const fsLimit = shift.antiCheat.fullscreenExitLimit ?? 0;
+  const autoSubmitOnExit = shift.antiCheat.requireFullscreen && fsLimit > 0;
   return (
     <div className="mx-auto max-w-2xl rounded-2xl border bg-card p-7 shadow-sm">
       <header className="text-center">
@@ -839,6 +998,24 @@ function StartOverlay({
           Sẵn sàng làm bài thi? Đọc nội dung phía dưới trước khi bắt đầu.
         </p>
       </header>
+
+      {/* Luật mất-bài phải nói TRƯỚC khi HS bấm bắt đầu. Một chính sách huỷ
+          bài thi mà HS chỉ biết lúc nó đã kích hoạt thì không phải quy chế,
+          là cái bẫy. */}
+      {autoSubmitOnExit && (
+        <div className="mt-5 rounded-xl border-2 border-rose-300 bg-rose-50 px-4 py-3">
+          <p className="text-body font-bold text-rose-900">
+            🚨 Bài thi tự động nộp nếu bạn thoát toàn màn hình{" "}
+            {fsLimit === 1 ? "" : `${fsLimit} lần`}
+          </p>
+          <p className="mt-1 text-meta text-rose-800">
+            {fsLimit === 1
+              ? "Thoát toàn màn hình (Esc, F11, Alt+Tab) là bài thi được nộp ngay lập tức và bạn không làm tiếp được."
+              : `Lần thoát đầu sẽ hiện cảnh báo và bạn được quay lại làm bài. Đến lần thứ ${fsLimit}, bài thi được nộp ngay lập tức và bạn không làm tiếp được.`}{" "}
+            Mọi lần thoát đều được ghi lại và gửi tới giám thị.
+          </p>
+        </div>
+      )}
 
       <section className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
         <div className="rounded-xl border bg-card px-3 py-2.5 text-center">

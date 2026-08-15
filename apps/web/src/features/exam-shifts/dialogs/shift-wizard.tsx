@@ -3377,8 +3377,21 @@ function ProctorPicker({
 
 /* ───────── Step 5 — Cấu hình anti-cheat + xác nhận ───────── */
 
+/**
+ * Chỉ những khoá KIỂU BOOLEAN của AntiCheatConfig mới lên lưới bật/tắt.
+ * `keyof AntiCheatConfig` sẽ kéo theo cả `fullscreenExitLimit` (số) và làm
+ * `checked` của <input type="checkbox"> sai kiểu. Ràng ở đây để lần sau thêm
+ * một tuỳ chọn không phải boolean thì TypeScript báo ngay, thay vì render ra
+ * một ô tick câm.
+ */
+type BooleanAntiCheatKey = {
+  [K in keyof AntiCheatConfig]-?: AntiCheatConfig[K] extends boolean
+    ? K
+    : never;
+}[keyof AntiCheatConfig];
+
 const ANTI_CHEAT_FLAGS: Array<{
-  key: keyof AntiCheatConfig;
+  key: BooleanAntiCheatKey;
   label: string;
   description: string;
   tone: "high" | "med" | "low";
@@ -3398,7 +3411,7 @@ const ANTI_CHEAT_FLAGS: Array<{
   {
     key: "requireFullscreen",
     label: "Bắt buộc fullscreen",
-    description: "Thoát fullscreen sẽ cảnh báo / auto-submit.",
+    description: "Thoát fullscreen sẽ chặn màn hình + ghi vi phạm.",
     tone: "med",
   },
   {
@@ -3610,6 +3623,66 @@ function Step5Config({
             );
           })}
         </ul>
+
+        {/* Hạn mức thoát fullscreen → tự nộp bài. Tách khỏi lưới bật/tắt vì
+            đây là con số, và vì nó là tuỳ chọn DUY NHẤT ở đây có thể huỷ bài
+            thi của HS — đáng được đặt riêng, nói rõ hậu quả. */}
+        {state.antiCheat.requireFullscreen && (
+          <div className="mt-3 rounded-lg border-2 border-rose-200 bg-card p-3">
+            <p className="text-small font-semibold text-foreground">
+              Tự nộp bài khi thoát fullscreen
+            </p>
+            <p className="mt-0.5 text-hint text-muted-foreground">
+              Trình duyệt không cho trang web chặn Esc / F11 / Alt+Tab, nên
+              đây là hậu quả khi HS thoát, không phải ngăn thoát. Chọn số lần
+              thoát trước khi bài bị nộp.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {[
+                { v: 0, label: "Không tự nộp", hint: "chỉ chặn màn hình + ghi vi phạm" },
+                { v: 1, label: "Thoát 1 lần", hint: "nộp ngay lần đầu" },
+                { v: 2, label: "Thoát 2 lần", hint: "cảnh báo rồi mới nộp" },
+                { v: 3, label: "Thoát 3 lần", hint: "hai lần cảnh báo" },
+              ].map((opt) => {
+                const active =
+                  (state.antiCheat.fullscreenExitLimit ?? 0) === opt.v;
+                return (
+                  <button
+                    key={opt.v}
+                    type="button"
+                    title={opt.hint}
+                    onClick={() =>
+                      setState((s) => ({
+                        ...s,
+                        antiCheat: {
+                          ...s.antiCheat,
+                          fullscreenExitLimit: opt.v,
+                        },
+                      }))
+                    }
+                    className={cn(
+                      "rounded-md border-2 px-2.5 py-1 text-meta font-semibold transition",
+                      active
+                        ? opt.v === 0
+                          ? "border-emerald-300 bg-emerald-50 text-emerald-900"
+                          : "border-rose-300 bg-rose-50 text-rose-900"
+                        : "border-border bg-card text-muted-foreground hover:bg-accent/20",
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+            {(state.antiCheat.fullscreenExitLimit ?? 0) === 1 && (
+              <p className="mt-2 rounded-md border border-rose-300 bg-rose-50 px-2.5 py-1.5 text-hint font-semibold text-rose-900">
+                ⚠ Không có lần cảnh báo nào. Một cú Esc nhỡ tay, khoá màn
+                hình, hay rút màn hình ngoài là HS mất bài, không khôi phục
+                được. Cân nhắc &ldquo;Thoát 2 lần&rdquo;.
+              </p>
+            )}
+          </div>
+        )}
       </section>
 
       {/* Summary */}
