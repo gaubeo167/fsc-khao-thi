@@ -192,30 +192,66 @@ check(
   "fallback khác 0 sẽ bật tự nộp cho ca thi giáo viên chưa từng đồng ý",
 );
 
+// Ghim HÀNH VI, không ghim tên biến: bản đầu của mấy ca này đối chiếu từng
+// dòng `return` của bản cài đặt cũ, nên vừa gộp hai hạn mức vào một chỗ là
+// cả bốn ca đỏ dù hành vi không đổi. Test giòn kiểu đó chỉ dạy người ta bỏ
+// qua màu đỏ.
 const autoBlock = runtime.slice(
-  runtime.indexOf("Tự nộp bài khi vượt hạn mức"),
-  runtime.indexOf("}, [hasStarted, submitted, fsExits, fsExitLimit]);"),
+  runtime.indexOf("const overLimit"),
+  runtime.indexOf("}, [hasStarted, submitted, overLimit]);"),
 );
 check("có nhánh tự nộp theo hạn mức", autoBlock.length > 0);
 check(
-  "hạn mức 0 thì thoát sớm, không bao giờ tự nộp",
-  /fsExitLimit <= 0\) return/.test(autoBlock),
-  "đặt 'Không tự nộp' mà vẫn bị nộp",
+  "hạn mức 0 thì không bao giờ tự nộp",
+  /fsExitLimit > 0 &&/.test(autoBlock) && /tabLimit > 0 &&/.test(autoBlock),
+  "thiếu chặn `> 0` → đặt 'Không tự nộp' mà vẫn bị nộp",
 );
 check(
-  "chưa đủ hạn mức thì không nộp",
-  /fsExits < fsExitLimit\) return/.test(autoBlock),
-  "nộp sớm hơn hạn mức giáo viên đặt",
+  "chưa đủ hạn mức thì không nộp (so sánh >=)",
+  /fsExits >= fsExitLimit/.test(autoBlock) &&
+    /tabSwitches >= tabLimit/.test(autoBlock),
+  "so sánh sai chiều → nộp sớm hơn hạn mức giáo viên đặt",
 );
 check(
-  "bài đã nộp thì không nộp lại",
-  /!hasStarted \|\| submitted\) return/.test(autoBlock),
+  "bài đã nộp / chưa bắt đầu thì không nộp lại",
+  /!hasStarted \|\| submitted \|\| !overLimit\) return/.test(autoBlock),
   "gọi submit chồng lên bài đã nộp",
 );
+
+/* hạn mức chuyển tab — đối xứng với hạn mức fullscreen */
 check(
-  "chỉ áp dụng khi ca thi bắt buộc fullscreen",
-  /requireFullscreen\) return/.test(autoBlock),
-  "ca không bắt buộc fullscreen mà vẫn tự nộp",
+  "tabSwitchLimit là tuỳ chọn (ca thi cũ không có trường này)",
+  /tabSwitchLimit\?: number/.test(types),
+  "bắt buộc thì ca thi đã lên lịch từ trước sẽ vỡ kiểu / bật tự nộp ngoài ý muốn",
+);
+check(
+  "ca thi cũ không có hạn mức chuyển tab được đọc là 0",
+  /tabSwitchLimit \?\? 0/.test(runtime),
+  "fallback khác 0 sẽ bật tự nộp cho ca giáo viên chưa từng đồng ý",
+);
+check(
+  "hạn mức chuyển tab chỉ có hiệu lực khi blockTabSwitch bật",
+  /blockTabSwitch\s*\n?\s*\?\s*\(shift\.antiCheat\.tabSwitchLimit/.test(runtime),
+  "đặt hạn mức cho hành vi không bị giám sát = tự nộp mà không ai đếm",
+);
+check(
+  "hạn mức fullscreen chỉ có hiệu lực khi requireFullscreen bật",
+  /requireFullscreen\s*\n?\s*\?\s*\(shift\.antiCheat\.fullscreenExitLimit/.test(runtime),
+  "cùng lý do như trên",
+);
+// Ctrl+Tab đốt CẢ HAI bộ đếm cùng lúc. Gộp chung một hạn mức thì mức 2 bị
+// tiêu hết chỉ bằng một lần chuyển tab và HS mất bài mà không hiểu vì sao.
+check(
+  "hai hạn mức đếm RIÊNG, không cộng gộp",
+  /\(fsExitLimit > 0 && fsExits >= fsExitLimit\) \|\|\s*\n?\s*\(tabLimit > 0 && tabSwitches >= tabLimit\)/.test(
+    runtime,
+  ),
+  "gộp chung = một lần Ctrl+Tab tiêu hết hạn mức của cả hai",
+);
+check(
+  "trang kết quả nói rõ vi phạm nào gây tự nộp",
+  /chuyển tab \/ cửa sổ/.test(result) && /toàn màn hình/.test(result),
+  "HS không biết mình mất bài vì lỗi nào",
 );
 
 check(
@@ -258,7 +294,7 @@ check(
 
 check(
   "luật mất-bài được nói ở màn hình trước khi bắt đầu",
-  /autoSubmitOnExit/.test(runtime),
+  /luatMatBai/.test(runtime),
   "HS chỉ biết luật lúc nó đã kích hoạt = cái bẫy, không phải quy chế",
 );
 

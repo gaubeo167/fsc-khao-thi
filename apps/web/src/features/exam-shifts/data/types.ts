@@ -244,6 +244,19 @@ export interface AntiCheatConfig {
    * Không có ở ca thi tạo trước bản này → coi như 0, hành vi cũ giữ nguyên.
    */
   fullscreenExitLimit?: number;
+  /**
+   * Số lần CHUYỂN TAB / cửa sổ thì TỰ NỘP BÀI. Cùng quy ước với
+   * `fullscreenExitLimit`: `0` (mặc định) = không tự nộp, chỉ chặn màn hình
+   * và ghi vi phạm; `1` = chuyển tab phát nộp luôn.
+   *
+   * Đếm riêng chứ không gộp chung một hạn mức với thoát fullscreen: Ctrl+Tab
+   * trong Chrome làm rớt fullscreen CÙNG LÚC với ẩn tab, nên một hành vi sinh
+   * ra hai vi phạm. Gộp chung thì hạn mức 2 bị tiêu hết chỉ bằng một lần
+   * chuyển tab, và HS mất bài mà không hiểu vì sao.
+   *
+   * Không có ở ca thi tạo trước bản này → coi như 0, hành vi cũ giữ nguyên.
+   */
+  tabSwitchLimit?: number;
 }
 
 /** Trần cứng để một cú gõ nhầm trong wizard không thành chính sách vô lý. */
@@ -262,6 +275,8 @@ export const DEFAULT_ANTI_CHEAT: AntiCheatConfig = {
   // nộp) — bật tự nộp cho những ca đã lên lịch từ trước là kiểu bất ngờ
   // không được phép xảy ra với thứ huỷ bài thi.
   fullscreenExitLimit: 2,
+  // Cùng lý do và cùng quy ước tương thích ngược như trên.
+  tabSwitchLimit: 2,
 };
 
 export interface ExamShift {
