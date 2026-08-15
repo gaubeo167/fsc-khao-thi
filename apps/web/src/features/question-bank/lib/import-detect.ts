@@ -14,6 +14,7 @@
  */
 
 import type { ImportFormat } from "./import-draft";
+import { pickStrategy } from "./parse-generic";
 
 export interface FormatEvidence {
   format: ImportFormat;
@@ -56,6 +57,12 @@ export function detectImportFormat(text: string): DetectResult {
   // có `Câu N` thì không phải khuôn FSC, và đoán bừa là hỏng cả file.
   const fsc = fscHeader > 0 ? fscHeader + Math.min(fscMeta, fscHeader) : 0;
 
+  // Khuôn tổng quát chỉ được xét khi hai khuôn cũ KHÔNG khớp: đề soạn theo
+  // mẫu FSC cũng có dòng "Câu N" nên nếu cho generic tranh điểm sòng phẳng
+  // thì nó sẽ cướp mất những file mà parser chuyên dụng đọc tốt hơn.
+  const genericStrategy =
+    maDe === 0 && fsc === 0 ? pickStrategy(lines) : null;
+
   const evidence: FormatEvidence[] = [
     {
       format: "ma-de" as const,
@@ -66,6 +73,13 @@ export function detectImportFormat(text: string): DetectResult {
       format: "fsc" as const,
       hits: fsc,
       reason: `${fscHeader} dòng "Câu N"${fscMeta > 0 ? ` + ${fscMeta} dòng khai báo (Dạng/Độ khó/Đáp án)` : ""}`,
+    },
+    {
+      format: "generic" as const,
+      hits: genericStrategy ? 1 : 0,
+      reason: genericStrategy
+        ? `đề tự soạn, chia câu theo "${genericStrategy}"`
+        : "không thấy mốc chia câu nào",
     },
   ].sort((a, b) => b.hits - a.hits);
 
@@ -78,4 +92,5 @@ export function detectImportFormat(text: string): DetectResult {
 export const FORMAT_LABEL: Record<ImportFormat, string> = {
   fsc: "Đề soạn theo mẫu FSC",
   "ma-de": "Đề theo mã chuyên đề",
+  generic: "Đề tự soạn (nhận theo cấu trúc)",
 };

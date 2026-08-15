@@ -56,3 +56,6 @@ coverage/
 
 # ───── gstack local artifacts (security reports — không commit)
 .gstack/
+
+# ───── Đề mẫu thật để hiệu chỉnh parser (KHÔNG commit)
+de-mau/
