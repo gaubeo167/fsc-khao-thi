@@ -285,63 +285,33 @@ export default function MonitorPage() {
   const [search, setSearch] = useState("");
   const [confirmingStop, setConfirmingStop] = useState(false);
 
-  if (!shift) {
-    // Store may still be loading on a fresh navigation/refresh — don't
-    // 404 prematurely (was the cause of "không truy cập được phòng giám
-    // sát" khi mở trực tiếp / F5).
-    if (!shiftsHydrated) {
-      return (
-        <div className="flex items-center justify-center py-20 text-muted-foreground">
-          Đang tải ca thi…
-        </div>
-      );
-    }
-    return notFound();
-  }
-  if (campusId && shift.campusId !== campusId) {
-    return (
-      <div className="rounded-xl border bg-card p-6 text-center text-sm text-muted-foreground">
-        Ca thi không thuộc campus đang chọn.
-      </div>
-    );
-  }
-  // Proctor-only gate: a teacher / subject-lead may only watch the
-  // monitor if they were explicitly assigned as a giám thị for one of
-  // the rooms of this shift. Admin-class roles (campus-admin / academic-
-  // director / superadmin) skip the gate.
-  if (session) {
-    const isAdminClass =
-      session.role === "superadmin" ||
-      session.role === "academic-director" ||
-      session.role === "campus-admin";
-    if (!isAdminClass) {
-      const isProctor = shift.rooms.some((r) =>
-        r.proctorIds.includes(session.userId),
-      );
-      if (!isProctor) {
-        return (
-          <div className="mx-auto max-w-md rounded-2xl border bg-card p-8 text-center">
-            <p className="text-[14px] font-semibold">
-              🔒 Bạn không có quyền giám sát ca này
-            </p>
-            <p className="mt-2 text-[12px] text-muted-foreground">
-              Chỉ giáo viên được phân công làm <b>giám thị</b> cho ca thi
-              này (gán trong Bước 4 — Phòng & Giám thị của Wizard) hoặc
-              Admin campus mới được vào phòng giám sát.
-            </p>
-            <p className="mt-1 text-[11.5px] text-muted-foreground">
-              Liên hệ Admin để bổ sung phân công nếu cần.
-            </p>
-          </div>
-        );
-      }
-    }
-  }
+  // ⚠ KHÔNG return trước chỗ này. Mọi `useMemo` bên dưới phải chạy ở MỌI
+  // lần render, nếu không React ném "Rendered more hooks than during the
+  // previous render" đúng lúc `shiftsHydrated` lật false→true — tức đúng
+  // đường tải Firestore bình thường. Các cổng chặn (chưa hydrate / sai
+  // campus / không phải giám thị) được tính ở đây và chỉ `return` sau khi
+  // toàn bộ hook đã chạy.
+  const gate: "loading" | "not-found" | "wrong-campus" | "not-proctor" | null =
+    !shift
+      ? shiftsHydrated
+        ? "not-found"
+        : "loading"
+      : campusId && shift.campusId !== campusId
+        ? "wrong-campus"
+        : session &&
+            session.role !== "superadmin" &&
+            session.role !== "academic-director" &&
+            session.role !== "campus-admin" &&
+            !shift.rooms.some((r) => r.proctorIds.includes(session.userId))
+          ? "not-proctor"
+          : null;
 
-  const subject = subjects.find((s) => s.id === shift.subjectId);
-  const eff = effectiveShiftStatus(shift, nowMs);
+  const subject = shift
+    ? subjects.find((s) => s.id === shift.subjectId)
+    : undefined;
+  const eff = shift ? effectiveShiftStatus(shift, nowMs) : "draft";
 
-  const pkg = packages.find((p) => p.id === shift.packageId);
+  const pkg = shift ? packages.find((p) => p.id === shift.packageId) : undefined;
   const bp = pkg ? blueprints.find((b) => b.id === pkg.blueprintId) : null;
   const expectedQuestions = pkg
     ? pkg.matrix.reduce(
@@ -350,8 +320,8 @@ export default function MonitorPage() {
       )
     : 0;
 
-  const startMs = new Date(shift.startAt).getTime();
-  const endMs = new Date(shift.endAt).getTime();
+  const startMs = shift ? new Date(shift.startAt).getTime() : 0;
+  const endMs = shift ? new Date(shift.endAt).getTime() : 0;
   const totalDurationMs = Math.max(0, endMs - startMs);
   const elapsedMs = Math.max(0, Math.min(nowMs - startMs, totalDurationMs));
   const remainingMs = Math.max(0, endMs - nowMs);
@@ -368,12 +338,15 @@ export default function MonitorPage() {
     return m;
   }, [users]);
 
-  function deriveStudentsForRoom(r: {
-    studentIds?: string[];
-    classIds: string[];
-  }): string[] {
+  function deriveStudentsForRoom(
+    sh: ExamShift,
+    r: {
+      studentIds?: string[];
+      classIds: string[];
+    },
+  ): string[] {
     if (r.studentIds && r.studentIds.length > 0) return r.studentIds;
-    const classIds = r.classIds.length > 0 ? r.classIds : shift!.classIds;
+    const classIds = r.classIds.length > 0 ? r.classIds : sh.classIds;
     const codes = new Set(
       allClasses.filter((c) => classIds.includes(c.id)).map((c) => c.code),
     );
@@ -382,7 +355,7 @@ export default function MonitorPage() {
         (u) =>
           u.role === "student" &&
           u.status === "active" &&
-          u.campusId === shift!.campusId &&
+          u.campusId === sh.campusId &&
           u.className != null &&
           codes.has(u.className),
       )
@@ -391,8 +364,9 @@ export default function MonitorPage() {
 
   const allRows: MonitorRow[] = useMemo(() => {
     const out: MonitorRow[] = [];
+    if (!shift) return out;
     for (const r of shift.rooms) {
-      const studentIds = deriveStudentsForRoom(r);
+      const studentIds = deriveStudentsForRoom(shift, r);
       // Median progress for the room
       const inProgress: number[] = [];
       for (const sid of studentIds) {
@@ -539,7 +513,9 @@ export default function MonitorPage() {
       }
     }
     // (c) Proctor events for this shift.
-    const proctorForShift = allEvents.filter((e) => e.shiftId === shift.id);
+    const proctorForShift = shift
+      ? allEvents.filter((e) => e.shiftId === shift.id)
+      : [];
     for (const ev of proctorForShift) {
       const stu = usersById.get(ev.studentId);
       items.push({
@@ -569,7 +545,7 @@ export default function MonitorPage() {
     return items.sort(
       (a, b) => new Date(b.at).getTime() - new Date(a.at).getTime(),
     );
-  }, [allRows, allEvents, shift.id, nowMs, usersById]);
+  }, [allRows, allEvents, shift?.id, nowMs, usersById]);
 
   const aggAnomalies = useMemo(() => {
     let critical = 0;
@@ -588,11 +564,50 @@ export default function MonitorPage() {
   const totalRiskRows = allRows.filter((r) => r.isAtRisk).length;
 
   function ackAllProctor() {
+    if (!shift) return;
     for (const ev of allEvents) {
-      if (ev.shiftId === shift!.id && ev.acknowledgedAt == null) {
+      if (ev.shiftId === shift.id && ev.acknowledgedAt == null) {
         ackEvent(ev.id);
       }
     }
+  }
+
+  // ───── Cổng chặn: chạy SAU toàn bộ hook (xem ghi chú ở trên).
+  if (gate === "loading") {
+    // Store có thể còn đang tải khi mở trực tiếp / F5 — đừng 404 sớm.
+    return (
+      <div className="flex items-center justify-center py-20 text-muted-foreground">
+        Đang tải ca thi…
+      </div>
+    );
+  }
+  if (gate === "not-found" || !shift) return notFound();
+  if (gate === "wrong-campus") {
+    return (
+      <div className="rounded-xl border bg-card p-6 text-center text-sm text-muted-foreground">
+        Ca thi không thuộc campus đang chọn.
+      </div>
+    );
+  }
+  // Chỉ giáo viên được phân công giám thị cho một phòng của ca này mới vào
+  // được. Các vai admin (campus-admin / academic-director / superadmin)
+  // bỏ qua cổng này.
+  if (gate === "not-proctor") {
+    return (
+      <div className="mx-auto max-w-md rounded-2xl border bg-card p-8 text-center">
+        <p className="text-[14px] font-semibold">
+          🔒 Bạn không có quyền giám sát ca này
+        </p>
+        <p className="mt-2 text-[12px] text-muted-foreground">
+          Chỉ giáo viên được phân công làm <b>giám thị</b> cho ca thi này
+          (gán trong Bước 4 — Phòng &amp; Giám thị của Wizard) hoặc Admin
+          campus mới được vào phòng giám sát.
+        </p>
+        <p className="mt-1 text-[11.5px] text-muted-foreground">
+          Liên hệ Admin để bổ sung phân công nếu cần.
+        </p>
+      </div>
+    );
   }
 
   return (
