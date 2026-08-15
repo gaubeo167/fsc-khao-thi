@@ -498,13 +498,24 @@ export const useAttemptsStore = create<State & Actions>()((set, get) => ({
     const merged = rows.map((row) => {
       const local = localById.get(row.id);
       if (local && local.submittedAt == null && locallyEdited.has(row.id)) {
-        // Pull non-answer fields from snapshot (e.g. proctor flags an
-        // attempt → recentEvents grows) but keep local answers /
-        // markedForReview so in-flight edits aren't lost.
+        // GỘP THEO TỪNG CÂU, không thay cả cụm.
+        //
+        // Bản cũ trả thẳng `local.answers`, và đó là lỗi MẤT BÀI khi HS bấm
+        // F5 giữa giờ: lúc tải lại, store rỗng và effect khởi tạo chạy TRƯỚC
+        // khi snapshot kịp về (~200–500ms), nên `startOrResume` dựng một bản
+        // rỗng. Snapshot mang đủ câu trả lời về sau lại bị bản rỗng đó đè —
+        // HS mất sạch bài đang làm, rồi lần `saveAnswer` kế tiếp ghi cụm rỗng
+        // đó đè luôn lên Firestore.
+        //
+        // Gộp theo khoá giữ được cả hai: câu vừa gõ (bản cục bộ thắng ở đúng
+        // câu đó, nên không có chuyện gõ ngược) và câu server đã có mà bản
+        // cục bộ chưa biết.
         return {
           ...row,
-          answers: local.answers,
-          markedForReview: local.markedForReview,
+          answers: { ...row.answers, ...local.answers },
+          markedForReview: Array.from(
+            new Set([...(row.markedForReview ?? []), ...local.markedForReview]),
+          ),
         };
       }
       return row;
