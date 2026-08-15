@@ -3390,6 +3390,67 @@ type BooleanAntiCheatKey = {
     : never;
 }[keyof AntiCheatConfig];
 
+/**
+ * Ô chọn hạn mức vi phạm → tự nộp bài. Dùng chung cho cả chuyển tab và thoát
+ * toàn màn hình vì hai chính sách giống hệt nhau về hình dạng; chỉ khác danh
+ * từ và câu cảnh báo. Nhân đôi khối JSX này là cách chắc chắn để hai bên lệch
+ * nhau sau vài lần sửa.
+ */
+function AutoSubmitLimit({
+  title,
+  hint,
+  noun,
+  value,
+  onChange,
+  canhBaoMotLan,
+}: {
+  title: string;
+  hint: string;
+  /** "Rời" / "Thoát" — ghép thành nhãn nút "Rời 1 lần". */
+  noun: string;
+  value: number;
+  onChange(v: number): void;
+  canhBaoMotLan: string;
+}) {
+  const OPTS = [
+    { v: 0, label: "Không tự nộp", hint: "chỉ chặn màn hình + ghi vi phạm" },
+    { v: 1, label: `${noun} 1 lần`, hint: "nộp ngay lần đầu" },
+    { v: 2, label: `${noun} 2 lần`, hint: "cảnh báo rồi mới nộp" },
+    { v: 3, label: `${noun} 3 lần`, hint: "hai lần cảnh báo" },
+  ];
+  return (
+    <div className="mt-3 rounded-lg border-2 border-rose-200 bg-card p-3">
+      <p className="text-small font-semibold text-foreground">{title}</p>
+      <p className="mt-0.5 text-hint text-muted-foreground">{hint}</p>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {OPTS.map((opt) => (
+          <button
+            key={opt.v}
+            type="button"
+            title={opt.hint}
+            onClick={() => onChange(opt.v)}
+            className={cn(
+              "rounded-md border-2 px-2.5 py-1 text-meta font-semibold transition",
+              value === opt.v
+                ? opt.v === 0
+                  ? "border-emerald-300 bg-emerald-50 text-emerald-900"
+                  : "border-rose-300 bg-rose-50 text-rose-900"
+                : "border-border bg-card text-muted-foreground hover:bg-accent/20",
+            )}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+      {value === 1 && (
+        <p className="mt-2 rounded-md border border-rose-300 bg-rose-50 px-2.5 py-1.5 text-hint font-semibold text-rose-900">
+          {canhBaoMotLan} Cân nhắc &ldquo;{noun} 2 lần&rdquo;.
+        </p>
+      )}
+    </div>
+  );
+}
+
 const ANTI_CHEAT_FLAGS: Array<{
   key: BooleanAntiCheatKey;
   label: string;
@@ -3612,64 +3673,42 @@ function Step5Config({
           })}
         </ul>
 
-        {/* Hạn mức thoát fullscreen → tự nộp bài. Tách khỏi lưới bật/tắt vì
-            đây là con số, và vì nó là tuỳ chọn DUY NHẤT ở đây có thể huỷ bài
-            thi của HS — đáng được đặt riêng, nói rõ hậu quả. */}
+        {/* Hạn mức → tự nộp bài. Tách khỏi lưới bật/tắt vì đây là con số, và
+            vì đây là hai tuỳ chọn DUY NHẤT ở màn này có thể huỷ bài thi của
+            HS — đáng được đặt riêng và nói rõ hậu quả.
+
+            Hai hạn mức đếm RIÊNG: Ctrl+Tab làm rớt fullscreen cùng lúc với
+            ẩn tab nên một hành vi sinh hai vi phạm. Gộp chung một hạn mức thì
+            mức 2 bị tiêu hết chỉ bằng một lần chuyển tab. */}
+        {state.antiCheat.blockTabSwitch && (
+          <AutoSubmitLimit
+            title="Tự nộp bài khi HS rời khỏi bài thi"
+            hint="Chuyển tab, chuyển cửa sổ, sang ứng dụng khác. Trình duyệt không cho chặn Ctrl+Tab hay Alt+Tab, nên đây là hậu quả khi HS rời đi, không phải ngăn rời đi."
+            noun="Rời"
+            value={state.antiCheat.tabSwitchLimit ?? 0}
+            onChange={(v) =>
+              setState((s) => ({
+                ...s,
+                antiCheat: { ...s.antiCheat, tabSwitchLimit: v },
+              }))
+            }
+            canhBaoMotLan="⚠ Không có lần cảnh báo nào. Một thông báo bật lên, một cú vuốt trackpad nhỡ tay là HS mất bài, không khôi phục được."
+          />
+        )}
         {state.antiCheat.requireFullscreen && (
-          <div className="mt-3 rounded-lg border-2 border-rose-200 bg-card p-3">
-            <p className="text-small font-semibold text-foreground">
-              Tự nộp bài khi thoát fullscreen
-            </p>
-            <p className="mt-0.5 text-hint text-muted-foreground">
-              Trình duyệt không cho trang web chặn Esc / F11 / Alt+Tab, nên
-              đây là hậu quả khi HS thoát, không phải ngăn thoát. Chọn số lần
-              thoát trước khi bài bị nộp.
-            </p>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {[
-                { v: 0, label: "Không tự nộp", hint: "chỉ chặn màn hình + ghi vi phạm" },
-                { v: 1, label: "Thoát 1 lần", hint: "nộp ngay lần đầu" },
-                { v: 2, label: "Thoát 2 lần", hint: "cảnh báo rồi mới nộp" },
-                { v: 3, label: "Thoát 3 lần", hint: "hai lần cảnh báo" },
-              ].map((opt) => {
-                const active =
-                  (state.antiCheat.fullscreenExitLimit ?? 0) === opt.v;
-                return (
-                  <button
-                    key={opt.v}
-                    type="button"
-                    title={opt.hint}
-                    onClick={() =>
-                      setState((s) => ({
-                        ...s,
-                        antiCheat: {
-                          ...s.antiCheat,
-                          fullscreenExitLimit: opt.v,
-                        },
-                      }))
-                    }
-                    className={cn(
-                      "rounded-md border-2 px-2.5 py-1 text-meta font-semibold transition",
-                      active
-                        ? opt.v === 0
-                          ? "border-emerald-300 bg-emerald-50 text-emerald-900"
-                          : "border-rose-300 bg-rose-50 text-rose-900"
-                        : "border-border bg-card text-muted-foreground hover:bg-accent/20",
-                    )}
-                  >
-                    {opt.label}
-                  </button>
-                );
-              })}
-            </div>
-            {(state.antiCheat.fullscreenExitLimit ?? 0) === 1 && (
-              <p className="mt-2 rounded-md border border-rose-300 bg-rose-50 px-2.5 py-1.5 text-hint font-semibold text-rose-900">
-                ⚠ Không có lần cảnh báo nào. Một cú Esc nhỡ tay, khoá màn
-                hình, hay rút màn hình ngoài là HS mất bài, không khôi phục
-                được. Cân nhắc &ldquo;Thoát 2 lần&rdquo;.
-              </p>
-            )}
-          </div>
+          <AutoSubmitLimit
+            title="Tự nộp bài khi HS thoát toàn màn hình"
+            hint="Trình duyệt không cho trang web chặn Esc / F11, nên đây là hậu quả khi HS thoát, không phải ngăn thoát."
+            noun="Thoát"
+            value={state.antiCheat.fullscreenExitLimit ?? 0}
+            onChange={(v) =>
+              setState((s) => ({
+                ...s,
+                antiCheat: { ...s.antiCheat, fullscreenExitLimit: v },
+              }))
+            }
+            canhBaoMotLan="⚠ Không có lần cảnh báo nào. Một cú Esc nhỡ tay, khoá màn hình, hay rút màn hình ngoài là HS mất bài, không khôi phục được."
+          />
         )}
       </section>
 

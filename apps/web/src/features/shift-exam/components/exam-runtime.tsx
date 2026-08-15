@@ -342,15 +342,31 @@ export function ExamRuntime({
   // đã cộng dồn (route /violation dùng FieldValue.increment, snapshot ghi đè
   // bản lạc quan ở client). Không tự đếm bằng biến cục bộ: HS mở devtools
   // đặt lại biến đó là thoát được chính sách, và F5 giữa chừng sẽ reset về 0.
-  const fsExitLimit = shift.antiCheat.fullscreenExitLimit ?? 0;
+  // Hạn mức chỉ có hiệu lực khi cờ tương ứng đang bật — đặt hạn mức cho một
+  // hành vi không bị giám sát thì không có nghĩa gì.
+  const fsExitLimit = shift.antiCheat.requireFullscreen
+    ? (shift.antiCheat.fullscreenExitLimit ?? 0)
+    : 0;
   const fsExits = liveAttempt?.violations.fullscreenExits ?? 0;
   const fsExitsLeft =
     fsExitLimit > 0 ? Math.max(0, fsExitLimit - fsExits) : null;
+
+  // Hạn mức chuyển tab đếm RIÊNG, không gộp chung với thoát fullscreen:
+  // Ctrl+Tab làm rớt fullscreen cùng lúc với ẩn tab nên một hành vi sinh ra
+  // hai vi phạm. Gộp chung thì hạn mức 2 bị tiêu hết chỉ bằng một lần chuyển
+  // tab và HS mất bài mà không hiểu vì sao.
+  const tabLimit = shift.antiCheat.blockTabSwitch
+    ? (shift.antiCheat.tabSwitchLimit ?? 0)
+    : 0;
+  const tabSwitches = liveAttempt?.violations.tabSwitches ?? 0;
+  const tabLeft = tabLimit > 0 ? Math.max(0, tabLimit - tabSwitches) : null;
+
+  const overLimit =
+    (fsExitLimit > 0 && fsExits >= fsExitLimit) ||
+    (tabLimit > 0 && tabSwitches >= tabLimit);
+
   useEffect(() => {
-    if (!hasStarted || submitted) return;
-    if (!shift.antiCheat.requireFullscreen) return;
-    if (fsExitLimit <= 0) return; // 0 = không bao giờ tự nộp
-    if (fsExits < fsExitLimit) return;
+    if (!hasStarted || submitted || !overLimit) return;
     const att = attemptRef.current;
     if (!att) return;
     void submit(att.id, questions).then((result) => {
@@ -359,12 +375,12 @@ export function ExamRuntime({
           document.exitFullscreen().catch(() => {});
         }
         // Không truyền lý do qua query param: trang kết quả suy ra từ chính
-        // `violations.fullscreenExits` của bài làm, nên F5 vẫn còn banner.
+        // `violations` của bài làm, nên F5 vẫn còn banner.
         router.replace(`/exam/${shift.id}/result`);
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasStarted, submitted, fsExits, fsExitLimit]);
+  }, [hasStarted, submitted, overLimit]);
 
   function go(dir: -1 | 1) {
     setCurrentIdx((i) => Math.max(0, Math.min(questions.length - 1, i + dir)));
@@ -761,19 +777,38 @@ export function ExamRuntime({
             {/* Đếm ngược tới lần tự nộp. HS phải biết mình còn bao nhiêu lần
                 TRƯỚC khi tới bước không lùi được — nếu không thì lần cuối
                 cùng chỉ là một cú Esc rồi bài biến mất không báo trước. */}
-            {fullscreenLost && fsExitsLeft != null && (
-              <p
-                className={cn(
-                  "mt-2 rounded-md border px-3 py-2 text-meta font-bold",
-                  fsExitsLeft <= 1
-                    ? "border-rose-400 bg-rose-100 text-rose-900"
-                    : "border-amber-300 bg-amber-50 text-amber-900",
-                )}
-              >
-                {fsExitsLeft <= 1
-                  ? "🚨 Nếu bạn thoát toàn màn hình thêm MỘT lần nữa, bài thi sẽ được NỘP NGAY LẬP TỨC và không làm tiếp được."
-                  : `Còn ${fsExitsLeft} lần thoát nữa thì bài thi sẽ tự động nộp.`}
-              </p>
+            {/* Mỗi hạn mức một dòng riêng. Ctrl+Tab đốt CẢ HAI bộ đếm cùng
+                lúc, nên gộp thành một dòng thì HS không biết cái nào sắp hết
+                và mất bài vì con số mình không nhìn thấy. */}
+            {[
+              {
+                show: tabAway,
+                left: tabLeft,
+                cuoi: "🚨 Nếu bạn rời khỏi bài thi thêm MỘT lần nữa, bài thi sẽ được NỘP NGAY LẬP TỨC và không làm tiếp được.",
+                con: (n: number) =>
+                  `Còn ${n} lần rời khỏi bài thi nữa thì bài thi sẽ tự động nộp.`,
+              },
+              {
+                show: fullscreenLost,
+                left: fsExitsLeft,
+                cuoi: "🚨 Nếu bạn thoát toàn màn hình thêm MỘT lần nữa, bài thi sẽ được NỘP NGAY LẬP TỨC và không làm tiếp được.",
+                con: (n: number) =>
+                  `Còn ${n} lần thoát toàn màn hình nữa thì bài thi sẽ tự động nộp.`,
+              },
+            ].map((r, i) =>
+              r.show && r.left != null ? (
+                <p
+                  key={i}
+                  className={cn(
+                    "mt-2 rounded-md border px-3 py-2 text-meta font-bold",
+                    r.left <= 1
+                      ? "border-rose-400 bg-rose-100 text-rose-900"
+                      : "border-amber-300 bg-amber-50 text-amber-900",
+                  )}
+                >
+                  {r.left <= 1 ? r.cuoi : r.con(r.left)}
+                </p>
+              ) : null,
             )}
             <div className="mt-4 flex flex-col gap-2">
               <Button
@@ -990,8 +1025,34 @@ function StartOverlay({
     { on: shift.antiCheat.randomizeOptions, label: "Đảo thứ tự đáp án" },
     { on: shift.antiCheat.oneTimeStart, label: "Chỉ vào thi 1 lần" },
   ].filter((f) => f.on);
-  const fsLimit = shift.antiCheat.fullscreenExitLimit ?? 0;
-  const autoSubmitOnExit = shift.antiCheat.requireFullscreen && fsLimit > 0;
+  const fsLimit = shift.antiCheat.requireFullscreen
+    ? (shift.antiCheat.fullscreenExitLimit ?? 0)
+    : 0;
+  const tabLimit = shift.antiCheat.blockTabSwitch
+    ? (shift.antiCheat.tabSwitchLimit ?? 0)
+    : 0;
+  const luatMatBai = [
+    tabLimit > 0
+      ? {
+          n: tabLimit,
+          tieuDe: `chuyển tab / cửa sổ ${tabLimit === 1 ? "" : `${tabLimit} lần`}`,
+          giaiThich:
+            tabLimit === 1
+              ? "Chuyển sang tab, cửa sổ hay ứng dụng khác là bài thi được nộp ngay lập tức và bạn không làm tiếp được."
+              : `Lần đầu sẽ hiện cảnh báo và bạn được quay lại làm bài. Đến lần thứ ${tabLimit}, bài thi được nộp ngay lập tức và bạn không làm tiếp được.`,
+        }
+      : null,
+    fsLimit > 0
+      ? {
+          n: fsLimit,
+          tieuDe: `thoát toàn màn hình ${fsLimit === 1 ? "" : `${fsLimit} lần`}`,
+          giaiThich:
+            fsLimit === 1
+              ? "Thoát toàn màn hình (Esc, F11) là bài thi được nộp ngay lập tức và bạn không làm tiếp được."
+              : `Lần thoát đầu sẽ hiện cảnh báo và bạn được quay lại làm bài. Đến lần thứ ${fsLimit}, bài thi được nộp ngay lập tức và bạn không làm tiếp được.`,
+        }
+      : null,
+  ].filter((x): x is NonNullable<typeof x> => x != null);
   return (
     <div className="mx-auto max-w-2xl rounded-2xl border bg-card p-7 shadow-sm">
       <header className="text-center">
@@ -1009,17 +1070,20 @@ function StartOverlay({
       {/* Luật mất-bài phải nói TRƯỚC khi HS bấm bắt đầu. Một chính sách huỷ
           bài thi mà HS chỉ biết lúc nó đã kích hoạt thì không phải quy chế,
           là cái bẫy. */}
-      {autoSubmitOnExit && (
+      {luatMatBai.length > 0 && (
         <div className="mt-5 rounded-xl border-2 border-rose-300 bg-rose-50 px-4 py-3">
           <p className="text-body font-bold text-rose-900">
-            🚨 Bài thi tự động nộp nếu bạn thoát toàn màn hình{" "}
-            {fsLimit === 1 ? "" : `${fsLimit} lần`}
+            🚨 Bài thi tự động nộp nếu bạn{" "}
+            {luatMatBai.map((r) => r.tieuDe).join(", hoặc ")}
           </p>
+          <ul className="mt-1 space-y-1 text-meta text-rose-800">
+            {luatMatBai.map((r) => (
+              <li key={r.tieuDe}>• {r.giaiThich}</li>
+            ))}
+          </ul>
           <p className="mt-1 text-meta text-rose-800">
-            {fsLimit === 1
-              ? "Thoát toàn màn hình (Esc, F11, Alt+Tab) là bài thi được nộp ngay lập tức và bạn không làm tiếp được."
-              : `Lần thoát đầu sẽ hiện cảnh báo và bạn được quay lại làm bài. Đến lần thứ ${fsLimit}, bài thi được nộp ngay lập tức và bạn không làm tiếp được.`}{" "}
-            Mọi lần thoát đều được ghi lại và gửi tới giám thị.
+            Hai loại vi phạm đếm RIÊNG. Mọi lần đều được ghi lại và gửi tới
+            giám thị.
           </p>
         </div>
       )}
