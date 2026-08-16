@@ -146,36 +146,91 @@ async function main() {
   }
 
   /**
-   * Vài node khung năng lực môn Sinh lớp 10, mã khớp file đề thật
-   * `1. SHOC 10 DE CHINH THUC_da gan ID.docx`. Có mấy node này thì màn nhập
-   * đề mới suy được ĐỘ KHÓ từ mã YCCĐ — chính là thứ không kiểm được ở chế
-   * độ seed/offline.
+   * Khung năng lực môn Sinh lớp 10 — mã khớp file đề thật
+   * `1. SHOC 10 DE CHINH THUC_da gan ID.docx`.
+   *
+   * QUAN TRỌNG: node LÁ phải mang mã đầy đủ tới cấp chỉ báo (`SI10.02.12.D08`),
+   * không phải mã chủ điểm (`SI10.02.12`).
+   *
+   * Bản seed trước đặt mã chủ điểm lên node `kind: "outcome"`. Nhìn thì có vẻ
+   * hợp lý, nhưng bộ khớp mã chỉ tra tới node lá và tra bằng mã đầy đủ, nên
+   * KHÔNG mã nào trong đề khớp được — và cả đường "suy mức độ từ khung" thành
+   * ra không kiểm được ở local, đúng cái mà file seed này sinh ra để kiểm.
+   *
+   * Mã chữ khác (F/S/E) trong đề tự khớp về lá D cùng số chỉ báo, nên chỉ cần
+   * seed các lá D là phủ hết 21 câu của đề.
    */
-  const COMPS = [
-    { code: "SI10.02.15", title: "Công nghệ tế bào động vật", bloomLevel: 2 },
-    { code: "SI10.02.12", title: "Quá trình nguyên phân", bloomLevel: 1 },
-    { code: "SI10.02.13", title: "Giảm phân", bloomLevel: 2 },
-    { code: "SI10.02.14", title: "Chu kỳ tế bào và ung thư", bloomLevel: 3 },
+  const CHU_DIEM = [
+    { code: "SI10.02.9", title: "Truyền tin tế bào" },
+    { code: "SI10.02.12", title: "Chu kỳ tế bào, nguyên phân và ung thư" },
+    { code: "SI10.02.13", title: "Giảm phân" },
+    { code: "SI10.02.14", title: "Thực hành quan sát phân bào" },
+    { code: "SI10.02.15", title: "Công nghệ tế bào" },
   ];
-  for (const c of COMPS) {
-    await db
-      .collection("competencies")
-      .doc(`comp-${c.code}`)
-      .set(
-        {
-          id: `comp-${c.code}`,
-          code: c.code,
-          title: c.title,
-          bloomLevel: c.bloomLevel,
-          subjectId: "subject-sinh",
-          gradeId: "grade-10",
-          kind: "outcome",
-        },
-        { merge: true },
-      );
+  const CHI_BAO = [
+    { code: "SI10.02.9.D02", title: "Phân biệt được các hình thức truyền tin giữa các tế bào", bloomLevel: 2 },
+    { code: "SI10.02.12.D02", title: "Nêu được các biện pháp phòng tránh ung thư", bloomLevel: 1 },
+    { code: "SI10.02.12.D03", title: "Trình bày được diễn biến các pha của chu kỳ tế bào", bloomLevel: 2 },
+    { code: "SI10.02.12.D05", title: "Tính được số nhiễm sắc thể qua các kỳ nguyên phân", bloomLevel: 3 },
+    { code: "SI10.02.12.D06", title: "Nêu được loại ung thư phổ biến ở Việt Nam", bloomLevel: 1 },
+    { code: "SI10.02.12.D08", title: "Trình bày được vai trò của nguyên phân với cơ thể", bloomLevel: 2 },
+    { code: "SI10.02.13.D03", title: "Nêu được nơi xảy ra quá trình giảm phân", bloomLevel: 1 },
+    { code: "SI10.02.13.D05", title: "Tính được số giao tử tạo ra sau giảm phân", bloomLevel: 3 },
+    { code: "SI10.02.14.D01", title: "Nhận biết được các kỳ phân bào trên tiêu bản", bloomLevel: 1 },
+    { code: "SI10.02.15.D01", title: "Nêu được thành tựu của công nghệ tế bào động vật", bloomLevel: 1 },
+    { code: "SI10.02.15.D02", title: "Giải thích được cơ sở khoa học của công nghệ tế bào", bloomLevel: 2 },
+  ];
+
+  const CHUONG = { code: "SI10.02", title: "Sinh học tế bào" };
+  await db.collection("competencies").doc(`comp-${CHUONG.code}`).set(
+    {
+      id: `comp-${CHUONG.code}`,
+      code: CHUONG.code,
+      title: CHUONG.title,
+      parentId: null,
+      kind: "chapter",
+      subjectId: "subject-sinh",
+      gradeId: "grade-10",
+      order: 0,
+    },
+    { merge: true },
+  );
+  for (const [i, t] of CHU_DIEM.entries()) {
+    await db.collection("competencies").doc(`comp-${t.code}`).set(
+      {
+        id: `comp-${t.code}`,
+        code: t.code,
+        title: t.title,
+        parentId: `comp-${CHUONG.code}`,
+        kind: "topic",
+        subjectId: "subject-sinh",
+        gradeId: "grade-10",
+        order: i,
+      },
+      { merge: true },
+    );
+  }
+  for (const [i, c] of CHI_BAO.entries()) {
+    const parent = CHU_DIEM.find((t) => c.code.startsWith(`${t.code}.`));
+    await db.collection("competencies").doc(`comp-${c.code}`).set(
+      {
+        id: `comp-${c.code}`,
+        code: c.code,
+        title: c.title,
+        bloomLevel: c.bloomLevel,
+        parentId: parent ? `comp-${parent.code}` : null,
+        kind: "outcome",
+        subjectId: "subject-sinh",
+        gradeId: "grade-10",
+        order: i,
+      },
+      { merge: true },
+    );
   }
 
-  console.log(`  ✓ campus · 3 khối · 2 môn · ${COMPS.length} node khung năng lực (Sinh 10)`);
+  console.log(
+    `  ✓ campus · 3 khối · 2 môn · khung Sinh 10: 1 chương · ${CHU_DIEM.length} chủ điểm · ${CHI_BAO.length} YCCĐ`,
+  );
   console.log(`\nXong. Mật khẩu chung: ${PASSWORD}`);
   console.log("Giao diện emulator: http://127.0.0.1:4000");
   console.log(
