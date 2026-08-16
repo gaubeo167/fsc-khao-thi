@@ -3,6 +3,7 @@
 import { Check, ChevronsUpDown, Search, Target, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { useGradesStore } from "@/features/grades/state/grades-store";
 import { cn } from "@/lib/utils";
 
 import { bloomMeta, type Competency } from "../data/types";
@@ -34,6 +35,7 @@ export function CompetencyPicker({
   className,
 }: Props) {
   const competencies = useCompetenciesStore((s) => s.competencies);
+  const grades = useGradesStore((s) => s.grades);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const ref = useRef<HTMLDivElement>(null);
@@ -41,8 +43,12 @@ export function CompetencyPicker({
   // Outcomes for this subject+grade (accept null-grade too). If the grade
   // scope is empty, fall back to ALL grades of the subject — mirrors
   // TocTagFields, so YCCĐ imported under a different grade still show.
-  const { outcomes, fromOtherGrade } = useMemo(() => {
-    const none = { outcomes: [] as Competency[], fromOtherGrade: false };
+  const { outcomes, fromOtherGrade, otherGradeIds } = useMemo(() => {
+    const none = {
+      outcomes: [] as Competency[],
+      fromOtherGrade: false,
+      otherGradeIds: [] as string[],
+    };
     if (!subjectId) return none;
     const isLeaf = (n: Competency) => n.kind === "outcome";
     const sortByCode = (list: Competency[]) =>
@@ -59,7 +65,11 @@ export function CompetencyPicker({
         (n.gradeId === gradeId || n.gradeId == null),
     );
     if (exact.length > 0) {
-      return { outcomes: sortByCode(exact), fromOtherGrade: false };
+      return {
+        outcomes: sortByCode(exact),
+        fromOtherGrade: false,
+        otherGradeIds: [] as string[],
+      };
     }
     // Lùi về mọi khối của môn: khung nhập dưới khối khác vẫn dùng được.
     // NHƯNG phải nói ra. Im lặng ở đây chính là chỗ người dùng thấy "chọn
@@ -72,8 +82,17 @@ export function CompetencyPicker({
     return {
       outcomes: sortByCode(anyGrade),
       fromOtherGrade: anyGrade.length > 0,
+      otherGradeIds: Array.from(
+        new Set(anyGrade.map((n) => n.gradeId).filter(Boolean) as string[]),
+      ),
     };
   }, [competencies, subjectId, gradeId]);
+
+  /** Tên khối mà khung mượn về đang thuộc — nói tên ra thì người dùng lần
+   *  được ngay, thay vì phải đi dò từng khối. */
+  const otherGradeNames = (otherGradeIds ?? [])
+    .map((id) => grades.find((g) => g.id === id)?.name ?? id)
+    .join(", ");
 
   const byId = useMemo(
     () => new Map(competencies.map((n) => [n.id, n])),
@@ -176,8 +195,9 @@ export function CompetencyPicker({
           {fromOtherGrade && (
             <p className="text-meta mb-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 leading-snug text-amber-900">
               Khối đang chọn chưa có khung YCCĐ nào. Danh sách dưới đây là khung
-              của <b>khối khác</b> trong cùng môn — kiểm mã trước khi gắn, hoặc
-              nhập khung cho đúng khối ở mục Chuẩn đầu ra (YCCĐ).
+              của <b>{otherGradeNames || "khối khác"}</b> trong cùng môn — kiểm
+              mã trước khi gắn, hoặc nhập khung cho đúng khối ở mục Chuẩn đầu ra
+              (YCCĐ).
             </p>
           )}
           <ul className="max-h-[280px] space-y-0.5 overflow-y-auto">
