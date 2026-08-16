@@ -59,6 +59,7 @@ import {
   matchOutcome,
   topicOfCode,
 } from "../lib/match-competency";
+import { previewText } from "../lib/preview-text";
 import { useQuestionsStore } from "../state/questions-store";
 
 /** Nhãn tiếng Việt của dạng câu, tra từ bảng dùng chung của kho câu hỏi. */
@@ -722,8 +723,7 @@ export function ImportQuestionsDialog({
                             )}
                           </span>
                           <span className="mt-0.5 line-clamp-2 block text-small text-foreground/80">
-                            {d.content.replace(/!\[[^\]]*\]\([^)]*\)/g, "🖼 ").trim() ||
-                              "(đề bài trống)"}
+                            {previewText(d.content) || "(đề bài trống)"}
                           </span>
                           {iss.slice(0, 1).map((x) => (
                             <span
