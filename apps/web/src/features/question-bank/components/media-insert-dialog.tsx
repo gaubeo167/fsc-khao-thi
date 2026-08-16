@@ -8,6 +8,8 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+import { buildAudioMarker } from "../lib/audio-marker";
+
 export type MediaKind = "image" | "video" | "audio" | "link";
 
 interface Props {
@@ -75,6 +77,8 @@ export function MediaInsertDialog({
   );
   const [url, setUrl] = useState("");
   const [label, setLabel] = useState("");
+  /** Số lần học sinh được bấm nghe. Rỗng = không giới hạn. */
+  const [maxPlays, setMaxPlays] = useState("");
   const [width, setWidth] = useState<string>("");
   const [height, setHeight] = useState<string>("");
   const [filePreview, setFilePreview] = useState<{ dataUrl: string; name: string } | null>(
@@ -147,7 +151,7 @@ export function MediaInsertDialog({
       case "video":
         return `\n\n[video:${source} | ${l}]\n\n`;
       case "audio":
-        return `\n\n[audio:${source} | ${l}]\n\n`;
+        return `\n\n${buildAudioMarker(source, l, maxPlays.trim() ? Number(maxPlays) : null)}\n\n`;
       case "link":
         return ` [${l}](${source}) `;
     }
@@ -284,6 +288,30 @@ export function MediaInsertDialog({
               placeholder={kind === "link" ? "vd: xem thêm" : "vd: minh hoạ tam giác"}
             />
           </div>
+
+          {/* Số lần nghe: chỉ có nghĩa với audio. Đề nghe thường cho nghe 1–2
+              lần; để trống là không giới hạn, đúng như trước khi có ô này nên
+              câu cũ không đổi hành vi. */}
+          {kind === "audio" && (
+            <div className="space-y-1.5">
+              <Label className="text-small font-medium text-foreground/80">
+                Số lần được nghe
+              </Label>
+              <Input
+                type="number"
+                min={1}
+                max={20}
+                value={maxPlays}
+                onChange={(e) => setMaxPlays(e.target.value)}
+                placeholder="Để trống = nghe thoải mái"
+              />
+              <p className="text-meta text-muted-foreground">
+                Khi thi, học sinh chỉ bấm nghe được đúng số lần này — bộ đếm do
+                máy chủ giữ nên tải lại trang không được thêm lượt. Ở kho câu
+                hỏi và màn xem trước thì vẫn nghe thử thoải mái.
+              </p>
+            </div>
+          )}
 
           {kind === "image" && (
             <div className="grid grid-cols-2 gap-3">

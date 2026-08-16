@@ -79,6 +79,13 @@ export interface StudentAttempt {
    * Bài làm cũ không có trường này → lùi về cách suy từ `answers`.
    */
   lastQuestionId?: string | null;
+  /**
+   * Số lượt đã nghe của từng bài audio: khoá `questionId#thứ tự`.
+   *
+   * CHỈ server ghi (POST /api/exam/[shiftId]/audio-play). Cho client ghi thì
+   * học sinh tự đặt lại về 0 trong devtools — giới hạn nghe thành trang trí.
+   */
+  audioPlays?: Record<string, number>;
   startedAt: string;
   submittedAt: string | null;
   /** Filled at submit time — `null` for unsubmitted runs. */
@@ -123,6 +130,21 @@ interface Actions {
   toggleMark(attemptId: string, questionId: string): void;
   /** Ghi nhớ câu HS đang xem, để vào lại sau sự cố thì về đúng chỗ. */
   setLastQuestion(attemptId: string, questionId: string): void;
+  /**
+   * Tiêu một lượt nghe. Trả `true` nếu được phát.
+   *
+   * Server quyết, không phải client: `audioPlays` không nằm trong danh sách
+   * trường học sinh được ghi, và việc kiểm "còn lượt không" cũng nằm ở route.
+   * Chế độ seed/offline (không có Firebase) thì đếm trong bộ nhớ để còn thử
+   * được ở local.
+   */
+  consumeAudioPlay(
+    attemptId: string,
+    questionId: string,
+    index: number,
+    maxPlays: number,
+  ): Promise<boolean>;
+
   recordViolation(
     attemptId: string,
     kind: keyof StudentAttempt["violations"],
@@ -372,6 +394,65 @@ export const useAttemptsStore = create<State & Actions>()((set, get) => ({
       if (!live || live.submittedAt != null) return; // nộp rồi thì rules chặn
       patchDoc(COLLECTIONS.attempts, attemptId, { lastQuestionId: questionId });
     }, 2_000);
+  },
+
+  async consumeAudioPlay(attemptId, questionId, index, maxPlays) {
+    const key = `${questionId}#${index}`;
+    const att = get().attempts.find((a) => a.id === attemptId);
+    if (!att || att.submittedAt != null) return false;
+    const used = Number(att.audioPlays?.[key] ?? 0);
+    if (used >= maxPlays) return false;
+
+    const bump = () =>
+      set({
+        attempts: get().attempts.map((a) =>
+          a.id === attemptId
+            ? { ...a, audioPlays: { ...(a.audioPlays ?? {}), [key]: used + 1 } }
+            : a,
+        ),
+      });
+
+    if (!isFirebaseConfigured()) {
+      // Chế độ seed/offline: không có server để hỏi, đếm tạm trong bộ nhớ.
+      bump();
+      return true;
+    }
+
+    try {
+      const { authHeaders } = await import("@/lib/api-client");
+      const res = await fetch(`/api/exam/${att.shiftId}/audio-play`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...(await authHeaders()) },
+        body: JSON.stringify({ questionId, index, maxPlays }),
+      });
+      if (!res.ok) {
+        // 409 = hết lượt / đã nộp: đúng luật, không phải lỗi mạng.
+        if (res.status !== 409) {
+          console.error("[audio-play] ghi lượt nghe thất bại", res.status);
+        }
+        return false;
+      }
+      const data = (await res.json()) as { plays?: number };
+      set({
+        attempts: get().attempts.map((a) =>
+          a.id === attemptId
+            ? {
+                ...a,
+                audioPlays: {
+                  ...(a.audioPlays ?? {}),
+                  [key]: Number(data.plays ?? used + 1),
+                },
+              }
+            : a,
+        ),
+      });
+      return true;
+    } catch (err) {
+      // Mất mạng giữa chừng: KHÔNG cho nghe. Cho nghe khi không ghi được
+      // nghĩa là rút mạng là nghe thoải mái.
+      console.error("[audio-play] lỗi mạng", err);
+      return false;
+    }
   },
 
   recordViolation(attemptId, kind) {

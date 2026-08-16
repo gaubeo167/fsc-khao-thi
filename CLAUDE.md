@@ -40,6 +40,7 @@ node scripts/test-pdf-import.mjs      # đọc đề từ PDF
 node scripts/test-ai-formulas.mjs     # chốt kiểm bản AI dọn công thức PDF
 node scripts/test-preview-text.mjs    # dòng xem trước không rò cú pháp nội bộ
 node scripts/test-omath.mjs           # công thức Word → LaTeX + mốc $…$ dùng chung
+node scripts/test-audio-marker.mjs    # mốc audio + giới hạn số lần nghe
 node scripts/check-design-tokens.mjs   # bánh cóc thang chữ (xem dưới)
 ```
 
