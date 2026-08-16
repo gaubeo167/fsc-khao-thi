@@ -175,7 +175,14 @@ check(
     dk.blanks[0]?.acceptedAnswers.join("|") === "Hà Nội|Hanoi|HN",
     JSON.stringify(dk.blanks[0]),
   );
-  check("DK: đề bài giữ nguyên dấu ___", /_{2,}/.test(dk.content), dk.content);
+  // Dấu ___ phải thành THẺ có đánh số: trình soạn thảo đếm ô trống bằng thẻ,
+  // để nguyên gạch dưới thì nó đếm ra 0 ô và cắt sạch đáp án vừa đọc được.
+  check(
+    "DK: mỗi ___ thành một thẻ ô trống có số",
+    /\[blank:1\]/.test(dk.content) && /\[blank:2\]/.test(dk.content),
+    dk.content,
+  );
+  check("DK: không còn gạch dưới sót lại", !/_{2,}/.test(dk.content), dk.content);
 
   const gc = drafts[6];
   check("GC: 4 cặp", gc.pairs.length === 4, String(gc.pairs.length));
@@ -192,6 +199,11 @@ check(
   const kt = drafts[8];
   check("KT: 2 vùng thả", kt.zones.length === 2, JSON.stringify(kt.zones));
   check("KT: 2 mảnh nhiễu", kt.distractors.length === 2, JSON.stringify(kt.distractors));
+  check(
+    "KT: mỗi ___ thành một thẻ vùng thả có số",
+    /\[zone:1\]/.test(kt.content) && /\[zone:2\]/.test(kt.content),
+    kt.content,
+  );
 
   const gch = drafts[9];
   check(

@@ -31,6 +31,7 @@ import type { QuestionType } from "../../data/question-types";
 import { AiAssistDialog } from "../ai-assist-dialog";
 import { AnswerListField } from "./answer-list-field";
 import { McqExplanationField, McqOptionsField } from "./mcq-form";
+import { RichTextField } from "./rich-text-field";
 
 interface Props {
   type: QuestionType;
@@ -482,10 +483,10 @@ function DragDropFields({
                   control={control}
                   name={`zones.${idx}.correctContent`}
                   render={({ field }) => (
-                    <input
-                      {...field}
+                    <RichTextField
+                      value={field.value}
+                      onChange={field.onChange}
                       placeholder={`Đáp án đúng cho vùng ${idx + 1}`}
-                      className="block w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                     />
                   )}
                 />
@@ -537,10 +538,10 @@ function DragDropFields({
                   control={control}
                   name={`distractors.${idx}.content`}
                   render={({ field }) => (
-                    <input
-                      {...field}
+                    <RichTextField
+                      value={field.value}
+                      onChange={field.onChange}
                       placeholder={`Cụm từ gây nhiễu #${idx + 1}`}
-                      className="block w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                     />
                   )}
                 />
@@ -670,10 +671,10 @@ function OrderingItemsField({
                 control={control}
                 name={`items.${idx}.content`}
                 render={({ field }) => (
-                  <input
-                    {...field}
+                  <RichTextField
+                    value={field.value}
+                    onChange={field.onChange}
                     placeholder={`Mục số ${idx + 1}`}
-                    className="block w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                   />
                 )}
               />
@@ -764,10 +765,10 @@ function MatchingPairsField({
                 control={control}
                 name={`pairs.${idx}.left`}
                 render={({ field }) => (
-                  <input
-                    {...field}
+                  <RichTextField
+                    value={field.value}
+                    onChange={field.onChange}
                     placeholder={`Cột A · Mục ${idx + 1}`}
-                    className="block w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                   />
                 )}
               />
@@ -782,10 +783,10 @@ function MatchingPairsField({
                 control={control}
                 name={`pairs.${idx}.right`}
                 render={({ field }) => (
-                  <input
-                    {...field}
+                  <RichTextField
+                    value={field.value}
+                    onChange={field.onChange}
                     placeholder={`Cột B · Đáp án ${idx + 1}`}
-                    className="block w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                   />
                 )}
               />
@@ -880,10 +881,10 @@ function MatchingPairsField({
                     control={control}
                     name={`distractors.${idx}.right`}
                     render={({ field }) => (
-                      <input
-                        {...field}
+                      <RichTextField
+                        value={field.value}
+                        onChange={field.onChange}
                         placeholder={`Lựa chọn nhiễu ${idx + 1}`}
-                        className="block w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                       />
                     )}
                   />
@@ -1016,14 +1017,11 @@ function SubQuestionRow({
                   control={control}
                   name={`subQuestions.${idx}.statement`}
                   render={({ field }) => (
-                    <textarea
-                      {...field}
-                      rows={2}
+                    <RichTextField
+                      value={field.value}
+                      onChange={field.onChange}
+                      minHeight={52}
                       placeholder={`Nhập nội dung câu phụ ${idx + 1}…`}
-                      className={cn(
-                        "block w-full rounded-md border border-input bg-background px-3 py-2 text-sm",
-                        "focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30",
-                      )}
                     />
                   )}
                 />

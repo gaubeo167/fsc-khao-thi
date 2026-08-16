@@ -442,5 +442,40 @@ const Uc = "⟦/U⟧";
   }
 }
 
+/* ── Ô trống / vùng thả: gạch dưới của Word → thẻ có đánh số ──────────── */
+{
+  const draft = (doc) => draftFromGeneric(parseGeneric(doc).questions[0], 0);
+
+  const dk = draft(
+    [
+      "Câu 1. [NB][DK] Thủ đô Việt Nam là ___, thủ đô Pháp là ___.",
+      "Đáp án 1: Hà Nội | Hanoi",
+      "Đáp án 2: Paris",
+    ].join("\n"),
+  );
+  check("DK: 2 thẻ ô trống đánh số 1, 2", /\[blank:1\]/.test(dk.content) && /\[blank:2\]/.test(dk.content), dk.content);
+  check("DK: không còn gạch dưới", !/_{2,}/.test(dk.content), dk.content);
+  check("DK: 2 nhóm đáp án", dk.blanks.length === 2, String(dk.blanks.length));
+
+  const kt = draft(
+    ["Câu 1. [TH][KT] Điền vào ___ và ___.", "Vùng 1: A", "Vùng 2: B"].join("\n"),
+  );
+  check("KT: gạch dưới thành thẻ vùng thả", /\[zone:1\]/.test(kt.content) && /\[zone:2\]/.test(kt.content), kt.content);
+
+  // Thẻ người soạn gõ sẵn phải được đánh số lại liền mạch, không nhân đôi.
+  const san = draft(
+    ["Câu 1. [NB][DK] A [blank:1] B ___ C", "Đáp án 1: x", "Đáp án 2: y"].join("\n"),
+  );
+  check(
+    "DK: thẻ gõ sẵn + gạch dưới đánh số liền mạch",
+    (san.content.match(/\[blank:\d+\]/g) ?? []).join(",") === "[blank:1],[blank:2]",
+    san.content,
+  );
+
+  // Dạng khác KHÔNG được đụng vào gạch dưới của đề.
+  const tn = draft(["Câu 1. [NB][TN] Điền ___ vào chỗ trống", "A. một", "B. hai"].join("\n"));
+  check("dạng khác: giữ nguyên gạch dưới trong đề", /_{2,}/.test(tn.content), tn.content);
+}
+
 console.log(`\n${pass} pass · ${fail} fail`);
 process.exit(fail === 0 ? 0 : 1);
