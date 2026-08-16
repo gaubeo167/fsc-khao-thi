@@ -749,7 +749,11 @@ export default function SubjectsAdminPage() {
       <ConfirmActionDialog
         open={Boolean(deleteSubjectTarget)}
         onOpenChange={(o) => !o && setDeleteSubjectTarget(null)}
-        variant="destructive"
+        // Khi đang CHẶN thì hộp thoại không còn là hộp xác nhận xoá: không tô
+        // đỏ, và khoá luôn nút xác nhận. Để nguyên nút đỏ "Đã hiểu" thì nó
+        // trông y như nút "xoá đi" — người dùng bấm vào tưởng vừa xoá môn.
+        variant={deleteSubjectQuestionCount > 0 ? "default" : "destructive"}
+        disableConfirm={deleteSubjectQuestionCount > 0}
         title={
           deleteSubjectQuestionCount > 0
             ? "Không xoá được môn học này"
