@@ -354,17 +354,17 @@ const Uc = "⟦/U⟧";
   {
     const { q, d } = draft(
       [
-        "Câu 2. [TH][DS] Xét các phát biểu sau:",
+        "Câu 2. [TH][DSN] Xét các phát biểu sau:",
         `a) ${U}Phát biểu đúng${Uc}`,
         "b) Phát biểu sai",
         "c) Phát biểu thứ ba",
         "d) Phát biểu thứ tư",
       ].join("\n"),
     );
-    check("[DS] → Đúng/Sai nhiều ý", d.type === "multi-tf", String(d.type));
-    check("[DS] tách được 4 ý con", q?.subQuestions.length === 4, String(q?.subQuestions.length));
-    check("[DS] ý gạch chân = Đúng", q?.subQuestions[0]?.correctAnswer === true);
-    check("[DS] ý không gạch = Sai", q?.subQuestions[1]?.correctAnswer === false);
+    check("[DSN] → Đúng/Sai nhiều ý", d.type === "multi-tf", String(d.type));
+    check("[DSN] tách được 4 ý con", q?.subQuestions.length === 4, String(q?.subQuestions.length));
+    check("[DSN] ý gạch chân = Đúng", q?.subQuestions[0]?.correctAnswer === true);
+    check("[DSN] ý không gạch = Sai", q?.subQuestions[1]?.correctAnswer === false);
     check("[TH] → mức thông hiểu", q?.difficulty === "medium", q?.difficulty);
   }
 
@@ -403,7 +403,10 @@ const Uc = "⟦/U⟧";
   check("viết gộp [NB TN]", dangCau("[NB TN]") === "mcq-single");
   check("đảo thứ tự [TN][NB]", dangCau("[TN][NB]") === "mcq-single");
   check("chữ thường [nb][tln]", dangCau("[nb][tln]") === "short-answer");
-  check("[ĐS] viết bằng chữ Đ", dangCau("[ĐS]") === "multi-tf");
+  check("[ĐSN] viết bằng chữ Đ", dangCau("[ĐSN]") === "multi-tf");
+  // DS là MỘT mệnh đề Đúng/Sai, DSN là câu nhiều ý a/b/c/d — hai cách chấm
+  // khác nhau nên hai mã khác nhau.
+  check("[DS] là Đúng/Sai một mệnh đề", dangCau("[DS]") === "true-false");
   check("chữ tắt một ký tự [F] dùng chung với mã YCCĐ", dangCau("[F]") === "multi-tf");
   check("chữ tắt [E]", dangCau("[E]") === "essay");
   check("[VDC] xếp chung vào vận dụng", (() => {

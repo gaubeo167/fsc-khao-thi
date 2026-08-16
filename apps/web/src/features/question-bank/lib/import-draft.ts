@@ -54,6 +54,21 @@ export interface DraftQuestion {
   options: DraftOption[];
   subQuestions: DraftSubQuestion[];
   acceptedAnswers: ShortAnswerKey[];
+  /* ── Dữ liệu riêng của từng dạng câu ────────────────────────────────────
+   * Để rời từng trường thay vì gom vào một túi `data` chung: gom lại thì
+   * chỗ nào cũng phải ép kiểu và không trình biên dịch nào bắt lỗi hộ. */
+  /** Đúng/Sai một mệnh đề (DS). */
+  correctAnswer: boolean | null;
+  /** Điền khuyết (DK) — mỗi ô trống một nhóm đáp án chấp nhận. */
+  blanks: Array<{ acceptedAnswers: string[] }>;
+  /** Ghép cặp (GC). */
+  pairs: Array<{ left: string; right: string }>;
+  /** Sắp xếp (SX) — theo đúng thứ tự đúng. */
+  items: string[];
+  /** Kéo thả (KT) — đáp án đúng của từng vùng thả. */
+  zones: string[];
+  /** Kéo thả (KT) — mảnh gây nhiễu. */
+  distractors: string[];
   explanation: string;
   /** Mã chuyên đề đọc từ file (chỉ khuôn "mã đề" có). */
   chuyenDeCode: string | null;
@@ -150,7 +165,58 @@ export function validateDraft(
       break;
     }
     case "true-false": {
-      // Đáp án boolean luôn có giá trị, không thể thiếu.
+      // Ở đây `null` là trạng thái CÓ THẬT: file không ghi `Đáp án: Đúng/Sai`.
+      // Mặc định về `false` là lặng lẽ gán "Sai" cho cả đề.
+      if (q.correctAnswer == null) {
+        issues.push({ field: "answer", message: "Chưa ghi đáp án Đúng hay Sai" });
+      }
+      break;
+    }
+    case "fill-blank": {
+      const filled = q.blanks.filter((b) => b.acceptedAnswers.some(stripToText));
+      if (filled.length === 0) {
+        issues.push({ field: "answer", message: "Chưa có ô trống nào có đáp án" });
+      }
+      // Số ô trống trong đề phải khớp số dòng đáp án, nếu không thì học sinh
+      // thấy 3 ô mà máy chỉ chấm 2 — sai điểm và không ai để ý.
+      const holes = (q.content.match(/_{2,}/g) ?? []).length;
+      if (holes > 0 && holes !== q.blanks.length) {
+        issues.push({
+          field: "answer",
+          message: `Đề có ${holes} ô trống nhưng ghi ${q.blanks.length} dòng đáp án`,
+        });
+      }
+      break;
+    }
+    case "matching": {
+      const filled = q.pairs.filter(
+        (p) => stripToText(p.left) && stripToText(p.right),
+      );
+      if (filled.length < 2) {
+        issues.push({ field: "answer", message: "Cần ít nhất 2 cặp ghép" });
+      }
+      break;
+    }
+    case "ordering": {
+      if (q.items.filter(stripToText).length < 2) {
+        issues.push({ field: "answer", message: "Cần ít nhất 2 mục để sắp xếp" });
+      }
+      break;
+    }
+    case "drag-drop": {
+      if (q.zones.filter(stripToText).length === 0) {
+        issues.push({ field: "answer", message: "Cần ít nhất 1 vùng thả" });
+      }
+      break;
+    }
+    case "underline": {
+      // Đáp án của dạng này nằm NGAY TRONG đề bài dưới dạng mốc [u:…].
+      if (!/\[u:[^\]]+\]/.test(q.content)) {
+        issues.push({
+          field: "answer",
+          message: "Chưa gạch chân cụm nào trong đề bài",
+        });
+      }
       break;
     }
     case "essay":
@@ -193,6 +259,12 @@ export function draftFromFsc(
     options: [],
     subQuestions: [],
     acceptedAnswers: [],
+    correctAnswer: null,
+    blanks: [],
+    pairs: [],
+    items: [],
+    zones: [],
+    distractors: [],
     explanation: q.explanation ?? "",
     chuyenDeCode: null,
     rawCode: null,
@@ -234,6 +306,12 @@ export function draftFromMaDe(
       correctAnswer: s.correctAnswer,
     })),
     acceptedAnswers: q.acceptedAnswers ?? [],
+    correctAnswer: null,
+    blanks: [],
+    pairs: [],
+    items: [],
+    zones: [],
+    distractors: [],
     explanation: q.explanation ?? "",
     chuyenDeCode: q.chuyenDeCode ?? null,
     rawCode: q.rawCode ?? null,
@@ -292,6 +370,12 @@ export function draftFromGeneric(
     options: q.options.map((o) => ({ content: o.content, isCorrect: o.isCorrect })),
     subQuestions: q.subQuestions ?? [],
     acceptedAnswers: q.acceptedAnswers ?? [],
+    correctAnswer: q.correctAnswer ?? null,
+    blanks: q.blanks ?? [],
+    pairs: q.pairs ?? [],
+    items: q.items ?? [],
+    zones: q.zones ?? [],
+    distractors: q.distractors ?? [],
     explanation: q.explanation,
     chuyenDeCode: q.chuyenDeCode,
     rawCode: q.rawCode,

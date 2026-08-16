@@ -38,6 +38,18 @@ export interface GenericQuestion {
   subQuestions: Array<{ statement: string; correctAnswer: boolean }>;
   /** Đáp án câu trả lời ngắn (mã .S), đọc từ `<Key=…>`. */
   acceptedAnswers: ShortAnswerKey[];
+  /** Đúng/Sai MỘT mệnh đề (mã DS): `Đáp án: Đúng`. */
+  correctAnswer: boolean | null;
+  /** Điền khuyết (DK): mỗi ô trống một nhóm đáp án chấp nhận. */
+  blanks: Array<{ acceptedAnswers: string[] }>;
+  /** Ghép cặp (GC). */
+  pairs: Array<{ left: string; right: string }>;
+  /** Sắp xếp (SX) — theo đúng thứ tự đúng. */
+  items: string[];
+  /** Kéo thả (KT): đáp án đúng của từng vùng thả. */
+  zones: string[];
+  /** Kéo thả (KT): mảnh gây nhiễu, không thuộc vùng nào. */
+  distractors: string[];
   explanation: string;
   /** Mã chuyên đề đọc được ở bất kỳ đâu trong câu, `null` nếu không có. */
   chuyenDeCode: string | null;
@@ -86,6 +98,79 @@ const SUBITEM_RE = /^\s*([a-dA-D])\)\s*(.*)$/;
 /** Đáp án trả lời ngắn: `<Key=42>` hoặc `<Key=42|50%|gợi ý>`. */
 const KEY_RE = /<Key\s*=\s*([^>]*)>/i;
 
+/* ── Dòng dữ liệu của các dạng câu có cấu trúc ────────────────────────────
+ *
+ * Cùng quy ước với mẫu FSC nội bộ (`parse-import.ts`) chứ không đặt kiểu
+ * mới: người soạn đã quen `Đáp án 1:` và `1. A → B` thì đừng bắt học lại.
+ */
+
+/** Đúng/Sai một mệnh đề (DS): `Đáp án: Đúng`. */
+const TF_ANSWER_RE = /^\s*Đáp\s*án\s*[:.]\s*(Đúng|Sai|True|False)\s*$/i;
+
+/** Điền khuyết (DK): `Đáp án 1: Hà Nội | Hanoi | HN` — mỗi ô trống một dòng. */
+const BLANK_RE = /^\s*Đáp\s*án\s*(\d+)\s*[:.]\s*(.+)$/i;
+
+/** Kéo thả (KT): `Vùng 1: Hà Nội` và `Nhiễu: Tokyo | London`. */
+const ZONE_RE = /^\s*(?:Vùng|Ô)\s*(\d+)\s*[:.]\s*(.+)$/i;
+const DISTRACTOR_RE = /^\s*(?:Nhiễu|Gây nhiễu|Mồi)\s*[:.]\s*(.+)$/i;
+
+/** Ghép cặp (GC): `1. Việt Nam → Hà Nội`. Nhận mọi kiểu mũi tên hay gạch nối. */
+const PAIR_RE = /^\s*\d+\s*[.)]\s*(.+?)\s*(?:→|->|=>|↔|—|–|-)\s*(.+)$/;
+
+/** Sắp xếp (SX): `1. -5` — viết theo ĐÚNG thứ tự đúng. */
+const ITEM_RE = /^\s*\d+\s*[.)]\s*(.+)$/;
+
+/** Dạng câu KHÔNG có phương án A/B/C/D. */
+const NO_OPTION_TYPES = new Set<GenericTypeTag | null>([
+  "true-false",
+  "short-answer",
+  "fill-blank",
+  "matching",
+  "ordering",
+  "drag-drop",
+  "underline",
+  "essay",
+]);
+
+/** Tách danh sách viết chung một dòng, ngăn bằng `|`. */
+const splitPipes = (s: string): string[] =>
+  s
+    .split("|")
+    .map((x) => x.trim())
+    .filter(Boolean);
+
+/**
+ * Đổi vùng gạch chân của Word thành mốc `[u:…]` mà câu GẠCH CHÂN dùng.
+ *
+ * Người soạn gạch chân thẳng trong Word là xong — không phải gõ mốc bằng
+ * tay. Ai đã gõ sẵn `[u:…]` thì cũng chạy, vì mốc đó đi qua nguyên vẹn.
+ */
+function markUnderline(line: string): string {
+  let out = "";
+  let buf = "";
+  let depth = 0;
+  for (let i = 0; i < line.length; ) {
+    if (line.startsWith(U_OPEN, i)) {
+      depth += 1;
+      i += U_OPEN.length;
+      continue;
+    }
+    if (line.startsWith(U_CLOSE, i)) {
+      depth = Math.max(0, depth - 1);
+      if (depth === 0 && buf.trim()) {
+        out += `[u:${buf.trim()}]`;
+        buf = "";
+      }
+      i += U_CLOSE.length;
+      continue;
+    }
+    if (depth > 0) buf += line[i];
+    else out += line[i];
+    i += 1;
+  }
+  return (out + buf).trim();
+}
+
 /**
  * Nhãn trong ngoặc vuông của đề KHÔNG theo mã YCCĐ.
  *
@@ -115,24 +200,37 @@ const DIFF_TOKENS: Record<string, "easy" | "medium" | "hard"> = {
 export type GenericTypeTag =
   | "mcq-single"
   | "mcq-multi"
+  | "true-false"
   | "multi-tf"
   | "short-answer"
+  | "fill-blank"
+  | "matching"
+  | "ordering"
+  | "drag-drop"
+  | "underline"
   | "essay";
 
 const TYPE_TOKENS: Record<string, GenericTypeTag> = {
-  // Trắc nghiệm một đáp án
+  // Trắc nghiệm
   TN: "mcq-single",
   D: "mcq-single",
-  // Trắc nghiệm nhiều đáp án
   TNN: "mcq-multi",
   M: "mcq-multi",
-  // Đúng/Sai nhiều ý
-  DS: "multi-tf",
+  // Đúng/Sai: MỘT mệnh đề (DS) khác NHIỀU ý a/b/c/d (DSN). Hai dạng khác
+  // nhau ở cách chấm nên không gộp mã.
+  DS: "true-false",
+  DSN: "multi-tf",
   F: "multi-tf",
-  // Trả lời ngắn
+  // Học sinh tự gõ đáp án
   TLN: "short-answer",
   S: "short-answer",
-  // Tự luận
+  DK: "fill-blank",
+  // Thao tác trên các mảnh cho sẵn
+  GC: "matching",
+  SX: "ordering",
+  KT: "drag-drop",
+  GCH: "underline",
+  // Chấm tay
   TL: "essay",
   E: "essay",
 };
@@ -415,6 +513,13 @@ function parseBlock(
   /** Chỉ số ý Đúng/Sai đang chờ nội dung ở dòng kế tiếp. */
   let pendingSub: number | null = null;
   const acceptedAnswers: ShortAnswerKey[] = [];
+  /** Đúng/Sai một mệnh đề. */
+  let correctAnswer: boolean | null = null;
+  const blanks: GenericQuestion["blanks"] = [];
+  const pairs: GenericQuestion["pairs"] = [];
+  const items: string[] = [];
+  const zones: string[] = [];
+  const distractors: string[] = [];
   const explanationLines: string[] = [];
   let inExplanation = false;
 
@@ -440,11 +545,60 @@ function parseBlock(
     }
 
     // Nhãn mức độ + dạng câu, vd `Câu 1. [NB][TN]`.
-    const tags = readTags(line);
-    if (tags.difficulty || tags.typeTag) {
-      line = tags.line;
-      if (!difficulty) difficulty = tags.difficulty;
-      if (!typeTag) typeTag = tags.typeTag;
+    //
+    // Ngừng dò khi đã biết dạng câu: câu GẠCH CHÂN dùng chính dấu ngoặc vuông
+    // để đánh mốc `[u:…]`, dò tiếp là có ngày ăn mất mốc của người soạn.
+    if (!typeTag) {
+      const tags = readTags(line);
+      if (tags.difficulty || tags.typeTag) {
+        line = tags.line;
+        if (!difficulty) difficulty = tags.difficulty;
+        typeTag = tags.typeTag;
+      }
+    }
+
+    // ── Dòng dữ liệu của các dạng có cấu trúc ──
+    // Xét TRƯỚC khối lời giải vì `Đáp án:` vừa là nhãn lời giải vừa là nhãn
+    // đáp án của Đúng/Sai và Điền khuyết.
+    if (typeTag === "true-false") {
+      const m = TF_ANSWER_RE.exec(stripMarks(line));
+      if (m) {
+        correctAnswer = /^(Đúng|True)$/i.test(m[1]!);
+        return;
+      }
+    }
+    if (typeTag === "fill-blank") {
+      const m = BLANK_RE.exec(stripMarks(line));
+      if (m) {
+        blanks.push({ acceptedAnswers: splitPipes(m[2]!) });
+        return;
+      }
+    }
+    if (typeTag === "drag-drop") {
+      const z = ZONE_RE.exec(stripMarks(line));
+      if (z) {
+        zones.push(z[2]!.trim());
+        return;
+      }
+      const d = DISTRACTOR_RE.exec(stripMarks(line));
+      if (d) {
+        distractors.push(...splitPipes(d[1]!));
+        return;
+      }
+    }
+    if (typeTag === "matching") {
+      const m = PAIR_RE.exec(stripMarks(line));
+      if (m) {
+        pairs.push({ left: m[1]!.trim(), right: m[2]!.trim() });
+        return;
+      }
+    }
+    if (typeTag === "ordering") {
+      const m = ITEM_RE.exec(stripMarks(line));
+      if (m) {
+        items.push(m[1]!.trim());
+        return;
+      }
     }
 
     if (SOLUTION_RE.test(line)) {
@@ -499,8 +653,10 @@ function parseBlock(
       }
     }
 
-    // Trả lời ngắn và tự luận không có phương án — đừng cắt nhầm câu văn.
-    if (typeLetter !== "S" && typeLetter !== "E") {
+    // Chỉ trắc nghiệm mới có phương án A/B/C/D. Các dạng còn lại mà đi cắt
+    // phương án thì câu văn "…theo A. Einstein" hay dòng "D. Nam" của một
+    // cặp ghép sẽ bị xén thành phương án.
+    if (typeLetter !== "S" && typeLetter !== "E" && !NO_OPTION_TYPES.has(typeTag)) {
       const opts = splitOptions(line);
       if (opts.length > 0) {
         for (const o of opts) {
@@ -512,12 +668,26 @@ function parseBlock(
 
     // Dòng "Đề bài:" của mẫu nội bộ — bỏ nhãn, giữ nội dung.
     line = line.replace(/^\s*(Đề bài|Nội dung|Question)\s*[:.]\s*/i, "");
+    // Câu GẠCH CHÂN: vùng gạch chân trong Word CHÍNH LÀ đáp án, nên giữ lại
+    // thành mốc thay vì gỡ bỏ như mọi dạng khác.
+    if (typeTag === "underline") {
+      const marked = markUnderline(line);
+      if (marked) contentLines.push(marked);
+      return;
+    }
     const { text } = readUnderline(line);
     if (text) contentLines.push(text);
   });
 
   const content = contentLines.join("\n").trim();
-  if (!content && options.length === 0 && subQuestions.length === 0) return null;
+  const hasAnyData =
+    options.length > 0 ||
+    subQuestions.length > 0 ||
+    blanks.length > 0 ||
+    pairs.length > 0 ||
+    items.length > 0 ||
+    zones.length > 0;
+  if (!content && !hasAnyData) return null;
 
   if (options.length > 0 && !options.some((o) => o.isCorrect)) {
     // KHÔNG đoán. Đề thật thường không đánh dấu đáp án; người dùng sẽ chọn.
@@ -531,6 +701,12 @@ function parseBlock(
     options,
     subQuestions,
     acceptedAnswers,
+    correctAnswer,
+    blanks,
+    pairs,
+    items,
+    zones,
+    distractors,
     explanation: explanationLines.join("\n").trim(),
     chuyenDeCode,
     rawCode,
