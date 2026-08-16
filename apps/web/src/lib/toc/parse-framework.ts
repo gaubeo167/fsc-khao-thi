@@ -26,8 +26,13 @@ export interface FrameworkParseResult {
   counts: { chapters: number; topics: number; indicators: number };
 }
 
-// SI10.01.1.D01  → prefix=SI10 chapter=01 topic=1 indicator=01
-const INDICATOR_RE = /\[([A-Za-z]+\d+)\.(\d+)\.(\d+)\.D(\d+)\]/;
+// SI10.01.1.D01  → prefix=SI10 chapter=01 topic=1 chữ=D indicator=01
+//
+// Chữ trước số nhận MỌI chữ cái chứ không chỉ `D`. Khung mẫu của trường đánh
+// toàn `D`, nhưng khung môn khác dùng chữ khác thì trước đây regex trượt và
+// những chỉ báo đó bị BỎ IM LẶNG — khung nhập vào thiếu lá, đề trích dẫn mã
+// đó thành ra "không khớp YCCĐ" mà không ai lần ra vì sao.
+const INDICATOR_RE = /\[([A-Za-z]+\d+)\.(\d+)\.(\d+)\.([A-Za-z])(\d+)\]/;
 // [SI10.01]: 1. Phần mở đầu
 const CHAPTER_COLON_RE = /^\[([A-Za-z]+\d+\.\d+)\]\s*:\s*(.+)$/;
 // bare chapter code on its own line: [SI10.01]
@@ -100,10 +105,11 @@ export function parseFrameworkText(raw: string): FrameworkParseResult {
     const prefix = m[1]!; // SI10
     const ch = m[2]!; // 01
     const tp = m[3]!; // 1
-    const dnum = m[4]!; // 01
+    const letter = m[4]!.toUpperCase(); // D
+    const dnum = m[5]!; // 01
     const chapterCode = `${prefix}.${ch}`;
     const topicCode = `${prefix}.${ch}.${tp}`;
-    const indicatorCode = `${prefix}.${ch}.${tp}.D${dnum}`;
+    const indicatorCode = `${prefix}.${ch}.${tp}.${letter}${dnum}`;
     if (seenIndicator.has(indicatorCode)) continue;
     seenIndicator.add(indicatorCode);
 

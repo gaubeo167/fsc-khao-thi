@@ -54,6 +54,11 @@ import {
   type DraftIssue,
   type DraftQuestion,
 } from "../lib/import-draft";
+import {
+  buildOutcomeIndex,
+  matchOutcome,
+  topicOfCode,
+} from "../lib/match-competency";
 import { useQuestionsStore } from "../state/questions-store";
 
 /** Nhãn tiếng Việt của dạng câu, tra từ bảng dùng chung của kho câu hỏi. */
@@ -140,24 +145,28 @@ export function ImportQuestionsDialog({
   const drafts = phase.kind === "review" ? phase.drafts : [];
 
   /**
-   * Mã chuyên đề trong file → id trong khung năng lực. Khớp ở CLIENT vì mục
-   * lục nằm trong store trình duyệt, server không có.
+   * Mã trong file → YCCĐ trong khung năng lực. Khớp ở CLIENT vì khung nằm
+   * trong store trình duyệt, server không có.
+   *
+   * CHỈ lấy node LÁ (`kind === "outcome"`). Node chương/chủ điểm cũng có mã
+   * và cũng khớp được, nhưng chúng không mang mức Bloom — nhận chúng là mất
+   * mức độ của cả đề mà giao diện vẫn báo "đã khớp".
+   *
+   * Khối lấy rộng hơn một bậc so với ô chọn YCCĐ: nhận cả node không gắn
+   * khối, và nếu khối đang chọn rỗng thì lấy toàn môn — cùng cách xử lý với
+   * `CompetencyPicker`, để mã khớp được thì ô chọn cũng hiện được node đó.
    */
-  const compByCode = useMemo(() => {
-    const m = new Map<
-      string,
-      { id: string; bloomLevel?: number | null; title: string }
-    >();
-    for (const c of competencies) {
-      if (c.subjectId === subjectId && c.gradeId === gradeId && c.code) {
-        m.set(c.code.toUpperCase(), {
-          id: c.id,
-          bloomLevel: c.bloomLevel ?? null,
-          title: c.title,
-        });
-      }
+  const outcomeIndex = useMemo(() => {
+    if (!subjectId) return buildOutcomeIndex([]);
+    const leaves = competencies.filter((c) => c.kind === "outcome" && c.code);
+    let scope = leaves.filter(
+      (c) =>
+        c.subjectId === subjectId && (c.gradeId === gradeId || c.gradeId == null),
+    );
+    if (scope.length === 0) {
+      scope = leaves.filter((c) => c.subjectId === subjectId);
     }
-    return m;
+    return buildOutcomeIndex(scope);
   }, [competencies, subjectId, gradeId]);
 
   /**
@@ -256,7 +265,7 @@ export function ImportQuestionsDialog({
       // Khớp mã YCCĐ ngay khi nhận, để badge lỗi phản ánh đúng từ đầu.
       //
       // Mã trong đề (vd [SI10.02.15.D01]) trỏ tới một YCCĐ của khung năng
-      // lực. Node đó đã mang sẵn mức Bloom, nên ĐỘ KHÓ suy ra được từ mã —
+      // lực. Node LÁ đó mang sẵn mức Bloom, nên MỨC ĐỘ suy ra được từ mã —
       // đề chuẩn không cần ghi thêm. Đó là lý do đề SHOC có đủ ID nhưng
       // không ghi mức độ: mức độ nằm trong khung, không nằm trong đề.
       //
@@ -268,20 +277,13 @@ export function ImportQuestionsDialog({
       };
       const withComp: DraftQuestion[] = (data.questions as DraftQuestion[]).map(
         (d) => {
-          if (!d.chuyenDeCode) return d;
-          // Thử cả mã đầy đủ lẫn mã đã cắt phần loại câu + số thứ tự, vì
-          // khung năng lực đánh mã tới cấp YCCĐ còn đề đánh tới cấp câu.
-          const hit =
-            compByCode.get(d.chuyenDeCode.toUpperCase()) ??
-            (d.rawCode
-              ? compByCode.get(
-                  d.rawCode.replace(/\.[a-c]$/i, "").toUpperCase(),
-                )
-              : undefined);
+          const hit = matchOutcome(d.rawCode ?? d.chuyenDeCode, outcomeIndex);
           if (!hit) return d;
           return {
             ...d,
             chuyenDeId: hit.id,
+            chuyenDeMatch: hit.via,
+            bloomLevel: (hit.bloomLevel ?? null) as DraftQuestion["bloomLevel"],
             // Chỉ điền khi đề CHƯA ghi mức độ — đề ghi rõ thì tôn trọng đề.
             difficulty:
               d.difficulty ??
@@ -542,9 +544,19 @@ export function ImportQuestionsDialog({
             </p>
             <p className="text-meta mt-0.5 text-amber-800">
               Mã dạng <code>{drafts.find((d) => d.rawCode)?.rawCode}</code> đã
-              mang sẵn môn và lớp. Nhiều khả năng bạn chọn nhầm Môn/Khối ở bước
-              trước — đóng lại và chọn đúng thì độ khó sẽ tự điền theo khung.
-              Cũng có thể khung năng lực của môn này chưa được nhập.
+              mang sẵn môn và lớp.{" "}
+              {outcomeIndex.byCode.size === 0 ? (
+                <>
+                  Khung năng lực của môn này <b>chưa có YCCĐ nào</b> — nhập khung
+                  ở mục “Chuẩn đầu ra (YCCĐ)” rồi tải lại đề, mức độ sẽ tự điền.
+                </>
+              ) : (
+                <>
+                  Khung đang có {outcomeIndex.byCode.size} YCCĐ nhưng không cái
+                  nào mang mã này — nhiều khả năng bạn chọn nhầm Môn/Khối ở bước
+                  trước, hoặc khung nhập vào thiếu chủ điểm tương ứng.
+                </>
+              )}
             </p>
           </div>
         )}
@@ -760,7 +772,7 @@ function QuestionEditor({
       acceptedAnswers: q.acceptedAnswers,
       caseSensitive: false,
       competencyIds: q.chuyenDeId ? [q.chuyenDeId] : [],
-      bloomLevel: null,
+      bloomLevel: q.bloomLevel ?? null,
       tocNodeId: null,
       tags: [],
       kho: "campus",
@@ -769,10 +781,15 @@ function QuestionEditor({
     },
   });
 
+  /** YCCĐ mà hệ thống tự khớp từ mã — mốc để biết người dùng đã đổi hay chưa. */
+  const autoMatchedId = useRef(q.chuyenDeId);
+
   // Mọi thay đổi trong form chảy ngược về bản nháp để danh sách bên trái và
   // bộ đếm "n/N câu hợp lệ" cập nhật ngay.
   useEffect(() => {
     const sub = form.watch((v) => {
+      const pickedId =
+        ((v.competencyIds as string[] | undefined)?.[0] ?? null) || null;
       onPatch({
         type: (v.type as DraftQuestion["type"]) ?? null,
         difficulty: (v.difficulty || null) as DraftQuestion["difficulty"],
@@ -788,11 +805,21 @@ function QuestionEditor({
           correctAnswer: !!x?.correctAnswer,
         })),
         acceptedAnswers: (v.acceptedAnswers ?? []) as DraftQuestion["acceptedAnswers"],
-        chuyenDeId:
-          ((v.competencyIds as string[] | undefined)?.[0] ?? null) || null,
+        chuyenDeId: pickedId,
+        // `QuestionCompetencyField` cập nhật `bloomLevel` theo YCCĐ vừa chọn,
+        // nên chọn lại YCCĐ là mức nhận thức đi theo, không phải sửa hai chỗ.
+        bloomLevel:
+          ((v.bloomLevel as number | undefined) ?? null) as DraftQuestion["bloomLevel"],
+        // Người dùng đổi sang YCCĐ khác thì ghi chú "khớp theo số chỉ báo"
+        // của file không còn đúng nữa — bỏ đi thay vì để nó nói về lựa chọn cũ.
+        chuyenDeMatch: pickedId === autoMatchedId.current ? q.chuyenDeMatch : null,
       });
     });
     return () => sub.unsubscribe();
+    // `q.chuyenDeMatch` cố ý KHÔNG nằm trong deps: nó chỉ được đọc để giữ
+    // nguyên giá trị ban đầu, thêm vào thì mỗi lần patch lại dựng lại
+    // subscription.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form, onPatch]);
 
   const type = form.watch("type") as QuestionType;
@@ -888,6 +915,25 @@ function QuestionEditor({
         title="Yêu cầu cần đạt (YCCĐ)"
         subtitle="Đọc sẵn từ mã trong file — chọn lại được nếu chưa đúng"
       >
+        {/* Nói rõ mã trong file dẫn tới đâu. Im lặng ở đây chính là lỗi cũ:
+            hệ thống dừng ở chủ điểm mà giao diện vẫn trông như đã khớp. */}
+        {q.rawCode && !q.chuyenDeId && (
+          <p className="mb-2 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-meta text-amber-900">
+            File ghi mã <b>{q.rawCode}</b> nhưng khung năng lực của môn chưa có
+            YCCĐ nào mang mã đó
+            {topicOfCode(q.rawCode)
+              ? ` (chủ điểm ${topicOfCode(q.rawCode)})`
+              : ""}
+            . Chọn tay bên dưới, hoặc bổ sung khung rồi tải lại đề.
+          </p>
+        )}
+        {q.chuyenDeMatch === "so-chi-bao" && (
+          <p className="mb-2 rounded-md border border-sky-300 bg-sky-50 px-2.5 py-1.5 text-meta text-sky-900">
+            File ghi <b>{q.rawCode}</b>; khung đánh mã chỉ báo này bằng chữ
+            khác nên hệ thống khớp theo số chỉ báo. Kiểm lại nội dung YCCĐ bên
+            dưới cho chắc.
+          </p>
+        )}
         <QuestionCompetencyField
           control={form.control}
           watch={form.watch}
