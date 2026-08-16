@@ -3,6 +3,7 @@
 import React, { useMemo } from "react";
 
 import { Math } from "./math";
+import { mathAnyRe } from "@/lib/math-delimiters";
 import { classifyMediaUrl } from "./media-utils";
 import { cn } from "@/lib/utils";
 
@@ -22,7 +23,7 @@ interface Block {
  */
 function parse(source: string): Block[] {
   const blocks: Block[] = [];
-  const regex = /(\$\$[\s\S]+?\$\$|\$[^\n$]+?\$)/g;
+  const regex = mathAnyRe();
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = regex.exec(source)) !== null) {

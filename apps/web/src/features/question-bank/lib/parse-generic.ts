@@ -531,6 +531,16 @@ export function parseGeneric(marked: string): GenericParseResult {
         sawSolution = true;
       } else if (sawSolution && splitOptions(line).length > 0) {
         const stem: string[] = [];
+        // Bỏ dòng trống ngay trên dòng phương án TRƯỚC đã.
+        //
+        // Word gần như luôn chèn một dòng trống giữa đề bài và các phương án.
+        // Vòng dưới dừng ở dòng trống đầu tiên, nên nếu không bỏ trước thì nó
+        // dừng ngay lập tức và kéo về ĐÚNG SỐ KHÔNG dòng — đề bài ở lại trong
+        // khối lời giải của câu trước, câu mới ra rỗng. Đó là lý do file AIMO
+        // ra 14/16 câu "(đề bài trống)".
+        while (cur && cur.length > 0 && !(cur[cur.length - 1] ?? "").trim()) {
+          cur.pop();
+        }
         while (cur && cur.length > 0) {
           const last = cur[cur.length - 1] ?? "";
           if (!last.trim() || SOLUTION_RE.test(last)) break;

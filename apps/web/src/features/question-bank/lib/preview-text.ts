@@ -16,6 +16,8 @@
  * React — để test được và để mọi chỗ hiện danh sách dùng chung một bản.
  */
 
+import { mathInlineRe } from "@/lib/math-delimiters";
+
 /** Mốc → ký hiệu thay thế. Thứ tự có ý nghĩa: ảnh/video/audio trước, vì
  *  phần trong ngoặc của chúng có thể chứa dấu ngoặc vuông. */
 const RULES: Array<[RegExp, string | ((m: RegExpMatchArray) => string)]> = [
@@ -31,7 +33,7 @@ const RULES: Array<[RegExp, string | ((m: RegExpMatchArray) => string)]> = [
   // thay vì đổ LaTeX thô ra. Đề toán mà in `\frac{1}{3}` thì dòng xem trước
   // không còn đọc được chữ nào.
   [/\$\$[\s\S]+?\$\$/g, " ∑ "],
-  [/\$[^\n$]+?\$/g, " ∑ "],
+  [mathInlineRe(), " ∑ "],
 ];
 
 export function previewText(content: string): string {
