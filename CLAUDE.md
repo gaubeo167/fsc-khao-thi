@@ -38,6 +38,7 @@ node scripts/test-framework-scope.mjs # soát nhầm môn/khối khi nhập khun
 node scripts/test-impact.mjs          # đếm/gỡ ảnh hưởng khi xoá môn · mục lục · YCCĐ
 node scripts/test-pdf-import.mjs      # đọc đề từ PDF
 node scripts/test-ai-formulas.mjs     # chốt kiểm bản AI dọn công thức PDF
+node scripts/test-preview-text.mjs    # dòng xem trước không rò cú pháp nội bộ
 node scripts/check-design-tokens.mjs   # bánh cóc thang chữ (xem dưới)
 ```
 
