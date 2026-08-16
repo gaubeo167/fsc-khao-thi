@@ -132,7 +132,15 @@ export default function SubjectsAdminPage() {
 
   // TOC pane state
   const [tocSubjectId, setTocSubjectId] = useState<string>(subjects[0]?.id ?? "");
-  const [tocGradeId, setTocGradeId] = useState<string>("grade-10");
+  // KHÔNG mặc định sẵn một khối.
+  //
+  // Trước đây trường này khởi tạo cứng là "grade-10". Ở campus không có khối
+  // 10, giá trị đó không nằm trong danh sách <option> nên trình duyệt HIỂN
+  // THỊ option đầu tiên (Khối 1) trong khi state vẫn là grade-10 — màn hình
+  // nói một đằng, dữ liệu ghi một nẻo. Nhập khung lúc đó là cả khung rơi vào
+  // khối người dùng chưa từng chọn, và về sau nó hiện ra ở ô chọn YCCĐ của
+  // khối khác mà không ai lần ra vì sao.
+  const [tocGradeId, setTocGradeId] = useState<string>("");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
   // Subject dialogs
@@ -680,6 +688,7 @@ export default function SubjectsAdminPage() {
                     onChange={(e) => setTocGradeId(e.target.value)}
                     className="h-9 min-w-[110px]"
                   >
+                    <option value="">— Chọn khối —</option>
                     {grades
                       .filter((g) =>
                         scopedGradeIds ? scopedGradeIds.has(g.id) : true,

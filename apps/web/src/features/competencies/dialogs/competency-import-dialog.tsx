@@ -25,6 +25,7 @@ import {
   bloomMeta,
   competencyKindMeta,
 } from "../data/types";
+import { checkFrameworkScope } from "../lib/framework-scope";
 
 interface Props {
   open: boolean;
@@ -33,6 +34,9 @@ interface Props {
   gradeName?: string;
   /** YCCĐ codes already present for this subject+grade (mới / trùng). */
   existingCodes: Set<string>;
+  /** Mã của khung hiện có trong CÙNG MÔN, mọi khối — dùng để phát hiện
+   *  "môn này vốn đánh mã TO…, file lại toàn SI…". */
+  subjectCodes?: string[];
   /** Confirm — receives the parsed competency tree (kind + bloom + code). */
   onApply: (tree: CompetencyImportNode[]) => void;
 }
@@ -72,13 +76,19 @@ export function CompetencyImportDialog({
   subjectName,
   gradeName,
   existingCodes,
+  subjectCodes = [],
   onApply,
 }: Props) {
   const [state, setState] = useState<State>({ kind: "idle" });
+  /** Người dùng đã xác nhận vẫn nhập dù mã trong file lệch môn/khối. */
+  const [scopeOk, setScopeOk] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!open) setState({ kind: "idle" });
+    if (!open) {
+      setState({ kind: "idle" });
+      setScopeOk(false);
+    }
   }, [open]);
 
   async function handleFile(file: File | undefined) {
@@ -87,6 +97,7 @@ export function CompetencyImportDialog({
       setState({ kind: "error", message: "Chỉ hỗ trợ file Word .docx." });
       return;
     }
+    setScopeOk(false);
     setState({ kind: "loading", fileName: file.name });
     try {
       const fd = new FormData();
@@ -134,6 +145,13 @@ export function CompetencyImportDialog({
   const codes = result ? allCodes(result.tree) : [];
   const newCount = codes.filter((c) => !existingCodes.has(c)).length;
   const dupCount = codes.length - newCount;
+
+  // Soát môn/khối TRƯỚC khi ghi. Ghi nhầm thì không có màn nào phát hiện hộ:
+  // mọi chỗ đều lọc đúng theo môn, nên khung của môn khác nằm im trong môn
+  // này và chỉ lộ ra lúc người dùng mở ô chọn YCCĐ và thấy mã lạ.
+  const scopeWarnings = result
+    ? checkFrameworkScope({ codes, existingCodes: subjectCodes, gradeName, subjectName })
+    : [];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -255,6 +273,39 @@ export function CompetencyImportDialog({
                   </span>
                 )}
               </div>
+              {scopeWarnings.length > 0 && (
+                <div className="mb-3 rounded-lg border-2 border-rose-300 bg-rose-50 px-4 py-3">
+                  <p className="inline-flex items-center gap-1.5 text-small font-semibold text-rose-900">
+                    <TriangleAlert className="h-4 w-4" strokeWidth={2} />
+                    File này có vẻ KHÔNG thuộc {subjectName || "môn"} ·{" "}
+                    {gradeName || "khối"} đang chọn
+                  </p>
+                  <ul className="mt-1.5 space-y-1">
+                    {scopeWarnings.map((w) => (
+                      <li key={w.kind} className="text-meta text-rose-800">
+                        • {w.message}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-meta mt-2 text-rose-800">
+                    Nhập nhầm thì khung của môn khác nằm im trong môn này và về
+                    sau hiện ra ở ô chọn YCCĐ mà không rõ vì sao. Đổi Môn / Khối
+                    ở màn sau lưng rồi tải lại, hoặc tích ô dưới nếu bạn chắc
+                    quy ước mã của trường là như vậy.
+                  </p>
+                  <label className="mt-2 inline-flex items-center gap-2 text-meta font-semibold text-rose-900">
+                    <input
+                      type="checkbox"
+                      checked={scopeOk}
+                      onChange={(e) => setScopeOk(e.target.checked)}
+                      className="h-3.5 w-3.5 accent-rose-600"
+                    />
+                    Tôi chắc chắn — vẫn nhập vào {subjectName || "môn"} ·{" "}
+                    {gradeName || "khối"}
+                  </label>
+                </div>
+              )}
+
               <div className="max-h-[440px] overflow-y-auto rounded-lg border bg-surface px-3 py-2">
                 <TreePreview nodes={result.tree} depth={0} existingCodes={existingCodes} />
               </div>
@@ -278,7 +329,10 @@ export function CompetencyImportDialog({
               <Button variant="outline" onClick={() => setState({ kind: "idle" })}>
                 Chọn file khác
               </Button>
-              <Button onClick={apply} disabled={newCount === 0}>
+              <Button
+                onClick={apply}
+                disabled={newCount === 0 || (scopeWarnings.length > 0 && !scopeOk)}
+              >
                 <Check className="h-4 w-4" />
                 Thêm {newCount} mã mới
               </Button>
