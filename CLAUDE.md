@@ -57,6 +57,19 @@ mốc lên để cho qua.
   chung `fpt2026`.
 - Phiên đăng nhập ở chế độ seed chỉ nằm trong bộ nhớ. Mỗi lần tải lại trang là
   mất đăng nhập, nên phải điều hướng bằng cách bấm link trong app.
-- **Đừng chạy `next build` khi `next dev` đang chạy.** Nó ghi đè `apps/web/.next`
-  và làm dev server trả 500. Dừng dev server trước, hoặc build xong thì
-  `rm -rf apps/web/.next` và khởi động lại.
+- **Build khi dev server đang chạy: đổi thư mục kết xuất.** `next dev` và
+  `next build` mặc định dùng chung `apps/web/.next`, nên build đè lên thư mục
+  dev server đang phục vụ — nó vẫn sống nhưng trả 500 cho mọi trang và không
+  báo vì sao. Không phải dừng dev nữa, chỉ cần:
+
+  ```bash
+  cd apps/web && NEXT_DIST_DIR=.next-build npx next build
+  git checkout -- apps/web/next-env.d.ts apps/web/tsconfig.json
+  ```
+
+  Dòng thứ hai BẮT BUỘC: `next build` tự viết lại hai file đó để trỏ vào thư
+  mục kết xuất vừa dùng. Quên trả lại thì `tsconfig.json` trong repo trỏ vào
+  một thư mục nằm trong `.gitignore` — máy khác và Vercel không có nó.
+
+  `.next-build/` đã nằm trong `.gitignore` và xoá lúc nào cũng được (~500MB).
+  Không đặt biến này thì build vẫn ra `.next` như cũ, nên Vercel không đổi gì.
