@@ -34,6 +34,7 @@ node scripts/test-monitoring-live.mjs  # đường dữ liệu thời gian thự
 node scripts/test-parse-generic.mjs   # parser đề tự soạn (khuôn SHOC / AIMO / nội bộ)
 node scripts/test-match-competency.mjs # khớp mã trong đề với YCCĐ + đọc khung
 node scripts/test-mau-co-ban.mjs      # file mẫu Word đọc ngược lại có ra đúng 11 dạng câu
+node scripts/test-framework-scope.mjs # soát nhầm môn/khối khi nhập khung YCCĐ
 node scripts/check-design-tokens.mjs   # bánh cóc thang chữ (xem dưới)
 ```
 

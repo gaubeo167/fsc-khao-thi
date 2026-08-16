@@ -60,6 +60,15 @@ export function CompetencyManager({
       ),
     [competencies, subjectId, gradeId],
   );
+
+  /** Mã của cả môn, MỌI khối — để màn nhập soát được "file này là môn khác". */
+  const subjectCodes = useMemo(
+    () =>
+      competencies
+        .filter((n) => n.subjectId === subjectId && n.code)
+        .map((n) => n.code as string),
+    [competencies, subjectId],
+  );
   const childrenOf = (parentId: string | null) =>
     scoped
       .filter((n) => n.parentId === parentId)
@@ -259,6 +268,7 @@ export function CompetencyManager({
         subjectName={subjectName}
         gradeName={gradeName}
         existingCodes={existingCodes}
+        subjectCodes={subjectCodes}
         onApply={applyCompetencyTree}
       />
       {nodeDialog && (

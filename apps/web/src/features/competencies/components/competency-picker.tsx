@@ -41,21 +41,38 @@ export function CompetencyPicker({
   // Outcomes for this subject+grade (accept null-grade too). If the grade
   // scope is empty, fall back to ALL grades of the subject — mirrors
   // TocTagFields, so YCCĐ imported under a different grade still show.
-  const outcomes = useMemo(() => {
-    if (!subjectId) return [] as Competency[];
+  const { outcomes, fromOtherGrade } = useMemo(() => {
+    const none = { outcomes: [] as Competency[], fromOtherGrade: false };
+    if (!subjectId) return none;
     const isLeaf = (n: Competency) => n.kind === "outcome";
-    let scope = competencies.filter(
+    const sortByCode = (list: Competency[]) =>
+      list
+        .slice()
+        .sort(
+          (a, b) => (a.code ?? "").localeCompare(b.code ?? "") || a.order - b.order,
+        );
+
+    const exact = competencies.filter(
       (n) =>
         isLeaf(n) &&
         n.subjectId === subjectId &&
         (n.gradeId === gradeId || n.gradeId == null),
     );
-    if (scope.length === 0) {
-      scope = competencies.filter((n) => isLeaf(n) && n.subjectId === subjectId);
+    if (exact.length > 0) {
+      return { outcomes: sortByCode(exact), fromOtherGrade: false };
     }
-    return scope.sort(
-      (a, b) => (a.code ?? "").localeCompare(b.code ?? "") || a.order - b.order,
+    // Lùi về mọi khối của môn: khung nhập dưới khối khác vẫn dùng được.
+    // NHƯNG phải nói ra. Im lặng ở đây chính là chỗ người dùng thấy "chọn
+    // Toán khối 1 mà ra khung của khối 10" và tưởng hệ thống lẫn môn — trong
+    // khi thật ra khung đó đang nằm nhầm khối, và không có dấu hiệu nào cho
+    // thấy danh sách đang là của khối khác.
+    const anyGrade = competencies.filter(
+      (n) => isLeaf(n) && n.subjectId === subjectId,
     );
+    return {
+      outcomes: sortByCode(anyGrade),
+      fromOtherGrade: anyGrade.length > 0,
+    };
   }, [competencies, subjectId, gradeId]);
 
   const byId = useMemo(
@@ -156,6 +173,13 @@ export function CompetencyPicker({
               className="h-8 w-full rounded-md border bg-card pl-7 pr-2 text-[12.5px] focus:outline-none focus:ring-2 focus:ring-primary/40"
             />
           </div>
+          {fromOtherGrade && (
+            <p className="text-meta mb-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 leading-snug text-amber-900">
+              Khối đang chọn chưa có khung YCCĐ nào. Danh sách dưới đây là khung
+              của <b>khối khác</b> trong cùng môn — kiểm mã trước khi gắn, hoặc
+              nhập khung cho đúng khối ở mục Chuẩn đầu ra (YCCĐ).
+            </p>
+          )}
           <ul className="max-h-[280px] space-y-0.5 overflow-y-auto">
             {filtered.length === 0 ? (
               <li className="px-2 py-3 text-center text-[12px] text-muted-foreground">
