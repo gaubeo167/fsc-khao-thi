@@ -138,9 +138,27 @@ async function main() {
   ]) {
     await db.collection("grades").doc(g.id).set(g, { merge: true });
   }
+  // `campusIds` và `status` KHÔNG phải trường thừa: màn Quản lý môn học lọc
+  // môn theo campus đang vận hành và bỏ hẳn cách hiểu "danh sách rỗng = mọi
+  // campus". Thiếu hai trường này thì màn đó luôn trống ở local, và mọi thứ
+  // gắn với nó — sửa môn, xoá môn, mục lục, khung YCCĐ — không kiểm được.
   for (const s of [
-    { id: "subject-toan", name: "Toán", gradeIds: ["grade-6", "grade-7", "grade-10"] },
-    { id: "subject-sinh", name: "Sinh học", gradeIds: ["grade-10"] },
+    {
+      id: "subject-toan",
+      name: "Toán",
+      code: "TOAN",
+      gradeIds: ["grade-6", "grade-7", "grade-10"],
+      campusIds: ["campus-caugiay"],
+      status: "active",
+    },
+    {
+      id: "subject-sinh",
+      name: "Sinh học",
+      code: "SINH",
+      gradeIds: ["grade-10"],
+      campusIds: ["campus-caugiay"],
+      status: "active",
+    },
   ]) {
     await db.collection("subjects").doc(s.id).set(s, { merge: true });
   }
