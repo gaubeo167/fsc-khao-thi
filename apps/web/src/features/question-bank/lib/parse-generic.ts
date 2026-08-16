@@ -22,7 +22,11 @@
 import { parseAnswerKey, U_CLOSE, U_OPEN } from "./parse-exam-bank";
 import type { ShortAnswerKey } from "@/lib/exam/short-answer-match";
 
-export type GenericStrategy = "cau-n" | "ma-de-inline" | "solution-block";
+export type GenericStrategy =
+  | "cau-n"
+  | "ma-de-inline"
+  | "solution-block"
+  | "so-thu-tu";
 
 export interface GenericOption {
   label: string;
@@ -81,6 +85,16 @@ export interface GenericParseResult {
 
 /** `Câu 12.` / `Câu 12:` / `# Câu 12` — nội dung có thể nằm ngay sau. */
 const CAU_N_RE = /^\s*(?:#\s*)?C[âa]u\s*(\d+)\s*[.:)\]]?\s*(.*)$/i;
+
+/**
+ * Câu đánh số trần: `1.` `2)` — không có chữ "Câu".
+ *
+ * Đề quốc tế (AIMO, SMO…) và khá nhiều đề nội bộ viết kiểu này. Đây là mốc
+ * YẾU: `1.` cũng là cách đánh số của danh sách ghép cặp / sắp xếp, của mục
+ * lục, của phần hướng dẫn. Nên nó chỉ được dùng khi không còn mốc nào khác,
+ * và chỉ khi các số xếp thành DÃY TĂNG TỪ 1 — xem `pickStrategy`.
+ */
+const NUMBERED_RE = /^\s*(\d{1,3})\s*[.)]\s*(.*)$/;
 
 /** Mã chuyên đề `[SI10.02.15.D01]`, đứng ở BẤT KỲ đâu trong dòng. */
 const CODE_ANYWHERE_RE =
@@ -406,7 +420,34 @@ export function pickStrategy(lines: string[]): GenericStrategy | null {
     // hề là ranh giới câu.
     { s: "solution-block" as const, n: solution > 0 ? 1 : 0 },
   ].sort((a, b) => b.n - a.n);
-  return best[0].n > 0 ? best[0].s : null;
+  if (best[0].n > 0) return best[0].s;
+
+  // Không mốc nào khớp — thử cách đánh số trần. Để CUỐI CÙNG vì `1.` cũng
+  // là cách đánh số của danh sách trong đề, của mục lục, của lời dẫn.
+  return numberedRun(lines) >= 3 ? "so-thu-tu" : null;
+}
+
+/**
+ * Độ dài dãy số ĐẦU DÒNG tăng liên tiếp từ 1 (1, 2, 3…).
+ *
+ * Đòi cả ba điều — bắt đầu từ 1, tăng đúng một đơn vị, và ít nhất 3 số — vì
+ * đó là thứ phân biệt một đề đánh số với vài dòng lẻ tình cờ mở đầu bằng
+ * "1.". Chỉ đếm số lượng dòng dạng số thì đề nào có bảng ghép cặp cũng bị
+ * cắt vụn thành hàng chục "câu".
+ */
+function numberedRun(lines: string[]): number {
+  let want = 1;
+  let run = 0;
+  for (const l of lines) {
+    const m = NUMBERED_RE.exec(l.split(U_OPEN).join("").split(U_CLOSE).join(""));
+    if (!m) continue;
+    const n = Number(m[1]);
+    if (n === want) {
+      run += 1;
+      want += 1;
+    }
+  }
+  return run;
 }
 
 /**
@@ -460,6 +501,7 @@ export function parseGeneric(marked: string): GenericParseResult {
     let starts = false;
     if (strategy === "cau-n") starts = CAU_N_RE.test(line);
     else if (strategy === "ma-de-inline") starts = CODE_AT_START_RE.test(line);
+    else if (strategy === "so-thu-tu") starts = NUMBERED_RE.test(bare);
     else {
       // Đề không có mốc "Câu N": ranh giới câu là khối lời giải. Nhưng THÂN
       // lời giải nằm ngay sau chữ "Solution:", nên KHÔNG thể lấy dòng kế tiếp
@@ -543,9 +585,13 @@ function parseBlock(
   block.forEach((raw, li) => {
     let line = raw;
 
-    // Dòng mở câu: gỡ mốc `Câu N` để không lẫn vào đề bài.
+    // Dòng mở câu: gỡ mốc `Câu N` / `1.` để không lẫn vào đề bài.
     if (li === 0 && strategy === "cau-n") {
       const m = line.match(CAU_N_RE);
+      if (m) line = m[2] ?? "";
+    }
+    if (li === 0 && strategy === "so-thu-tu") {
+      const m = line.match(NUMBERED_RE);
       if (m) line = m[2] ?? "";
     }
 

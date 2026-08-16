@@ -379,7 +379,7 @@ export function ImportQuestionsDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         srTitle="Tải đề lên ngân hàng câu hỏi"
-        srDescription="Thả file Word, hệ thống tự nhận dạng rồi tách câu hỏi để bạn kiểm tra và bổ sung."
+        srDescription="Thả file Word hoặc PDF, hệ thống tự nhận dạng rồi tách câu hỏi để bạn kiểm tra và bổ sung."
         // Khung cố định: DialogContent gốc không giới hạn chiều cao, nên
         // đề 21 câu làm hộp thoại dài quá khung nhìn và chân trang trôi đè
         // lên danh sách. Cột dọc + `min-h-0` ở phần giữa mới cho vùng cuộn
@@ -416,7 +416,7 @@ export function ImportQuestionsDialog({
             <p className="text-meta mt-0.5 truncate">
               {phase.kind === "review"
                 ? `${phase.formatLabel} · ${drafts.length} câu`
-                : "Một cửa cho mọi file .docx — hệ thống tự nhận dạng khuôn đề."}
+                : "Một cửa cho mọi file .docx và .pdf — hệ thống tự nhận dạng khuôn đề."}
             </p>
           </div>
           {phase.kind === "review" && drafts.length - validCount > 0 && (

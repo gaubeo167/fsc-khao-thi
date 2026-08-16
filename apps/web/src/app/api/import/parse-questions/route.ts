@@ -136,7 +136,7 @@ export async function POST(req: Request) {
         message:
           doc.length < 40
             ? "Đọc được rất ít chữ từ file. Thường là do nội dung nằm trong hộp văn bản (text box), hình vẽ hoặc ảnh chụp — Word không xuất được phần đó. Hãy dán nội dung ra ngoài dưới dạng chữ thường."
-            : "Không nhận ra cấu trúc câu hỏi trong file. Cần mỗi câu bắt đầu bằng một dòng “Câu 1”, hoặc bằng mã chuyên đề dạng [SI10.02.2.D05].",
+            : "Không nhận ra cấu trúc câu hỏi trong file. Cần mỗi câu bắt đầu bằng một dòng “Câu 1”, hoặc đánh số “1.” “2.” “3.” liên tiếp từ 1, hoặc bằng mã chuyên đề dạng [SI10.02.2.D05].",
         detect,
         preview: previewLines(fscText),
       },
