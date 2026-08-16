@@ -260,17 +260,21 @@ export function draftFromGeneric(
   return {
     id: nextId(),
     index,
-    // Thứ tự ưu tiên: chữ LOẠI trong mã YCCĐ trước, rồi mới tới việc đếm
-    // phương án.
+    // Thứ tự ưu tiên: nhãn dạng câu người soạn ghi thẳng ra → chữ LOẠI trong
+    // mã YCCĐ → đếm phương án.
     //
-    // Mã là nguồn đáng tin hơn vì câu Đúng/Sai và trả lời ngắn không có
-    // A/B/C/D nào để đếm — dựa vào phương án thì đúng những câu đó ra "chưa
-    // nhận ra dạng" dù đề đã ghi rõ loại ngay trong mã.
+    // Nhãn `[TN]`/`[DS]`/`[TLN]`/`[TL]` đứng trước vì nó là ý ĐỊNH của người
+    // soạn, viết riêng cho việc này. Mã YCCĐ đứng sau nhưng vẫn trên việc
+    // đếm, vì câu Đúng/Sai và trả lời ngắn không có A/B/C/D nào để đếm —
+    // dựa vào phương án thì đúng những câu đó ra "chưa nhận ra dạng" dù đề
+    // đã ghi rõ loại.
     //
-    // Riêng chữ D vẫn để việc đếm quyết định giữa một/nhiều đáp án, vì mã chỉ
-    // nói "trắc nghiệm" chứ không nói mấy đáp án đúng.
+    // Riêng chữ D của mã YCCĐ vẫn để việc đếm quyết định giữa một/nhiều đáp
+    // án, vì mã chỉ nói "trắc nghiệm" chứ không nói mấy đáp án đúng. Nhãn
+    // thì phân biệt được: TN một đáp án, TNN nhiều đáp án.
     type:
-      q.typeLetter === "F"
+      q.typeTag ??
+      (q.typeLetter === "F"
         ? "multi-tf"
         : q.typeLetter === "S"
           ? "short-answer"
@@ -282,7 +286,7 @@ export function draftFromGeneric(
                 : "mcq-single"
               : q.typeLetter === "D"
                 ? "mcq-single"
-                : null,
+                : null),
     difficulty: q.difficulty,
     content: q.content,
     options: q.options.map((o) => ({ content: o.content, isCorrect: o.isCorrect })),

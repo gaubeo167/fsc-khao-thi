@@ -53,6 +53,11 @@ export interface GenericQuestion {
    * đó ra "chưa nhận ra dạng" dù đề đã ghi rõ loại ngay trong mã.
    */
   typeLetter: "D" | "F" | "S" | "E" | null;
+  /**
+   * Dạng câu đọc từ nhãn `[TN]` / `[DS]` / `[TLN]` / `[TL]` — dành cho đề
+   * KHÔNG có mã YCCĐ. Xem bảng nhãn ở `TYPE_TOKENS`.
+   */
+  typeTag: GenericTypeTag | null;
   warnings: string[];
 }
 
@@ -81,8 +86,93 @@ const SUBITEM_RE = /^\s*([a-dA-D])\)\s*(.*)$/;
 /** Đáp án trả lời ngắn: `<Key=42>` hoặc `<Key=42|50%|gợi ý>`. */
 const KEY_RE = /<Key\s*=\s*([^>]*)>/i;
 
-/** Nhãn mức độ theo chuẩn Bộ, viết trong ngoặc vuông. */
-const DIFFICULTY_RE = /\[\s*(NB|TH|VDC|VD)\s*\]/i;
+/**
+ * Nhãn trong ngoặc vuông của đề KHÔNG theo mã YCCĐ.
+ *
+ * Hai trục, viết chung một kiểu, đặt sau số câu:
+ *
+ *     Câu 1. [NB][TN] Nội dung câu hỏi…     ← mức độ + dạng câu
+ *     Câu 2. [VD-TL] …                       ← viết gộp cũng được
+ *
+ * Vì sao có trục DẠNG CÂU: đề không theo YCCĐ thì hệ thống chỉ còn cách ĐẾM
+ * phương án để đoán dạng. Đếm được với trắc nghiệm, nhưng câu Đúng/Sai, trả
+ * lời ngắn và tự luận đều không có A/B/C/D nào để đếm — nên chúng luôn ra
+ * "chưa nhận ra dạng" và người soạn phải chọn tay từng câu. Một nhãn hai chữ
+ * xoá hẳn việc đó.
+ *
+ * Chữ một ký tự (D/M/F/S/E) dùng chung bảng với mã YCCĐ để cả hệ thống chỉ
+ * có MỘT quy ước; chữ tiếng Việt (TN/TNN/DS/TLN/TL) là lối viết tự nhiên hơn
+ * cho người soạn. Nhận cả hai.
+ */
+const DIFF_TOKENS: Record<string, "easy" | "medium" | "hard"> = {
+  NB: "easy",
+  TH: "medium",
+  VD: "hard",
+  VDC: "hard",
+};
+
+/** Dạng câu suy từ nhãn — cùng tên với `QuestionType` của kho câu hỏi. */
+export type GenericTypeTag =
+  | "mcq-single"
+  | "mcq-multi"
+  | "multi-tf"
+  | "short-answer"
+  | "essay";
+
+const TYPE_TOKENS: Record<string, GenericTypeTag> = {
+  // Trắc nghiệm một đáp án
+  TN: "mcq-single",
+  D: "mcq-single",
+  // Trắc nghiệm nhiều đáp án
+  TNN: "mcq-multi",
+  M: "mcq-multi",
+  // Đúng/Sai nhiều ý
+  DS: "multi-tf",
+  F: "multi-tf",
+  // Trả lời ngắn
+  TLN: "short-answer",
+  S: "short-answer",
+  // Tự luận
+  TL: "essay",
+  E: "essay",
+};
+
+/** Một cụm ngoặc vuông bất kỳ, ngắn — đủ dài cho `[NB-TLN]`, không nuốt cả câu. */
+const TAG_GROUP_RE = /\[([^[\]]{1,24})\]/g;
+
+/** `Đ` → `D` để `[ĐS]` và `[DS]` là một. */
+function normTag(s: string): string {
+  return s.toUpperCase().replace(/Đ/g, "D");
+}
+
+/**
+ * Đọc nhãn mức độ / dạng câu trên một dòng và gỡ chúng khỏi nội dung.
+ *
+ * CHỈ tiêu thụ cụm ngoặc mà MỌI chữ bên trong đều nằm trong hai bảng trên.
+ * Cụm lạ — `[1]`, `[Hình 2]`, `[SGK tr.45]` — để nguyên trong đề bài, vì
+ * đoán ở đây là lặng lẽ ăn mất chữ của người soạn.
+ */
+export function readTags(line: string): {
+  line: string;
+  difficulty: "easy" | "medium" | "hard" | null;
+  typeTag: GenericTypeTag | null;
+} {
+  let difficulty: "easy" | "medium" | "hard" | null = null;
+  let typeTag: GenericTypeTag | null = null;
+  const out = line.replace(TAG_GROUP_RE, (whole, inner: string) => {
+    const tokens = normTag(inner)
+      .split(/[-/,;+\s]+/)
+      .filter(Boolean);
+    if (tokens.length === 0) return whole;
+    if (!tokens.every((t) => t in DIFF_TOKENS || t in TYPE_TOKENS)) return whole;
+    for (const t of tokens) {
+      if (t in DIFF_TOKENS && !difficulty) difficulty = DIFF_TOKENS[t]!;
+      if (t in TYPE_TOKENS && !typeTag) typeTag = TYPE_TOKENS[t]!;
+    }
+    return " ";
+  });
+  return { line: out, difficulty, typeTag };
+}
 
 /** Dòng tiêu đề phần đề thi — bỏ qua, không phải câu hỏi. */
 const SECTION_RE =
@@ -181,13 +271,6 @@ function readUnderline(s: string): { text: string; underlined: boolean } {
     text: s.split(U_OPEN).join("").split(U_CLOSE).join("").trim(),
     underlined,
   };
-}
-
-function toDifficulty(tag: string): "easy" | "medium" | "hard" {
-  const t = tag.toUpperCase();
-  if (t === "NB") return "easy";
-  if (t === "TH") return "medium";
-  return "hard"; // VD, VDC
 }
 
 /** Chọn cách chia câu dựa trên bằng chứng trong file, không theo thứ tự ưu tiên. */
@@ -323,6 +406,7 @@ function parseBlock(
   let chuyenDeCode: string | null = null;
   let rawCode: string | null = null;
   let typeLetter: GenericQuestion["typeLetter"] = null;
+  let typeTag: GenericTypeTag | null = null;
   let difficulty: "easy" | "medium" | "hard" | null = null;
 
   const contentLines: string[] = [];
@@ -355,11 +439,12 @@ function parseBlock(
       line = line.replace(CODE_ANYWHERE_RE, " ");
     }
 
-    // Nhãn mức độ.
-    const diffM = line.match(DIFFICULTY_RE);
-    if (diffM && !difficulty) {
-      difficulty = toDifficulty(diffM[1]);
-      line = line.replace(DIFFICULTY_RE, " ");
+    // Nhãn mức độ + dạng câu, vd `Câu 1. [NB][TN]`.
+    const tags = readTags(line);
+    if (tags.difficulty || tags.typeTag) {
+      line = tags.line;
+      if (!difficulty) difficulty = tags.difficulty;
+      if (!typeTag) typeTag = tags.typeTag;
     }
 
     if (SOLUTION_RE.test(line)) {
@@ -385,7 +470,7 @@ function parseBlock(
     // Câu Đúng/Sai (mã .F): các dòng `a) …` là Ý CON, không phải phương án.
     // Bản trước không tách nên chúng trôi hết vào đề bài và câu nào cũng báo
     // "Cần ít nhất 2 ý Đúng/Sai" dù đề viết đủ.
-    if (typeLetter === "F") {
+    if (typeLetter === "F" || typeTag === "multi-tf") {
       const { clean, marked } = stripUnderline(line);
       const sub = SUBITEM_RE.exec(clean);
       if (sub) {
@@ -450,6 +535,7 @@ function parseBlock(
     chuyenDeCode,
     rawCode,
     typeLetter,
+    typeTag,
     difficulty,
     warnings: w,
   };
