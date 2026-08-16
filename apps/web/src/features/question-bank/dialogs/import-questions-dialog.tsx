@@ -83,11 +83,24 @@ const DIFFICULTY_SCALE = [
 });
 
 /** Dạng câu mà luồng nhập ghi được vào kho (xem draftToQuestion). */
+/**
+ * Dạng câu chọn được ở màn sửa — mọi dạng kho câu hỏi ghi được.
+ *
+ * Cố ý KHÔNG lấy thẳng `QUESTION_TYPES`: mục `ai-generated` trong đó là một
+ * luồng khác (mô tả chủ đề cho AI sinh câu), không phải một dạng câu để
+ * người dùng đổi sang.
+ */
 const SUPPORTED_TYPES: QuestionType[] = [
   "mcq-single",
   "mcq-multi",
+  "true-false",
   "multi-tf",
   "short-answer",
+  "fill-blank",
+  "matching",
+  "ordering",
+  "drag-drop",
+  "underline",
   "essay",
 ];
 
@@ -805,6 +818,20 @@ function QuestionEditor({
       subQuestions: q.subQuestions.map((sq, i) => ({ id: `s${i + 1}`, ...sq })),
       acceptedAnswers: q.acceptedAnswers,
       caseSensitive: false,
+      // Dữ liệu riêng của từng dạng. Tên trường phải khớp `QuestionSchema` vì
+      // `TypeSpecificFields` đọc thẳng theo tên đó.
+      correctAnswer: q.correctAnswer,
+      blanks: q.blanks,
+      pairs: q.pairs.map((p, i) => ({ id: `p${i + 1}`, ...p })),
+      items: q.items.map((content, i) => ({ id: `i${i + 1}`, content })),
+      zones: q.zones.map((correctContent, i) => ({ id: `z${i + 1}`, correctContent })),
+      distractors: q.distractors.map((content, i) => ({
+        id: `d${i + 1}`,
+        content,
+        // Ghép cặp gọi cột phải là `right`, kéo thả gọi là `content`. Đặt cả
+        // hai để một mảng dùng được cho cả hai dạng.
+        right: content,
+      })),
       competencyIds: q.chuyenDeId ? [q.chuyenDeId] : [],
       bloomLevel: q.bloomLevel ?? null,
       tocNodeId: null,
@@ -839,6 +866,23 @@ function QuestionEditor({
           correctAnswer: !!x?.correctAnswer,
         })),
         acceptedAnswers: (v.acceptedAnswers ?? []) as DraftQuestion["acceptedAnswers"],
+        correctAnswer: (v.correctAnswer ?? null) as boolean | null,
+        blanks: ((v.blanks ?? []) as Array<{ acceptedAnswers?: string[] }>).map((b) => ({
+          acceptedAnswers: (b?.acceptedAnswers ?? []).filter(Boolean),
+        })),
+        pairs: ((v.pairs ?? []) as Array<{ left?: string; right?: string }>).map((p) => ({
+          left: p?.left ?? "",
+          right: p?.right ?? "",
+        })),
+        items: ((v.items ?? []) as Array<{ content?: string }>).map(
+          (i) => i?.content ?? "",
+        ),
+        zones: ((v.zones ?? []) as Array<{ correctContent?: string }>).map(
+          (z) => z?.correctContent ?? "",
+        ),
+        distractors: (
+          (v.distractors ?? []) as Array<{ content?: string; right?: string }>
+        ).map((d) => d?.content ?? d?.right ?? ""),
         chuyenDeId: pickedId,
         // `QuestionCompetencyField` cập nhật `bloomLevel` theo YCCĐ vừa chọn,
         // nên chọn lại YCCĐ là mức nhận thức đi theo, không phải sửa hai chỗ.

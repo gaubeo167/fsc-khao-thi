@@ -92,6 +92,57 @@ export function draftToQuestion(
         acceptedAnswers: q.acceptedAnswers,
         caseSensitive: false,
       } as NewQuestion;
+    case "true-false":
+      // `null` = file không ghi đáp án. `validateDraft` đã chặn ở đường gửi
+      // duyệt; ở đường lưu nháp thì thà không ghi câu còn hơn ghi "Sai".
+      if (q.correctAnswer == null) return null;
+      return {
+        ...base,
+        type: "true-false",
+        correctAnswer: q.correctAnswer,
+      } as NewQuestion;
+    case "fill-blank":
+      return {
+        ...base,
+        type: "fill-blank",
+        blanks: q.blanks.map((b) => ({ acceptedAnswers: b.acceptedAnswers })),
+      } as NewQuestion;
+    case "matching":
+      return {
+        ...base,
+        type: "matching",
+        pairs: q.pairs.map((p, i) => ({
+          id: `p${i + 1}`,
+          left: p.left,
+          right: p.right,
+        })),
+        distractors: q.distractors.map((d, i) => ({
+          id: `md${i + 1}`,
+          right: d,
+        })),
+      } as NewQuestion;
+    case "ordering":
+      return {
+        ...base,
+        type: "ordering",
+        items: q.items.map((content, i) => ({ id: `i${i + 1}`, content })),
+      } as NewQuestion;
+    case "drag-drop":
+      return {
+        ...base,
+        type: "drag-drop",
+        zones: q.zones.map((correctContent, i) => ({
+          id: `z${i + 1}`,
+          correctContent,
+        })),
+        distractors: q.distractors.map((content, i) => ({
+          id: `dd${i + 1}`,
+          content,
+        })),
+      } as NewQuestion;
+    case "underline":
+      // Đáp án nằm trong `content` dưới dạng mốc [u:…] — không có trường riêng.
+      return { ...base, type: "underline" } as NewQuestion;
     case "essay":
       return {
         ...base,
@@ -100,7 +151,7 @@ export function draftToQuestion(
         aiAssist: false,
       } as NewQuestion;
     default:
-      // Dạng parser đọc ra nhưng luồng nhập chưa ghi được (matching, ordering…).
+      // Dạng parser đọc ra nhưng luồng nhập chưa ghi được (ai-generated).
       // Trả null thay vì ép về mcq — ép là làm hỏng câu một cách im lặng.
       return null;
   }

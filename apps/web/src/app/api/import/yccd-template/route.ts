@@ -74,8 +74,11 @@ export async function GET(req: Request) {
           blank(),
 
           h("2. Mã YCCĐ đặt trong ngoặc vuông, ngay sau số câu", HeadingLevel.HEADING_2),
+          // "Ví dụ:" ở đầu dòng KHÔNG phải để cho đẹp. Parser cắt câu tại mọi
+          // dòng bắt đầu bằng "Câu N", nên dòng minh hoạ này mà viết trần thì
+          // chính phần hướng dẫn bị đọc thành một câu hỏi thừa.
           p([
-            t("Câu 1. "),
+            t("Ví dụ:  Câu 1. "),
             t("[XX10.01.01.D01]", { bold: true }),
             t(" Nội dung câu hỏi viết ở đây?"),
           ]),
