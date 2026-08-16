@@ -477,5 +477,55 @@ const Uc = "⟦/U⟧";
   check("dạng khác: giữ nguyên gạch dưới trong đề", /_{2,}/.test(tn.content), tn.content);
 }
 
+/* ── Khuôn "khối lời giải": đề bài phải được kéo ra khỏi khối lời giải ──
+ *
+ * Word đánh số câu bằng danh sách tự động, nên SỐ KHÔNG nằm trong chữ — bộ
+ * đọc không thấy mốc "1)" nào. Ranh giới câu còn lại duy nhất là khối
+ * "Solution:", và đề bài câu sau nằm LẪN trong khối lời giải câu trước.
+ *
+ * Bẫy: Word gần như luôn chèn một dòng trống giữa đề bài và các phương án.
+ * Đoạn kéo ngược dừng ở dòng trống đầu tiên nên nó kéo về đúng số không
+ * dòng — file AIMO ra 14/16 câu "(đề bài trống)".
+ */
+{
+  const doc = [
+    "A jacket is on sale. What was the original price?",
+    "",
+    "A: $466 B: $200 C: $400 D: $240",
+    "",
+    "Solution:",
+    "The original price is 466.",
+    "",
+    "In a coordinate plane, P is the midpoint of A and B. Find ab.",
+    "",
+    "A: 1 B: 2 C: 3 D: 4",
+    "",
+    "Solution:",
+    "Because P is the midpoint, ab = 2.",
+    "",
+    "The foot of a ladder is 6 feet from a wall. How long is the ladder?",
+    "",
+    "A: 8 B: 10 C: 12 D: 14",
+  ].join("\n");
+  const r = parseGeneric(doc);
+  check("khối lời giải: tách đúng 3 câu", r.questions.length === 3, `${r.questions.length} câu`);
+  check(
+    "KHÔNG câu nào đề bài rỗng",
+    r.questions.every((q) => q.content.trim().length > 10),
+    JSON.stringify(r.questions.map((q) => q.content.slice(0, 30))),
+  );
+  check(
+    "đề bài câu 2 đúng là câu 2, không phải lời giải câu 1",
+    /coordinate plane/.test(r.questions[1]?.content ?? ""),
+    r.questions[1]?.content,
+  );
+  check(
+    "lời giải câu 1 KHÔNG trôi sang đề bài câu 2",
+    !/original price is 466/.test(r.questions[1]?.content ?? ""),
+    r.questions[1]?.content,
+  );
+  check("mỗi câu vẫn đủ 4 phương án", r.questions.every((q) => q.options.length === 4));
+}
+
 console.log(`\n${pass} pass · ${fail} fail`);
 process.exit(fail === 0 ? 0 : 1);

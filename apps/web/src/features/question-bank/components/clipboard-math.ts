@@ -1,3 +1,4 @@
+import { mathInlineRe } from "@/lib/math-delimiters";
 /**
  * Clipboard → LaTeX converter.
  *
@@ -428,7 +429,7 @@ function cleanupText(text: string): string {
 }
 
 function countMathDelimiters(text: string): number {
-  const inline = (text.match(/\$[^\n$]+\$/g) ?? []).length;
+  const inline = (text.match(mathInlineRe()) ?? []).length;
   const block = (text.match(/\$\$[\s\S]+?\$\$/g) ?? []).length;
   return inline + block;
 }

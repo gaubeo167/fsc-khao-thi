@@ -62,6 +62,22 @@ const SYMBOL_MAP: Record<string, string> = {
   "Σ": "\\Sigma ",
   "Π": "\\Pi ",
   "Ω": "\\Omega ",
+
+  // ── Ký tự có nghĩa riêng trong LaTeX, phải thoát ─────────────────────
+  //
+  // Đây là CHỮ người soạn gõ trong khối công thức Word, không phải lệnh.
+  // Để nguyên thì:
+  //   `$` đụng vào chính dấu `$` dùng làm mốc công thức → cắt đôi công thức
+  //   `%` mở chú thích LaTeX → nuốt sạch phần còn lại của dòng
+  //
+  // Cả hai đều có thật trong đề: file AIMO có khối công thức nội dung đúng
+  // nguyên văn `$140÷1-70%≈$466` — tiền đô và phần trăm nằm ngay trong công
+  // thức.
+  $: "\\$",
+  "%": "\\%",
+  "&": "\\&",
+  "#": "\\#",
+  _: "\\_",
 };
 
 function decodeXmlEntities(s: string): string {

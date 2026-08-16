@@ -10,6 +10,7 @@ import { MathLiveDialog } from "./mathlive-dialog";
 import { classifyMediaUrl } from "./media-utils";
 import { MediaInsertDialog, type MediaKind } from "./media-insert-dialog";
 import { cn } from "@/lib/utils";
+import { MATH_ANY_SRC, mathAnyRe } from "@/lib/math-delimiters";
 
 interface Props {
   value: string;
@@ -1098,7 +1099,7 @@ export function WysiwygEditor({
       sel?.addRange(r);
     }
 
-    const regex = /(\$\$[\s\S]+?\$\$|\$[^\n$]+?\$)/g;
+    const regex = mathAnyRe();
     let last = 0;
     const frag = document.createDocumentFragment();
     let m: RegExpExecArray | null;
@@ -1135,7 +1136,7 @@ export function WysiwygEditor({
 
     // Only intercept when we actually transformed something — let plain text
     // paste use the browser's default so we don't disturb regular workflows.
-    const hasMathDelimiters = /\$\$[\s\S]+?\$\$|\$[^\n$]+?\$/.test(converted);
+    const hasMathDelimiters = mathAnyRe("").test(converted);
     const wasHtmlWithMath = mathCount > 0;
     const wasHtmlComplex = Boolean(html) && /<[a-zA-Z][^>]*>/.test(html);
     if (!hasMathDelimiters && !wasHtmlWithMath && !wasHtmlComplex) return;
@@ -1257,7 +1258,10 @@ function escapeHtml(s: string): string {
 function parseToHtml(value: string): string {
   // Single regex captures all chip patterns in source order
   const regex =
-    /(\$\$[\s\S]+?\$\$|\$[^\n$]+?\$|!\[[^\]]*\]\([^)]+\)|\[video:[^\]]+\]|\[audio:[^\]]+\]|\[blank:\d+\]|\[zone:\d+\]|\[u:[^\]\n]+\])/g;
+    new RegExp(
+      `(${MATH_ANY_SRC}|!\\[[^\\]]*\\]\\([^)]+\\)|\\[video:[^\\]]+\\]|\\[audio:[^\\]]+\\]|\\[blank:\\d+\\]|\\[zone:\\d+\\]|\\[u:[^\\]\\n]+\\])`,
+      "g",
+    );
 
   let html = "";
   let last = 0;
