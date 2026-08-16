@@ -179,7 +179,7 @@ export function validateDraft(
       }
       // Số ô trống trong đề phải khớp số dòng đáp án, nếu không thì học sinh
       // thấy 3 ô mà máy chỉ chấm 2 — sai điểm và không ai để ý.
-      const holes = (q.content.match(/_{2,}/g) ?? []).length;
+      const holes = (q.content.match(/\[blank:\d+\]/g) ?? []).length;
       if (holes > 0 && holes !== q.blanks.length) {
         issues.push({
           field: "answer",
@@ -227,6 +227,35 @@ export function validateDraft(
   }
 
   return issues;
+}
+
+/**
+ * Đổi các dấu `___` trong đề bài thành THẺ ô trống / vùng thả có đánh số.
+ *
+ * Trình soạn thảo đếm ô trống bằng thẻ `[blank:N]` trong đề bài, KHÔNG phải
+ * bằng mảng đáp án: bao nhiêu thẻ thì bấy nhiêu ô nhập đáp án hiện ra. Đề
+ * Word viết ô trống bằng gạch dưới, nên nếu để nguyên thì đề nhìn thì có ô
+ * trống mà trình soạn thảo đếm ra 0 — và nó cắt luôn mảng đáp án vừa đọc
+ * được về 0. Người dùng thấy đúng cảnh "không tự thêm ô trống vào chỗ có ô
+ * trống, mà cũng không thêm tay được".
+ *
+ * Người soạn gõ sẵn `[blank:1]` thì giữ nguyên, chỉ đánh số lại cho liền
+ * mạch.
+ */
+export function markBlanks(content: string, kind: "blank" | "zone"): string {
+  // Gom cả hai cách viết về MỘT mốc trung gian rồi mới đánh số, để thẻ người
+  // soạn gõ sẵn và dấu gạch dưới của file Word không đánh số chồng lên nhau.
+  const MARK = "\u241F"; // ␟ — ký tự không bao giờ có trong đề
+  let n = 0;
+  return content
+    .replace(/\[(?:blank|zone):\d+\]/g, MARK)
+    .replace(/_{2,}/g, MARK)
+    .split(MARK)
+    .reduce((acc, part, idx) => {
+      if (idx === 0) return part;
+      n += 1;
+      return `${acc}[${kind}:${n}]${part}`;
+    }, "");
 }
 
 /** Bỏ thẻ ảnh markdown và khoảng trắng để biết ô có chữ thật hay không. */
@@ -330,11 +359,40 @@ export function draftFromMaDe(
  * không đánh dấu đáp án đúng và không ghi mức độ. Để `null` đúng chỗ để màn
  * sửa bắt bổ sung, thay vì điền đại.
  */
+/**
+ * Dạng câu của một khối đề tự soạn.
+ *
+ * Thứ tự ưu tiên: nhãn dạng câu người soạn ghi thẳng ra → chữ LOẠI trong mã
+ * YCCĐ → đếm phương án.
+ *
+ * Nhãn `[TN]`/`[DS]`/`[TLN]`/`[TL]` đứng trước vì nó là ý ĐỊNH của người
+ * soạn, viết riêng cho việc này. Mã YCCĐ đứng sau nhưng vẫn trên việc đếm,
+ * vì câu Đúng/Sai và trả lời ngắn không có A/B/C/D nào để đếm — dựa vào
+ * phương án thì đúng những câu đó ra "chưa nhận ra dạng" dù đề đã ghi rõ.
+ *
+ * Riêng chữ D của mã YCCĐ vẫn để việc đếm quyết định giữa một/nhiều đáp án,
+ * vì mã chỉ nói "trắc nghiệm" chứ không nói mấy đáp án đúng. Nhãn thì phân
+ * biệt được: TN một đáp án, TNN nhiều đáp án.
+ */
+function genericType(
+  q: import("./parse-generic").GenericQuestion,
+  correct: number,
+): QuestionType | null {
+  if (q.typeTag) return q.typeTag;
+  if (q.typeLetter === "F") return "multi-tf";
+  if (q.typeLetter === "S") return "short-answer";
+  if (q.typeLetter === "E") return "essay";
+  if (q.options.length >= 2) return correct > 1 ? "mcq-multi" : "mcq-single";
+  if (q.typeLetter === "D") return "mcq-single";
+  return null;
+}
+
 export function draftFromGeneric(
   q: import("./parse-generic").GenericQuestion,
   index: number,
 ): DraftQuestion {
   const correct = q.options.filter((o) => o.isCorrect).length;
+  const type = genericType(q, correct);
   return {
     id: nextId(),
     index,
@@ -350,23 +408,17 @@ export function draftFromGeneric(
     // Riêng chữ D của mã YCCĐ vẫn để việc đếm quyết định giữa một/nhiều đáp
     // án, vì mã chỉ nói "trắc nghiệm" chứ không nói mấy đáp án đúng. Nhãn
     // thì phân biệt được: TN một đáp án, TNN nhiều đáp án.
-    type:
-      q.typeTag ??
-      (q.typeLetter === "F"
-        ? "multi-tf"
-        : q.typeLetter === "S"
-          ? "short-answer"
-          : q.typeLetter === "E"
-            ? "essay"
-            : q.options.length >= 2
-              ? correct > 1
-                ? "mcq-multi"
-                : "mcq-single"
-              : q.typeLetter === "D"
-                ? "mcq-single"
-                : null),
+    type,
     difficulty: q.difficulty,
-    content: q.content,
+    // Ô trống của đề Word viết bằng gạch dưới; trình soạn thảo đếm ô trống
+    // bằng thẻ có đánh số. Không đổi ở đây thì đề nhìn thì có ô trống mà
+    // trình soạn thảo đếm ra 0 ô, rồi cắt luôn đáp án vừa đọc được.
+    content:
+      type === "fill-blank"
+        ? markBlanks(q.content, "blank")
+        : type === "drag-drop"
+          ? markBlanks(q.content, "zone")
+          : q.content,
     options: q.options.map((o) => ({ content: o.content, isCorrect: o.isCorrect })),
     subQuestions: q.subQuestions ?? [],
     acceptedAnswers: q.acceptedAnswers ?? [],

@@ -1027,6 +1027,31 @@ function QuestionEditor({
             <ContentEditor
               value={(field.value as string) ?? ""}
               onChange={field.onChange}
+              // Ba nút này quyết định người soạn có THÊM được ô trống / vùng
+              // thả / cụm gạch chân hay không. Thiếu chúng thì câu đọc từ
+              // file có sẵn bao nhiêu ô là chịu bấy nhiêu, sửa lại không
+              // được — đúng chỗ người dùng kêu "không thêm ô trống được".
+              showBlankButton={type === "fill-blank"}
+              showZoneButton={type === "drag-drop"}
+              showUnderlineButton={type === "underline"}
+              onBlankDeleted={
+                type === "fill-blank"
+                  ? (deletedIdx) => {
+                      // Xoá đúng dòng đáp án của ô vừa bị xoá. Không làm thì
+                      // phần đồng bộ theo SỐ LƯỢNG ở dưới cắt mất dòng CUỐI —
+                      // xoá ô giữa lại mất đáp án của ô cuối.
+                      const cur =
+                        (form.getValues("blanks") as unknown[] | undefined) ?? [];
+                      if (deletedIdx < 1 || deletedIdx > cur.length) return;
+                      const next = cur.slice();
+                      next.splice(deletedIdx - 1, 1);
+                      form.setValue("blanks", next, {
+                        shouldValidate: true,
+                        shouldDirty: true,
+                      });
+                    }
+                  : undefined
+              }
             />
           )}
         />
