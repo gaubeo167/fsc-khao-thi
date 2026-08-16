@@ -392,7 +392,7 @@ export function ImportQuestionsDialog({
         <input
           ref={fileRef}
           type="file"
-          accept=".docx"
+          accept=".docx,.pdf"
           className="hidden"
           onChange={(e) => {
             const f = e.target.files?.[0];
@@ -506,11 +506,15 @@ export function ImportQuestionsDialog({
                 <>
                   <Upload className="h-6 w-6 text-muted-foreground" />
                   <span className="text-small font-semibold">
-                    Chọn file Word (.docx)
+                    Chọn file Word (.docx) hoặc PDF
                   </span>
                   <span className="text-hint text-muted-foreground">
                     Đề theo mẫu FSC, đề theo mã chuyên đề, hay đề tự soạn — không
                     cần chọn loại, hệ thống tự nhận.
+                  </span>
+                  <span className="text-hint text-muted-foreground">
+                    PDF đọc được chữ nhưng KHÔNG mang dấu gạch chân, nên đáp án
+                    đúng phải chọn tay. PDF bản scan thì không đọc được.
                   </span>
                 </>
               )}

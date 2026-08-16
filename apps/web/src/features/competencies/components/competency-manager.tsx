@@ -28,6 +28,13 @@ import {
   type CompetencyKind,
 } from "../data/types";
 import { useCompetenciesStore } from "../state/competencies-store";
+import { ConfirmActionDialog } from "@/features/admin/users/dialogs/confirm-action-dialog";
+import {
+  clearCompetencyRefs,
+  questionsOfCompetency,
+  subtreeIds,
+} from "@/features/question-bank/lib/impact";
+import { useQuestionsStore } from "@/features/question-bank/state/questions-store";
 
 interface Props {
   subjectId: string;
@@ -52,6 +59,9 @@ export function CompetencyManager({
   const createCompetency = useCompetenciesStore((s) => s.createCompetency);
   const updateCompetency = useCompetenciesStore((s) => s.updateCompetency);
   const removeCompetency = useCompetenciesStore((s) => s.removeCompetency);
+  const questions = useQuestionsStore((s) => s.questions);
+  const updateQuestion = useQuestionsStore((s) => s.update);
+  const [deleteTarget, setDeleteTarget] = useState<Competency | null>(null);
 
   const scoped = useMemo(
     () =>
@@ -60,6 +70,14 @@ export function CompetencyManager({
       ),
     [competencies, subjectId, gradeId],
   );
+
+  const deleteChildCount = deleteTarget
+    ? subtreeIds(competencies, deleteTarget.id).size - 1
+    : 0;
+  const deleteQuestionCount = deleteTarget
+    ? questionsOfCompetency(questions, subtreeIds(competencies, deleteTarget.id))
+        .length
+    : 0;
 
   /** Mã của cả môn, MỌI khối — để màn nhập soát được "file này là môn khác". */
   const subjectCodes = useMemo(
@@ -249,18 +267,59 @@ export function CompetencyManager({
                 if (k) setNodeDialog({ mode: "add", parentId: parent.id, kind: k });
               }}
               onEdit={(node) => setNodeDialog({ mode: "edit", node })}
-              onDelete={(node) => {
-                const kids = scoped.filter((c) => c.parentId === node.id).length;
-                const msg =
-                  kids > 0
-                    ? `Xoá "${node.title}" và toàn bộ ${kids} mục con?`
-                    : `Xoá "${node.title}"?`;
-                if (window.confirm(msg)) removeCompetency(node.id);
-              }}
+              onDelete={(node) => setDeleteTarget(node)}
             />
           ))}
         </ul>
       )}
+
+      {/* Xoá node YCCĐ: câu hỏi KHÔNG mất, nhưng mất phần gắn năng lực —
+          nói ra con số trước khi bấm, và gỡ tham chiếu cho sạch sau khi bấm.
+          Không gỡ thì câu hỏi ở lại với một id chết: ô chọn hiện trống mà dữ
+          liệu vẫn mang id đó, và mọi thống kê theo YCCĐ đếm hụt. */}
+      <ConfirmActionDialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        variant="destructive"
+        title="Xoá mục trong khung YCCĐ?"
+        description={
+          deleteTarget ? (
+            <>
+              Xoá{" "}
+              <span className="font-medium text-foreground/85">
+                {deleteTarget.title}
+              </span>
+              {deleteChildCount > 0 ? ` cùng ${deleteChildCount} mục con` : ""}.
+              Hành động không thể hoàn tác.
+              {deleteQuestionCount > 0 && (
+                <>
+                  <br />
+                  <br />
+                  <span className="font-semibold text-destructive">
+                    {deleteQuestionCount} câu hỏi
+                  </span>{" "}
+                  đang gắn YCCĐ này sẽ KHÔNG bị xoá, nhưng mất phần gắn năng
+                  lực: chúng vẫn thuộc môn – khối cũ, chỉ là không còn YCCĐ nào.
+                  Ma trận “Tạo đề theo YCCĐ” sẽ không đếm chúng nữa cho tới khi
+                  gắn lại.
+                </>
+              )}
+            </>
+          ) : (
+            ""
+          )
+        }
+        confirmLabel="Xoá mục"
+        onConfirm={() => {
+          if (!deleteTarget) return;
+          const ids = subtreeIds(competencies, deleteTarget.id);
+          for (const q of questionsOfCompetency(questions, ids)) {
+            const patch = clearCompetencyRefs(q, ids);
+            if (patch) updateQuestion(q.id, patch);
+          }
+          removeCompetency(deleteTarget.id);
+        }}
+      />
 
       <CompetencyImportDialog
         open={importOpen}

@@ -37,6 +37,12 @@ import { useCampusStore } from "@/features/campus/state/campus-store";
 import { useCampusesStore } from "@/features/campus/state/campuses-store";
 import { useGradesStore } from "@/features/grades/state/grades-store";
 import { CompetencyManager } from "@/features/competencies/components/competency-manager";
+import {
+  questionsOfSubject,
+  questionsOfToc,
+  subtreeIds,
+} from "@/features/question-bank/lib/impact";
+import { useQuestionsStore } from "@/features/question-bank/state/questions-store";
 import { TocTree } from "@/features/subjects/components/toc-tree";
 import type { Subject } from "@/features/subjects/data/seed-subjects";
 import {
@@ -84,6 +90,8 @@ export default function SubjectsAdminPage() {
   const subjects = useSubjectsStore((s) => s.subjects);
   const tocNodes = useSubjectsStore((s) => s.tocNodes);
   const removeSubject = useSubjectsStore((s) => s.removeSubject);
+  const questions = useQuestionsStore((s) => s.questions);
+  const updateQuestion = useQuestionsStore((s) => s.update);
   const createTocNode = useSubjectsStore((s) => s.createTocNode);
   const updateTocNode = useSubjectsStore((s) => s.updateTocNode);
   const removeTocNode = useSubjectsStore((s) => s.removeTocNode);
@@ -178,6 +186,14 @@ export default function SubjectsAdminPage() {
       return true;
     });
   }, [subjects, search, gradeFilter, statusFilter, operatingCampusId, scopedGradeIds]);
+
+  /** Bao nhiêu câu hỏi sẽ mất chỗ nếu xoá — tính cả nhánh con. */
+  const deleteSubjectQuestionCount = deleteSubjectTarget
+    ? questionsOfSubject(questions, deleteSubjectTarget.id).length
+    : 0;
+  const deleteTocQuestionCount = deleteTocTarget
+    ? questionsOfToc(questions, subtreeIds(tocNodes, deleteTocTarget.id)).length
+    : 0;
 
   const tocSubject = subjects.find((s) => s.id === tocSubjectId);
   const tocGrade = grades.find((g) => g.id === tocGradeId);
@@ -725,26 +741,60 @@ export default function SubjectsAdminPage() {
         editing={editingSubject}
       />
 
+      {/* Xoá môn: CHẶN khi còn câu hỏi.
+          Lệnh xoá môn chỉ dọn môn + mục lục của môn, không đụng kho câu hỏi.
+          Xoá xong thì câu hỏi vẫn nằm đó nhưng trỏ vào một môn không còn tồn
+          tại — không màn nào liệt kê chúng nữa, và không có đường lấy lại.
+          Đây là mất mát không hoàn tác được, nên chặn hẳn thay vì hỏi lại. */}
       <ConfirmActionDialog
         open={Boolean(deleteSubjectTarget)}
         onOpenChange={(o) => !o && setDeleteSubjectTarget(null)}
         variant="destructive"
-        title="Xoá môn học?"
+        title={
+          deleteSubjectQuestionCount > 0
+            ? "Không xoá được môn học này"
+            : "Xoá môn học?"
+        }
         description={
           deleteSubjectTarget ? (
-            <>
-              Mọi mục lục của{" "}
-              <span className="font-medium text-foreground/85">
-                {deleteSubjectTarget.name}
-              </span>{" "}
-              cũng sẽ bị xoá. Hành động không thể hoàn tác.
-            </>
+            deleteSubjectQuestionCount > 0 ? (
+              <>
+                <span className="font-medium text-foreground/85">
+                  {deleteSubjectTarget.name}
+                </span>{" "}
+                đang có{" "}
+                <span className="font-semibold text-destructive">
+                  {deleteSubjectQuestionCount} câu hỏi
+                </span>{" "}
+                trong ngân hàng. Xoá môn thì những câu đó vẫn nằm trong kho
+                nhưng không còn môn để hiện ra — coi như mất, và không lấy lại
+                được.
+                <br />
+                <br />
+                Hãy chuyển hoặc xoá số câu hỏi đó ở Ngân hàng câu hỏi trước, rồi
+                quay lại xoá môn.
+              </>
+            ) : (
+              <>
+                Mọi mục lục và khung YCCĐ của{" "}
+                <span className="font-medium text-foreground/85">
+                  {deleteSubjectTarget.name}
+                </span>{" "}
+                cũng sẽ bị xoá. Môn này chưa có câu hỏi nào nên không mất câu
+                hỏi. Hành động không thể hoàn tác.
+              </>
+            )
           ) : (
             ""
           )
         }
-        confirmLabel="Xoá môn học"
-        onConfirm={() => deleteSubjectTarget && removeSubject(deleteSubjectTarget.id)}
+        confirmLabel={
+          deleteSubjectQuestionCount > 0 ? "Đã hiểu" : "Xoá môn học"
+        }
+        onConfirm={() => {
+          if (deleteSubjectQuestionCount > 0) return;
+          if (deleteSubjectTarget) removeSubject(deleteSubjectTarget.id);
+        }}
       />
 
       <ConfirmActionDialog
@@ -758,13 +808,35 @@ export default function SubjectsAdminPage() {
               Xoá{" "}
               <span className="font-medium text-foreground/85">{deleteTocTarget.name}</span>{" "}
               cùng toàn bộ mục con bên dưới. Hành động không thể hoàn tác.
+              {deleteTocQuestionCount > 0 && (
+                <>
+                  <br />
+                  <br />
+                  <span className="font-semibold text-destructive">
+                    {deleteTocQuestionCount} câu hỏi
+                  </span>{" "}
+                  đang cất ở đây sẽ KHÔNG bị xoá, nhưng mất chỗ cất: chúng vẫn
+                  thuộc môn – khối cũ, chỉ là không còn nằm trong mục lục nào.
+                  Tìm lại bằng bộ lọc “chưa gắn mục lục” ở Ngân hàng câu hỏi.
+                </>
+              )}
             </>
           ) : (
             ""
           )
         }
         confirmLabel="Xoá mục"
-        onConfirm={() => deleteTocTarget && removeTocNode(deleteTocTarget.id)}
+        onConfirm={() => {
+          if (!deleteTocTarget) return;
+          // Gỡ mục lục khỏi câu hỏi TRƯỚC khi xoá node: xoá trước thì không
+          // còn cách nào biết câu nào từng nằm ở đây, và chúng ở lại với một
+          // id chết — ô chọn hiện trống mà dữ liệu vẫn mang id đó.
+          const ids = subtreeIds(tocNodes, deleteTocTarget.id);
+          for (const q of questionsOfToc(questions, ids)) {
+            updateQuestion(q.id, { tocNodeId: null });
+          }
+          removeTocNode(deleteTocTarget.id);
+        }}
       />
 
       <TocAiDialog

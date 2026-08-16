@@ -334,15 +334,32 @@ function splitOptions(
     return hits;
   };
   let hits = scan("(?:^\\s*|\\t\\s*|\\s{2,})([A-H])\\s*[.:)]\\s*");
-  if (hits.length > 0 && hits[0].label !== "A") {
-    // Word hay gộp đề bài với phương án A vào chung một đoạn, cách nhau đúng
-    // một dấu cách — bản chặt trả về B,C,D còn A trôi vào đề bài. Chỉ nới khi
-    // nhãn thu được KHÔNG bắt đầu từ A, tức chắc chắn đang thiếu đầu.
+  {
+    // Bản chặt đòi tab hoặc từ 2 dấu cách trở lên giữa các phương án. Hai
+    // nguồn thường gặp KHÔNG có khoảng cách đó:
+    //
+    //   · Word gộp đề bài với phương án A vào chung một đoạn, cách nhau đúng
+    //     một dấu cách — bản chặt trả về B,C,D còn A trôi vào đề bài.
+    //   · PDF xếp cả bốn phương án trên một dòng, cách nhau MỘT dấu cách:
+    //     "A. Đỉnh sinh trưởng. B. Lá trưởng thành. C. Hoa và hạt. D. Thân."
+    //     Bản chặt chỉ thấy A, ba phương án còn lại dính vào nội dung A.
+    //
+    // Nới ra thì "…theo A. Einstein" cũng thành phương án, nên điều kiện
+    // nhận là nhãn phải ra ĐÚNG DÃY A, B, C… liền mạch từ A. Một dãy liền
+    // mạch trong cùng một dòng là bằng chứng đây là danh sách phương án
+    // thật; chữ cái lẻ trong câu văn gần như không bao giờ xếp được như vậy.
     const loose = scan("(?:^\\s*|\\t\\s*|\\s+)([A-H])\\s*[.:)]\\s*");
-    // Nhãn phải ra đúng dãy A, B, C… — dãy liền mạch là bằng chứng đây là
-    // danh sách phương án thật, không phải chữ cái lẻ trong câu văn.
     const seq = loose.every((h, i) => h.label === String.fromCharCode(65 + i));
-    if (seq && loose.length > hits.length) hits = loose;
+    // Hai cửa vào, mỗi cửa cho một nguồn, và cả hai đều đóng với câu văn:
+    //
+    //   · bản chặt ra B,C,D (thiếu A)  → Word dính đề bài với phương án A
+    //   · dòng MỞ ĐẦU bằng "A."        → PDF xếp cả dãy trên một dòng
+    //
+    // Câu văn "…theo A. Einstein…" không lọt được cửa nào: nó không thiếu A,
+    // và chữ A của nó nằm giữa dòng chứ không mở đầu dòng.
+    const thieuA = hits.length > 0 && hits[0].label !== "A";
+    const moDauBangA = loose.length >= 2 && loose[0].start === 0;
+    if (seq && loose.length > hits.length && (thieuA || moDauBangA)) hits = loose;
   }
   if (hits.length === 0) return [];
   return hits.map((h, i) => {

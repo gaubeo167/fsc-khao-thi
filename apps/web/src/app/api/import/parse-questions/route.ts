@@ -40,6 +40,7 @@ import {
   parseExamBank,
 } from "@/features/question-bank/lib/parse-exam-bank";
 
+import { extractPdfText, looksScanned } from "./pdf-text";
 import { inlineOMathAsLatex } from "../parse/omath-to-latex";
 import { htmlToFscText } from "@/features/question-bank/lib/html-to-fsc-text";
 
@@ -58,34 +59,68 @@ export async function POST(req: Request) {
     return bad("bad_request", "Không đọc được dữ liệu tải lên.");
   }
   if (!file) return bad("no_file", "Chưa chọn file.");
-  if (!/\.docx$/i.test(file.name)) {
+  const isPdf = /\.pdf$/i.test(file.name);
+  if (!/\.docx$/i.test(file.name) && !isPdf) {
     return bad(
       "bad_type",
-      "Hiện chỉ đọc được file Word .docx. File .doc cũ cần mở bằng Word rồi Lưu thành .docx.",
+      "Chỉ đọc được file Word .docx và file .pdf. File .doc cũ cần mở bằng Word rồi Lưu thành .docx.",
     );
   }
   if (file.size > MAX_BYTES) {
     return bad("too_large", "File quá lớn (tối đa 12MB).");
   }
 
-  let html: string;
-  try {
-    html = await extractHtml(Buffer.from(await file.arrayBuffer()));
-  } catch (err) {
-    return NextResponse.json(
-      {
-        error: "extract_failed",
-        message: "Không đọc được nội dung file .docx.",
-        detail: err instanceof Error ? err.message : String(err),
-      },
-      { status: 422 },
-    );
-  }
+  const buf = Buffer.from(await file.arrayBuffer());
 
-  // Hai kết xuất từ CÙNG một HTML: bản FSC bỏ mọi thẻ, bản "marked" giữ dấu
+  // Hai kết xuất từ CÙNG một nguồn: bản FSC bỏ mọi thẻ, bản "marked" giữ dấu
   // gạch chân thành ký hiệu mà parser mã đề đọc được.
-  const fscText = htmlToFscText(html);
-  const markedText = htmlToMarkedText(html);
+  //
+  // PDF không mang thông tin gạch chân theo cách đọc lại được, nên hai bản
+  // trùng nhau — nghĩa là KHÔNG câu nào có sẵn đáp án đúng. Đó là hạn chế
+  // của định dạng, không phải lỗi; chỗ này chỉ nói ra để phía trên còn báo
+  // cho người dùng biết mà chọn tay.
+  let fscText: string;
+  let markedText: string;
+  if (isPdf) {
+    let text: string;
+    try {
+      text = await extractPdfText(buf);
+    } catch (err) {
+      return NextResponse.json(
+        {
+          error: "extract_failed",
+          message: "Không đọc được nội dung file PDF.",
+          detail: err instanceof Error ? err.message : String(err),
+        },
+        { status: 422 },
+      );
+    }
+    if (looksScanned(text)) {
+      return bad(
+        "pdf_scan",
+        "File PDF này là bản SCAN — trong file không có chữ, chỉ có ảnh trang giấy. " +
+          "Hệ thống không đọc được. Hãy dùng bản Word gốc, hoặc chuyển PDF sang chữ (OCR) trước khi tải lên.",
+      );
+    }
+    fscText = text;
+    markedText = text;
+  } else {
+    let html: string;
+    try {
+      html = await extractHtml(buf);
+    } catch (err) {
+      return NextResponse.json(
+        {
+          error: "extract_failed",
+          message: "Không đọc được nội dung file .docx.",
+          detail: err instanceof Error ? err.message : String(err),
+        },
+        { status: 422 },
+      );
+    }
+    fscText = htmlToFscText(html);
+    markedText = htmlToMarkedText(html);
+  }
 
   const detect = detectImportFormat(fscText);
 
