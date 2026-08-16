@@ -307,6 +307,9 @@ service cloud.firestore {
             // giữa giờ thi thì vào lại đúng chỗ đang làm dở. Không dính điểm,
             // không dính bằng chứng chống gian lận: HS sửa được nó thì cùng
             // lắm là tự nhảy sang câu khác của chính mình.
+            // `audioPlays` (số lượt đã nghe) CỐ Ý không có ở đây: cho HS ghi
+            // thì đặt lại về 0 là nghe lại thoải mái, giới hạn nghe thành
+            // trang trí. Chỉ server ghi, qua /api/exam/[shiftId]/audio-play.
             .hasOnly(['answers', 'markedForReview', 'lastQuestionId', 'updatedAt']))
       );
       allow delete: if isAdmin();

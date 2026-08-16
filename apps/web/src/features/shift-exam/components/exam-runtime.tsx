@@ -61,6 +61,7 @@ export function ExamRuntime({
   const submit = useAttemptsStore((s) => s.submit);
   const recordViolation = useAttemptsStore((s) => s.recordViolation);
   const setLastQuestion = useAttemptsStore((s) => s.setLastQuestion);
+  const consumeAudioPlay = useAttemptsStore((s) => s.consumeAudioPlay);
   // Proctor-issued warnings/violations targeted at this student for this
   // shift. We read the *raw* events array (stable reference between
   // unrelated mutations) and filter in `useMemo` — selecting
@@ -593,6 +594,16 @@ export function ExamRuntime({
           {currentQ.type !== "drag-drop" && currentQ.type !== "underline" && (
             <div className="mb-5">
               <RenderedContent
+                // Giới hạn lượt nghe CHỈ bật ở màn làm bài. Server giữ bộ
+                // đếm; ở đây chỉ hỏi và hiển thị.
+                audioLimit={{
+                  playsOf: (i) =>
+                    Number(liveAttempt?.audioPlays?.[`${currentQ.id}#${i}`] ?? 0),
+                  onPlay: (i, maxPlays) =>
+                    attemptId
+                      ? consumeAudioPlay(attemptId, currentQ.id, i, maxPlays)
+                      : Promise.resolve(false),
+                }}
                 content={
                   currentQ.type === "fill-blank"
                     ? currentQ.content.replace(/\[blank:\d+\]/g, "_____")

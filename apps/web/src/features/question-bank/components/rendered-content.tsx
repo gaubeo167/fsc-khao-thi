@@ -3,6 +3,7 @@
 import React, { useMemo } from "react";
 
 import { Math } from "./math";
+import { parseAudioMarker, type AudioMarker } from "../lib/audio-marker";
 import { mathAnyRe } from "@/lib/math-delimiters";
 import { classifyMediaUrl } from "./media-utils";
 import { cn } from "@/lib/utils";
@@ -87,6 +88,19 @@ interface Props {
    * aren't given away). Default false.
    */
   hideUnderlineMarks?: boolean;
+  /**
+   * Kiểm soát lượt nghe cho mốc `[audio:… | … | N]`.
+   *
+   * Không truyền thì audio chỉ hiện quy định ("Được nghe 2 lần") mà không
+   * khoá — đúng cho màn xem trước / kho câu hỏi, nơi giáo viên cần nghe thử
+   * bao nhiêu lần tuỳ ý. Màn LÀM BÀI của học sinh truyền vào để khoá thật.
+   */
+  audioLimit?: {
+    /** Số lần ĐÃ nghe của bài audio thứ `index` trong câu này. */
+    playsOf: (index: number) => number;
+    /** Học sinh bấm nghe — trả `false` nếu đã hết lượt. */
+    onPlay: (index: number, maxPlays: number) => boolean | Promise<boolean>;
+  };
 }
 
 export function RenderedContent({
@@ -95,12 +109,17 @@ export function RenderedContent({
   className,
   inline,
   hideUnderlineMarks,
+  audioLimit,
 }: Props) {
   const sanitized = hideUnderlineMarks
     ? content.replace(/\[u:([^\]\n]+)\]/g, "$1")
     : content;
   const blocks = useMemo(() => parse(sanitized), [sanitized]);
   const Wrapper = inline ? "span" : "div";
+  // Đếm lại từ 0 mỗi lần render, theo đúng thứ tự đọc của nội dung — nên số
+  // thứ tự của một bài audio không đổi giữa các lần render.
+  let audioSeq = 0;
+  const audioCtx: AudioCtx = { limit: audioLimit, next: () => audioSeq++ };
 
   return (
     <Wrapper
@@ -120,7 +139,7 @@ export function RenderedContent({
                 p === "\n" ? (
                   <br key={j} />
                 ) : (
-                  <span key={j}>{renderTextFragment(p)}</span>
+                  <span key={j}>{renderTextFragment(p, audioCtx)}</span>
                 ),
               )}
             </span>
@@ -154,7 +173,14 @@ export function RenderedContent({
  * [audio:…]. Embed media as real preview cards so cards/view/preview all
  * show the asset (not just placeholder text).
  */
-function renderTextFragment(text: string): React.ReactNode {
+interface AudioCtx {
+  limit?: Props["audioLimit"];
+  /** Số thứ tự bài audio kế tiếp trong TOÀN BỘ nội dung câu, không phải
+   *  trong riêng đoạn đang render — hai bài trong một câu phải đếm riêng. */
+  next: () => number;
+}
+
+function renderTextFragment(text: string, ctx?: AudioCtx): React.ReactNode {
   if (!text) return text;
   const mediaRegex = /(!\[[^\]]*\]\([^)]+\)|\[video:[^\]]+\]|\[audio:[^\]]+\]|\[blank:\d+\]|\[zone:\d+\]|\[u:[^\]\n]+\])/g;
   if (!mediaRegex.test(text)) return emphasize(text);
@@ -172,7 +198,14 @@ function renderTextFragment(text: string): React.ReactNode {
         </React.Fragment>,
       );
     }
-    parts.push(renderMediaSnippet(m[0], m.index));
+    parts.push(
+      renderMediaSnippet(
+        m[0],
+        m.index,
+        ctx?.limit,
+        m[0].startsWith("[audio:") ? (ctx?.next() ?? 0) : 0,
+      ),
+    );
     last = m.index + m[0].length;
   }
   if (last < text.length) {
@@ -185,7 +218,12 @@ function renderTextFragment(text: string): React.ReactNode {
   return <>{parts}</>;
 }
 
-function renderMediaSnippet(snippet: string, key: number): React.ReactNode {
+function renderMediaSnippet(
+  snippet: string,
+  key: number,
+  audioLimit?: Props["audioLimit"],
+  audioIndex = 0,
+): React.ReactNode {
   const imgMatch = /^!\[([^\]]*)\]\(([^)\s]+)(?:\s+=(\d+)(?:x\d+)?)?\)$/.exec(snippet);
   if (imgMatch) {
     const alt = imgMatch[1];
@@ -272,23 +310,15 @@ function renderMediaSnippet(snippet: string, key: number): React.ReactNode {
     );
   }
 
-  const audioMatch = /^\[audio:([^|\]]+?)\s*\|\s*([^\]]*)\]$/.exec(snippet);
-  if (audioMatch) {
-    const src = audioMatch[1].trim();
-    const label = audioMatch[2].trim() || "Audio";
+  const audio = parseAudioMarker(snippet);
+  if (audio) {
     return (
-      <span
+      <AudioBlock
         key={`aud-${key}`}
-        className="my-2 flex items-center gap-3 rounded-lg border bg-violet-50/50 px-3 py-2.5 text-[13px] ring-1 ring-violet-200"
-      >
-        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-violet-100 text-violet-600">
-          ♪
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block font-semibold text-violet-900">{label}</span>
-          <audio src={src} controls className="mt-1 w-full" />
-        </span>
-      </span>
+        marker={audio}
+        index={audioIndex}
+        limit={audioLimit}
+      />
     );
   }
 
@@ -450,4 +480,88 @@ function parseInlineStyle(raw: string): React.CSSProperties {
     if (allowed.has(reactProp)) out[reactProp] = value;
   }
   return out;
+}
+
+/**
+ * Bài nghe, có thể giới hạn số lần bấm nghe.
+ *
+ * Vì sao KHÔNG dùng `<audio controls>` trần khi có giới hạn: thanh điều khiển
+ * mặc định cho tua đi tua lại và bấm play bao nhiêu lần tuỳ ý, không có chỗ
+ * nào chặn được. Có giới hạn thì thay bằng một nút "Nghe" do mình kiểm soát:
+ * bấm là tiêu một lượt, nghe xong tự dừng, hết lượt thì nút khoá.
+ *
+ * `limit` không truyền (kho câu hỏi, xem trước) thì chỉ HIỆN quy định chứ
+ * không khoá — giáo viên phải nghe thử được bao nhiêu lần tuỳ ý.
+ */
+function AudioBlock({
+  marker,
+  index,
+  limit,
+}: {
+  marker: AudioMarker;
+  index: number;
+  limit?: Props["audioLimit"];
+}) {
+  const ref = React.useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = React.useState(false);
+  const enforced = marker.maxPlays != null && limit != null;
+  const used = enforced ? limit!.playsOf(index) : 0;
+  // KHÔNG dùng `Math.max` ở file này: `Math` đã bị component công thức cùng
+  // tên che mất (xem import ở đầu file).
+  const left =
+    marker.maxPlays != null ? (marker.maxPlays - used > 0 ? marker.maxPlays - used : 0) : null;
+
+  async function start() {
+    if (!ref.current || playing) return;
+    if (enforced) {
+      const ok = await limit!.onPlay(index, marker.maxPlays!);
+      if (!ok) return;
+    }
+    ref.current.currentTime = 0;
+    setPlaying(true);
+    void ref.current.play();
+  }
+
+  return (
+    <span className="my-2 flex items-center gap-3 rounded-lg border bg-violet-50/50 px-3 py-2.5 text-[13px] ring-1 ring-violet-200">
+      <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-violet-100 text-violet-600">
+        ♪
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block font-semibold text-violet-900">{marker.label}</span>
+        {enforced ? (
+          <>
+            <audio
+              ref={ref}
+              src={marker.src}
+              onEnded={() => setPlaying(false)}
+              className="hidden"
+            />
+            <span className="mt-1 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void start()}
+                disabled={playing || left === 0}
+                className="inline-flex h-8 items-center gap-1.5 rounded-md bg-violet-600 px-3 text-small font-semibold text-white transition hover:bg-violet-700 disabled:bg-violet-200 disabled:text-violet-500"
+              >
+                {playing ? "Đang phát…" : left === 0 ? "Hết lượt nghe" : "Nghe"}
+              </button>
+              <span className="text-meta text-violet-800">
+                Còn {left}/{marker.maxPlays} lượt
+              </span>
+            </span>
+          </>
+        ) : (
+          <>
+            <audio ref={ref} src={marker.src} controls className="mt-1 w-full" />
+            {marker.maxPlays != null && (
+              <span className="text-meta mt-0.5 block text-violet-800">
+                Khi thi: chỉ được nghe {marker.maxPlays} lần.
+              </span>
+            )}
+          </>
+        )}
+      </span>
+    </span>
+  );
 }
