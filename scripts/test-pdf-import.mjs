@@ -174,6 +174,54 @@ check(
   );
 }
 
+// Mốc số chỉ mở câu khi đúng SỐ KẾ TIẾP.
+//
+// Công thức nhiều tầng trong PDF đầy dòng dạng "số + dấu đóng": mẫu số của
+// 1/7 rút ra thành dòng "7)". Không ràng buộc thứ tự thì mỗi dòng như vậy cắt
+// đôi câu hỏi — file AIMO từng bị xé một biểu thức phân số thành năm "câu",
+// bốn trong đó không có đề bài.
+{
+  const doc = [
+    "1. Find the value of the following expression",
+    "(1 + 1",
+    "3 + 1",
+    "5 + 1",
+    "7) × (1",
+    "3 + 1",
+    "5)",
+    "A: 15 B: 30 C: 20 D: 10",
+    "2. What is x?",
+    "A: 1 B: 2 C: 3 D: 4",
+    "3. What is y?",
+    "A: 1 B: 2 C: 3 D: 4",
+  ].join("\n");
+  const r = parseGeneric(doc);
+  check("phân số nhiều tầng KHÔNG bị cắt thành câu riêng", r.questions.length === 3, `${r.questions.length} câu`);
+  check(
+    "mọi câu đều có đề bài, không có mảnh rỗng",
+    r.questions.every((q) => q.content.trim().length > 5),
+    JSON.stringify(r.questions.map((q) => q.content.slice(0, 30))),
+  );
+  check(
+    "câu 1 giữ nguyên các dòng của công thức",
+    /7\)/.test(r.questions[0]?.content ?? ""),
+    r.questions[0]?.content,
+  );
+}
+
+// Đề bỏ số (1, 2, 4…) vẫn phải đọc được phần đầu — không đòi dãy hoàn hảo
+// tới cuối file, chỉ đòi đúng thứ tự tăng dần.
+{
+  const doc = [
+    "1. Câu một", "A. a B. b",
+    "2. Câu hai", "A. a B. b",
+    "3. Câu ba", "A. a B. b",
+    "5. Câu năm bị bỏ số 4", "A. a B. b",
+  ].join("\n");
+  const r = parseGeneric(doc);
+  check("số nhảy cóc: ba câu đầu vẫn tách đúng", r.questions.length >= 3, `${r.questions.length} câu`);
+}
+
 /* ── File đề THẬT (bỏ qua nếu máy không có de-mau/) ───────────────────── */
 const THAT = "de-mau/3. SHOC 10- DE CHINH THUC.pdf";
 const DU_PHONG = "de-mau/3. SHOC 10- DE DU PHONG.pdf";
@@ -204,6 +252,13 @@ if (existsSync(AIMO)) {
   const r = parseGeneric(text);
   check(`${AIMO}: dùng mốc số thứ tự`, r.strategy === "so-thu-tu", String(r.strategy));
   check(`${AIMO}: tách được ≥ 20 câu`, r.questions.length >= 20, `${r.questions.length} câu`);
+  check(
+    `${AIMO}: KHÔNG câu nào có đề bài rỗng`,
+    r.questions.every((q) => q.content.trim().length >= 15),
+    JSON.stringify(
+      r.questions.filter((q) => q.content.trim().length < 15).map((q) => q.content),
+    ),
+  );
   check(
     `${AIMO}: câu đầu đủ 4 phương án`,
     r.questions[0]?.options.length === 4,
