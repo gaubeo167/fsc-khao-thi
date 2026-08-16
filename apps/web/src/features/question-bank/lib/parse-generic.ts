@@ -487,6 +487,16 @@ export function parseGeneric(marked: string): GenericParseResult {
     if (b && b.some((l) => l.trim())) blocks.push(b);
   };
   let sawSolution = false;
+  /**
+   * Số câu kế tiếp mà mốc "số thứ tự" được phép mở.
+   *
+   * Chỉ đếm là mốc khi đúng số kế tiếp. Không có ràng buộc này thì mọi dòng
+   * dạng "số + dấu đóng" đều cắt câu — mà công thức nhiều tầng trong PDF đầy
+   * dòng như vậy: mẫu số của 1/7 rút ra thành dòng "7)" và cắt đôi câu hỏi.
+   * Đã thấy đúng lỗi đó ở file AIMO: một biểu thức phân số bị xé thành năm
+   * "câu hỏi", bốn trong đó không có đề bài.
+   */
+  let nextNumber = 1;
 
   const step = (raw: string) => {
     const line = raw.trimEnd();
@@ -501,7 +511,11 @@ export function parseGeneric(marked: string): GenericParseResult {
     let starts = false;
     if (strategy === "cau-n") starts = CAU_N_RE.test(line);
     else if (strategy === "ma-de-inline") starts = CODE_AT_START_RE.test(line);
-    else if (strategy === "so-thu-tu") starts = NUMBERED_RE.test(bare);
+    else if (strategy === "so-thu-tu") {
+      const m = NUMBERED_RE.exec(bare);
+      starts = m != null && Number(m[1]) === nextNumber;
+      if (starts) nextNumber += 1;
+    }
     else {
       // Đề không có mốc "Câu N": ranh giới câu là khối lời giải. Nhưng THÂN
       // lời giải nằm ngay sau chữ "Solution:", nên KHÔNG thể lấy dòng kế tiếp
