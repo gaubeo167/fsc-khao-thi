@@ -148,6 +148,15 @@ export function ImportQuestionsDialog({
   const [kho, setKho] = useState<"personal" | "campus">("campus");
   /** Nhờ AI dựng lại công thức bị vỡ khi rút chữ từ PDF. Mặc định TẮT. */
   const [useAi, setUseAi] = useState(false);
+  /**
+   * File đã chọn nhưng CHƯA đọc.
+   *
+   * Trước đây chọn file xong là đọc luôn, thiếu Môn/Khối thì báo lỗi và bỏ
+   * luôn file — người dùng phải mở lại hộp chọn file và tìm lại đúng file đó
+   * từ đầu, chỉ vì quên một ô select. Giữ file lại ở đây thì họ bổ sung ô
+   * thiếu rồi bấm nút là xong.
+   */
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [phase, setPhase] = useState<Phase>({ kind: "pick" });
   const [selected, setSelected] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -164,6 +173,7 @@ export function ImportQuestionsDialog({
     setPhase({ kind: "pick" });
     setSelected(0);
     setTocNodeId("");
+    setPendingFile(null);
     if (fileRef.current) fileRef.current.value = "";
   }, [open]);
 
@@ -211,6 +221,17 @@ export function ImportQuestionsDialog({
   );
   /** Môn có mục lục thì BẮT chọn chỗ cất trước khi tải file. */
   const needToc = tocOptions.length > 0;
+
+  /**
+   * Những ô bắt buộc còn trống. Nêu TÊN từng ô chứ không chỉ chặn nút: người
+   * dùng nhìn nút xám mà không biết còn thiếu gì thì cũng bế tắc như cũ.
+   */
+  const missingScope = [
+    !subjectId ? "Môn học" : null,
+    !gradeId ? "Khối" : null,
+    needToc && !tocNodeId ? "Chỗ cất trong mục lục" : null,
+  ].filter(Boolean) as string[];
+  const scopeReady = missingScope.length === 0;
 
   // Có mã chuyên đề trong file thì mới đòi khớp. Đề Word thường không có mã,
   // đòi khớp là chặn oan cả file.
@@ -265,21 +286,7 @@ export function ImportQuestionsDialog({
   }
 
   async function handleFile(file: File | undefined) {
-    if (!file) return;
-    if (!subjectId || !gradeId) {
-      setPhase({ kind: "error", message: "Chọn Môn học và Khối trước khi tải đề." });
-      return;
-    }
-    // Môn có mục lục mà không chọn chỗ cất thì câu hỏi vào kho không nằm ở
-    // đâu cả — tìm lại rất khổ. Chặn ngay từ đầu thay vì để phát hiện sau khi
-    // đã nhập 21 câu.
-    if (needToc && !tocNodeId) {
-      setPhase({
-        kind: "error",
-        message: "Môn này có mục lục — chọn chỗ cất câu hỏi trước khi tải đề.",
-      });
-      return;
-    }
+    if (!file || !scopeReady) return;
     setPhase({ kind: "loading", fileName: file.name });
     try {
       const fd = new FormData();
@@ -414,7 +421,13 @@ export function ImportQuestionsDialog({
             // lại đúng file vừa chọn, nên sửa file trong Word rồi tải lại
             // cùng tên là không có gì xảy ra.
             e.target.value = "";
-            void handleFile(f);
+            if (!f) return;
+            setPendingFile(f);
+            // Đủ dữ liệu thì đọc luôn — không bắt bấm thêm một nút nữa cho
+            // trường hợp thường gặp nhất. Thiếu thì giữ file lại, chờ người
+            // dùng bổ sung rồi bấm nút bên dưới.
+            if (scopeReady) void handleFile(f);
+            else setPhase({ kind: "pick" });
           }}
         />
 
@@ -516,6 +529,17 @@ export function ImportQuestionsDialog({
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                   <span className="text-small">Đang đọc {phase.fileName}…</span>
                 </>
+              ) : pendingFile ? (
+                <>
+                  <FileText className="h-6 w-6 text-blue-600" />
+                  <span className="text-small font-semibold">
+                    {pendingFile.name}
+                  </span>
+                  <span className="text-hint text-muted-foreground">
+                    {Math.max(1, Math.round(pendingFile.size / 1024))} KB · bấm để
+                    đổi file khác
+                  </span>
+                </>
               ) : (
                 <>
                   <Upload className="h-6 w-6 text-muted-foreground" />
@@ -533,6 +557,43 @@ export function ImportQuestionsDialog({
                 </>
               )}
             </button>
+
+            {/* Nút đọc đề: chỉ hiện khi ĐANG GIỮ một file.
+                Đây là chỗ cứu người dùng chọn file trước rồi mới nhớ ra chưa
+                chọn Môn/Khối — bổ sung xong bấm nút, khỏi phải đi tìm lại
+                đúng file đó trong máy lần nữa. */}
+            {pendingFile && phase.kind !== "loading" && (
+              <div className="rounded-lg border bg-surface-2/40 px-3 py-2.5">
+                {!scopeReady && (
+                  <p className="text-meta mb-2 text-amber-800">
+                    Còn thiếu: <b>{missingScope.join(" · ")}</b>. Chọn xong thì
+                    bấm nút bên dưới — file bạn vừa chọn vẫn được giữ.
+                  </p>
+                )}
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    disabled={!scopeReady}
+                    onClick={() => void handleFile(pendingFile)}
+                  >
+                    <Upload className="h-4 w-4" />
+                    Đọc đề từ {pendingFile.name.length > 28
+                      ? `${pendingFile.name.slice(0, 25)}…`
+                      : pendingFile.name}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setPendingFile(null);
+                      setPhase({ kind: "pick" });
+                    }}
+                  >
+                    Bỏ file
+                  </Button>
+                </div>
+              </div>
+            )}
 
             {/* Ô tích AI: đặt ngay dưới ô thả file vì nó chỉ có nghĩa cho lần
                 tải sắp tới, và người dùng cần biết TRƯỚC khi chọn file.
