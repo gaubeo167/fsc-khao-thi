@@ -5,6 +5,8 @@ node_modules/
 
 # ───── Build outputs
 .next/
+# Chỗ build khi dev server đang chạy — xem NEXT_DIST_DIR trong CLAUDE.md.
+.next-build/
 out/
 dist/
 build/
