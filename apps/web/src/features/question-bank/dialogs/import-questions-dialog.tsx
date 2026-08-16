@@ -113,7 +113,16 @@ type Phase =
       fileName: string;
       formatLabel: string;
       drafts: DraftQuestion[];
+      /** Kết quả lượt AI dọn công thức, `null` khi không bật. */
+      ai: AiInfo | null;
     };
+
+interface AiInfo {
+  used: boolean;
+  provider: string | null;
+  repaired: number;
+  skipped: number;
+}
 
 export function ImportQuestionsDialog({
   open,
@@ -136,6 +145,8 @@ export function ImportQuestionsDialog({
   const [tocNodeId, setTocNodeId] = useState("");
   /** Kho cá nhân (chỉ mình thấy) hay kho campus (cả trường dùng chung). */
   const [kho, setKho] = useState<"personal" | "campus">("campus");
+  /** Nhờ AI dựng lại công thức bị vỡ khi rút chữ từ PDF. Mặc định TẮT. */
+  const [useAi, setUseAi] = useState(false);
   const [phase, setPhase] = useState<Phase>({ kind: "pick" });
   const [selected, setSelected] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -272,6 +283,7 @@ export function ImportQuestionsDialog({
     try {
       const fd = new FormData();
       fd.append("file", file);
+      if (useAi) fd.append("useAi", "1");
       const res = await fetch("/api/import/parse-questions", {
         method: "POST",
         headers: { ...(await authHeaders()) },
@@ -321,6 +333,7 @@ export function ImportQuestionsDialog({
         fileName: file.name,
         formatLabel: data.formatLabel ?? "",
         drafts: withComp,
+        ai: (data.ai as AiInfo | null) ?? null,
       });
     } catch (e) {
       setPhase({
@@ -520,6 +533,36 @@ export function ImportQuestionsDialog({
               )}
             </button>
 
+            {/* Ô tích AI: đặt ngay dưới ô thả file vì nó chỉ có nghĩa cho lần
+                tải sắp tới, và người dùng cần biết TRƯỚC khi chọn file.
+
+                Mặc định TẮT: nó gọi ra ngoài, tốn hạn mức, và với file Word
+                thì hoàn toàn thừa — Word lưu công thức thành khối OMath, hệ
+                thống đọc thẳng được, không cần đoán. */}
+            <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border bg-surface-2/40 px-3 py-2.5">
+              <input
+                type="checkbox"
+                checked={useAi}
+                onChange={(e) => setUseAi(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 accent-blue-600"
+              />
+              <span className="min-w-0">
+                <span className="text-small font-semibold text-foreground/85">
+                  Dùng AI đọc công thức trong PDF
+                </span>
+                <span className="text-hint mt-0.5 block text-muted-foreground">
+                  PDF không lưu công thức thành khối — phân số là hai dòng chữ
+                  chồng lên nhau, rút ra thì vỡ rời và không quy tắc nào ghép
+                  lại được. Bật ô này thì AI gộp chúng lại thành công thức sửa
+                  được. AI CHỈ gộp công thức, không soạn câu hỏi và không tự
+                  điền đáp án.
+                </span>
+                <span className="text-hint mt-0.5 block text-muted-foreground">
+                  File Word không cần bật — Word đã lưu công thức đàng hoàng.
+                </span>
+              </span>
+            </label>
+
             {/* Tải mẫu: đặt ngay dưới ô thả file vì đây là lúc người dùng
                 nhận ra mình chưa biết viết đề thế nào cho hệ thống đọc được.
 
@@ -586,6 +629,19 @@ export function ImportQuestionsDialog({
             Không nói ra thì người dùng thấy cả 21 câu "Chưa chọn mức độ" mà
             không hiểu vì sao, rồi ngồi chọn tay từng câu — trong khi hệ thống
             đã có sẵn thông tin, chỉ là đang tra nhầm khung. */}
+        {phase.kind === "review" && phase.ai?.used && (
+          <div className="shrink-0 border-b border-sky-300 bg-sky-50 px-5 py-2">
+            <p className="text-meta font-semibold text-sky-900">
+              AI đã dựng lại công thức ở {phase.ai.repaired} đoạn
+              {phase.ai.provider ? ` (${phase.ai.provider})` : ""}
+              {phase.ai.skipped > 0
+                ? ` · ${phase.ai.skipped} đoạn giữ nguyên vì kết quả không đáng tin`
+                : ""}
+              . Soát lại công thức trước khi lưu — đây là phần AI ĐOÁN từ chữ
+              đã vỡ, không phải đọc được nguyên vẹn.
+            </p>
+          </div>
+        )}
         {phase.kind === "review" && withCode > 0 && matched === 0 && (
           <div className="shrink-0 border-b border-amber-300 bg-amber-50 px-5 py-2.5">
             <p className="text-small font-semibold text-amber-900">

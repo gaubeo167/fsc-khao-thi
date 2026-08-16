@@ -40,6 +40,7 @@ import {
   parseExamBank,
 } from "@/features/question-bank/lib/parse-exam-bank";
 
+import { repairFormulas } from "./ai-formulas";
 import { extractPdfText, looksScanned } from "./pdf-text";
 import { inlineOMathAsLatex } from "../parse/omath-to-latex";
 import { htmlToFscText } from "@/features/question-bank/lib/html-to-fsc-text";
@@ -51,10 +52,13 @@ export async function POST(req: Request) {
   if ("error" in gate) return gate.error;
 
   let file: File | null = null;
+  /** Người dùng tự bật ở màn tải đề — mặc định TẮT. */
+  let useAi = false;
   try {
     const form = await req.formData();
     const f = form.get("file");
     if (f instanceof File) file = f;
+    useAi = form.get("useAi") === "1";
   } catch {
     return bad("bad_request", "Không đọc được dữ liệu tải lên.");
   }
@@ -81,6 +85,12 @@ export async function POST(req: Request) {
   // cho người dùng biết mà chọn tay.
   let fscText: string;
   let markedText: string;
+  let aiInfo: {
+    used: boolean;
+    provider: string | null;
+    repaired: number;
+    skipped: number;
+  } | null = null;
   if (isPdf) {
     let text: string;
     try {
@@ -101,6 +111,33 @@ export async function POST(req: Request) {
         "File PDF này là bản SCAN — trong file không có chữ, chỉ có ảnh trang giấy. " +
           "Hệ thống không đọc được. Hãy dùng bản Word gốc, hoặc chuyển PDF sang chữ (OCR) trước khi tải lên.",
       );
+    }
+    // Công thức trong PDF đã vỡ thành nhiều dòng ngay từ lúc rút chữ; không
+    // quy tắc nào ghép lại được. Nhờ AI dọn là đường duy nhất — nhưng chỉ khi
+    // người dùng tự bật, và hỏng thì trả lại nguyên văn bản gốc.
+    if (useAi) {
+      try {
+        const fixed = await repairFormulas(text);
+        text = fixed.text;
+        aiInfo = {
+          used: true,
+          provider: fixed.provider,
+          repaired: fixed.repaired,
+          skipped: fixed.skipped,
+        };
+      } catch (err) {
+        return NextResponse.json(
+          {
+            error: "ai_failed",
+            message:
+              err instanceof Error
+                ? `Không dùng được AI: ${err.message}`
+                : "Không dùng được AI.",
+            hint: "Bỏ tích “Dùng AI đọc công thức” để nhập bình thường — đề vẫn đọc được, chỉ là công thức để nguyên như PDF.",
+          },
+          { status: 502 },
+        );
+      }
     }
     fscText = text;
     markedText = text;
@@ -197,6 +234,7 @@ export async function POST(req: Request) {
     questions,
     warnings,
     count: questions.length,
+    ai: aiInfo,
   });
 }
 

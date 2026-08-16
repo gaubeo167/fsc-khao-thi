@@ -37,6 +37,7 @@ node scripts/test-mau-co-ban.mjs      # file mẫu Word đọc ngược lại c�
 node scripts/test-framework-scope.mjs # soát nhầm môn/khối khi nhập khung YCCĐ
 node scripts/test-impact.mjs          # đếm/gỡ ảnh hưởng khi xoá môn · mục lục · YCCĐ
 node scripts/test-pdf-import.mjs      # đọc đề từ PDF
+node scripts/test-ai-formulas.mjs     # chốt kiểm bản AI dọn công thức PDF
 node scripts/check-design-tokens.mjs   # bánh cóc thang chữ (xem dưới)
 ```
 
