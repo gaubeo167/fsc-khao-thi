@@ -19,7 +19,7 @@ export interface SaveContext {
   /** Mục lục = CHỖ CẤT câu hỏi, người dùng chọn, có thể để trống. */
   tocNodeId: string | null;
   /** Bloom suy từ node khung năng lực khớp mã, nếu có. */
-  bloomLevel?: string | null;
+  bloomLevel?: 1 | 2 | 3 | null;
   ownerId: string;
   ownerName: string;
   campusId: string | null;
@@ -48,7 +48,10 @@ export function draftToQuestion(
     // Mã trong file trỏ tới YCCĐ của khung năng lực → gắn thẳng vào câu hỏi,
     // nhờ đó bước ① của "Tạo đề theo YCCĐ" đếm được ngay.
     competencyIds: q.chuyenDeId ? [q.chuyenDeId] : undefined,
-    bloomLevel: ctx.bloomLevel ?? undefined,
+    // Bloom đi kèm YCCĐ đã khớp. Trước đây chỉ đọc `ctx.bloomLevel` mà dialog
+    // không bao giờ truyền, nên mọi câu nhập từ file đều mất mức nhận thức —
+    // đúng cái trục mà ma trận "Tạo đề theo YCCĐ" đếm theo.
+    bloomLevel: q.bloomLevel ?? ctx.bloomLevel ?? undefined,
     difficulty: q.difficulty,
     tags: [] as string[],
     kho: ctx.kho,

@@ -59,9 +59,18 @@ export interface DraftQuestion {
   chuyenDeCode: string | null;
   /** Mã đầy đủ như trong file, giữ nguyên để hiện lại cho người soạn. */
   rawCode: string | null;
-  /** Id chuyên đề sau khi khớp với mục lục — khớp ở client vì mục lục nằm
-   *  trong store trình duyệt. */
+  /**
+   * Id YCCĐ (node LÁ của khung năng lực) sau khi khớp mã — khớp ở client vì
+   * khung nằm trong store trình duyệt.
+   *
+   * Chỉ nhận node lá. Trước đây trường này từng nhận cả node chủ điểm, và vì
+   * chủ điểm không mang mức Bloom nên cả đề mất mức độ mà vẫn báo "đã khớp".
+   */
   chuyenDeId: string | null;
+  /** Khớp bằng đường nào — `null` khi chưa khớp. Xem `match-competency.ts`. */
+  chuyenDeMatch: "ma-day-du" | "so-chi-bao" | null;
+  /** Mức Bloom lấy từ YCCĐ đã khớp, để ghi kèm câu hỏi. */
+  bloomLevel: 1 | 2 | 3 | null;
   sourceFormat: ImportFormat;
   /** Cảnh báo do parser sinh ra (khác `issues` do bộ kiểm tra sinh ra). */
   parserWarnings: string[];
@@ -188,6 +197,8 @@ export function draftFromFsc(
     chuyenDeCode: null,
     rawCode: null,
     chuyenDeId: null,
+    chuyenDeMatch: null,
+    bloomLevel: null,
     sourceFormat: "fsc",
     parserWarnings: [],
   };
@@ -227,6 +238,8 @@ export function draftFromMaDe(
     chuyenDeCode: q.chuyenDeCode ?? null,
     rawCode: q.rawCode ?? null,
     chuyenDeId: null,
+    chuyenDeMatch: null,
+    bloomLevel: null,
     sourceFormat: "ma-de",
     parserWarnings: q.warnings ?? [],
   };
@@ -279,6 +292,8 @@ export function draftFromGeneric(
     chuyenDeCode: q.chuyenDeCode,
     rawCode: q.rawCode,
     chuyenDeId: null,
+    chuyenDeMatch: null,
+    bloomLevel: null,
     sourceFormat: "generic",
     parserWarnings: q.warnings,
   };
