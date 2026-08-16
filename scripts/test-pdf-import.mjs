@@ -119,6 +119,61 @@ check(
   check("PDF: dòng số trang không lọt vào đề bài", !/Trang 1/.test(qs[0]?.content ?? ""));
 }
 
+/* ── Đề đánh số trần: 1. 2. 3. thay cho "Câu N" ───────────────────────── */
+//
+// Đề quốc tế (AIMO, SMO) không có chữ "Câu" nào. Bản trước ra thẳng lỗi
+// "không nhận ra cấu trúc câu hỏi" — đúng chữ người dùng gặp khi tải AIMO.
+{
+  const doc = [
+    "ASIA INTERNATIONAL MATHEMATICAL OLYMPIAD UNION",
+    "Section A – each question carries 4 marks",
+    "1. The ratio of the father's age to the daughter's age is 6: 1. How old is the father?",
+    "A: 15 B: 30 C: 20 D: 10",
+    "2. What is the 1809th digit after the decimal point?",
+    "A: 8 B: 7 C: 5 D: 9",
+    "3. Find the maximum value of a + b.",
+    "A: 50 B: 51 C: 52 D: 53",
+  ].join("\n");
+  const r = parseGeneric(doc);
+  check("đánh số trần: chọn chiến lược so-thu-tu", r.strategy === "so-thu-tu", String(r.strategy));
+  check("đánh số trần: tách đúng 3 câu", r.questions.length === 3, String(r.questions.length));
+  check(
+    "đánh số trần: gỡ số thứ tự khỏi đề bài",
+    /^The ratio/.test(r.questions[0]?.content ?? ""),
+    r.questions[0]?.content,
+  );
+  check(
+    "đánh số trần: phương án viết A: B: C: D: trên một dòng vẫn tách được",
+    r.questions[0]?.options.length === 4,
+    String(r.questions[0]?.options.length),
+  );
+  check(
+    "đánh số trần: lời dẫn đầu đề không thành câu hỏi",
+    !r.questions.some((q) => /OLYMPIAD UNION/.test(q.content)),
+  );
+}
+
+// Mốc số là mốc YẾU — không được cướp file đã có mốc mạnh hơn, và không
+// được cắt vụn danh sách đánh số nằm TRONG một câu hỏi.
+{
+  const coMocCau = [
+    "Câu 1. [TH][GC] Ghép mỗi quốc gia với thủ đô.",
+    "1. Việt Nam → Hà Nội",
+    "2. Pháp → Paris",
+    "3. Nhật Bản → Tokyo",
+  ].join("\n");
+  const r = parseGeneric(coMocCau);
+  check("có mốc “Câu N” thì KHÔNG dùng mốc số", r.strategy === "cau-n", String(r.strategy));
+  check("danh sách ghép cặp không bị cắt thành câu riêng", r.questions.length === 1, String(r.questions.length));
+
+  const chiVaiSoLe = ["Bảng điểm", "1. Hạng nhất", "5. Hạng năm"].join("\n");
+  check(
+    "vài dòng số lẻ, không thành dãy tăng từ 1 → không nhận là đề",
+    parseGeneric(chiVaiSoLe).strategy === null,
+    String(parseGeneric(chiVaiSoLe).strategy),
+  );
+}
+
 /* ── File đề THẬT (bỏ qua nếu máy không có de-mau/) ───────────────────── */
 const THAT = "de-mau/3. SHOC 10- DE CHINH THUC.pdf";
 const DU_PHONG = "de-mau/3. SHOC 10- DE DU PHONG.pdf";
@@ -140,6 +195,19 @@ if (!file) {
     `${file}: đề bài câu đầu không rỗng`,
     (qs[0]?.content ?? "").length > 20,
     qs[0]?.content,
+  );
+}
+
+const AIMO = "de-mau/AIMO 6.1 (1).pdf";
+if (existsSync(AIMO)) {
+  const text = await extractPdfText(Buffer.from(readFileSync(AIMO)));
+  const r = parseGeneric(text);
+  check(`${AIMO}: dùng mốc số thứ tự`, r.strategy === "so-thu-tu", String(r.strategy));
+  check(`${AIMO}: tách được ≥ 20 câu`, r.questions.length >= 20, `${r.questions.length} câu`);
+  check(
+    `${AIMO}: câu đầu đủ 4 phương án`,
+    r.questions[0]?.options.length === 4,
+    JSON.stringify(r.questions[0]?.options.map((o) => o.content)),
   );
 }
 
