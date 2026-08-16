@@ -210,11 +210,22 @@ export function ImportQuestionsDialog({
     );
   }
 
-  async function downloadTemplate() {
+  /** Hai mẫu Word: một cho đề gắn mã YCCĐ, một cho đề chỉ ghi nhãn ngắn. */
+  const TEMPLATES = {
+    yccd: {
+      route: "/api/import/yccd-template",
+      file: "FSC-mau-soan-de-theo-YCCD.docx",
+    },
+    basic: {
+      route: "/api/import/basic-template",
+      file: "FSC-mau-soan-de-co-ban.docx",
+    },
+  } as const;
+
+  async function downloadTemplate(which: keyof typeof TEMPLATES) {
+    const { route, file } = TEMPLATES[which];
     // Route đòi xác thực nên không dùng thẻ <a href> được — phải kèm token.
-    const res = await fetch("/api/import/yccd-template", {
-      headers: { ...(await authHeaders()) },
-    });
+    const res = await fetch(route, { headers: { ...(await authHeaders()) } });
     if (!res.ok) {
       setPhase({ kind: "error", message: "Không tải được file mẫu." });
       return;
@@ -223,7 +234,7 @@ export function ImportQuestionsDialog({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "FSC-mau-soan-de-theo-YCCD.docx";
+    a.download = file;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -493,18 +504,41 @@ export function ImportQuestionsDialog({
             </button>
 
             {/* Tải mẫu: đặt ngay dưới ô thả file vì đây là lúc người dùng
-                nhận ra mình chưa biết viết đề thế nào cho hệ thống đọc được. */}
-            <p className="text-hint text-muted-foreground">
-              Chưa biết bắt đầu từ đâu?{" "}
-              <button
-                type="button"
-                onClick={() => void downloadTemplate()}
-                className="font-semibold text-blue-700 underline-offset-2 hover:underline"
-              >
-                Tải file mẫu soạn đề theo mã YCCĐ
-              </button>{" "}
-              — có sẵn hướng dẫn viết ngay trong file.
-            </p>
+                nhận ra mình chưa biết viết đề thế nào cho hệ thống đọc được.
+
+                Hai mẫu chứ không một: mẫu YCCĐ đòi khung năng lực đã nhập và
+                phải tra mã, dùng cho đề chuẩn hoá; mẫu cơ bản chỉ cần hai
+                nhãn ngắn, dùng cho đề soạn nhanh. Ép mọi người vào mẫu YCCĐ
+                là ép họ tra cứu để nhập một đề kiểm tra 15 phút. */}
+            <div className="rounded-lg border bg-surface-2/40 px-3 py-2.5">
+              <p className="text-hint font-semibold text-foreground/70">
+                Chưa biết bắt đầu từ đâu? Tải file mẫu — hướng dẫn nằm sẵn
+                trong file.
+              </p>
+              <div className="mt-1.5 space-y-1">
+                <p className="text-hint text-muted-foreground">
+                  <button
+                    type="button"
+                    onClick={() => void downloadTemplate("basic")}
+                    className="font-semibold text-blue-700 underline-offset-2 hover:underline"
+                  >
+                    Mẫu cơ bản
+                  </button>{" "}
+                  — ghi mức độ và dạng câu bằng nhãn ngắn:{" "}
+                  <code className="rounded bg-muted px-1">Câu 1. [NB][TN]</code>
+                </p>
+                <p className="text-hint text-muted-foreground">
+                  <button
+                    type="button"
+                    onClick={() => void downloadTemplate("yccd")}
+                    className="font-semibold text-blue-700 underline-offset-2 hover:underline"
+                  >
+                    Mẫu theo mã YCCĐ
+                  </button>{" "}
+                  — gắn câu vào khung năng lực, mức độ tự suy từ khung.
+                </p>
+              </div>
+            </div>
 
             {phase.kind === "error" && (
               <div className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2.5">

@@ -33,6 +33,24 @@ execFileSync(
 );
 const { parseGeneric } = await import(out);
 
+// `draftFromGeneric` quyết định DẠNG CÂU cuối cùng từ những gì parser đọc
+// được, nên phần nhãn `[TN]/[DS]/…` phải kiểm qua đây mới đúng chỗ.
+const outDraft = join(mkdtempSync(join(tmpdir(), "fsc-draft-")), "d.mjs");
+execFileSync(
+  "npx",
+  [
+    "esbuild",
+    "src/features/question-bank/lib/import-draft.ts",
+    "--bundle",
+    "--format=esm",
+    "--platform=node",
+    "--alias:@=./src",
+    `--outfile=${outDraft}`,
+  ],
+  { cwd: "apps/web", stdio: "pipe" },
+);
+const { draftFromGeneric } = await import(outDraft);
+
 let pass = 0,
   fail = 0;
 const check = (name, ok, extra = "") => {
@@ -299,6 +317,126 @@ const Uc = "⟦/U⟧";
     ),
     "file khai theo mẫu FSC mà thiếu trường bắt buộc sẽ chết oan",
   );
+}
+
+/* ── Nhãn [mức độ][dạng câu] của đề KHÔNG dùng mã YCCĐ ──────────────────
+ *
+ * Không có mã YCCĐ thì hệ thống chỉ còn cách ĐẾM phương án để đoán dạng.
+ * Đếm được với trắc nghiệm, nhưng Đúng/Sai, trả lời ngắn và tự luận không có
+ * A/B/C/D nào để đếm — nên trước đây chúng luôn ra "chưa nhận ra dạng".
+ */
+{
+  const draft = (doc) => {
+    const q = parseGeneric(doc).questions[0];
+    return { q, d: draftFromGeneric(q, 0) };
+  };
+
+  {
+    const { q, d } = draft(
+      [
+        "Câu 1. [NB][TN] Thủ đô của Việt Nam là thành phố nào?",
+        `${U}A${Uc}. Hà Nội`,
+        "B. Huế",
+        "C. Đà Nẵng",
+        "D. Cần Thơ",
+      ].join("\n"),
+    );
+    check("[NB] → mức độ nhận biết", q?.difficulty === "easy", q?.difficulty);
+    check("[TN] → trắc nghiệm một đáp án", d.type === "mcq-single", String(d.type));
+    check(
+      "nhãn bị GỠ khỏi đề bài, không sót [NB][TN]",
+      !/\[(NB|TN)\]/.test(q?.content ?? ""),
+      q?.content,
+    );
+    check("đề bài giữ nguyên chữ", /Thủ đô của Việt Nam/.test(q?.content ?? ""));
+  }
+
+  {
+    const { q, d } = draft(
+      [
+        "Câu 2. [TH][DS] Xét các phát biểu sau:",
+        `a) ${U}Phát biểu đúng${Uc}`,
+        "b) Phát biểu sai",
+        "c) Phát biểu thứ ba",
+        "d) Phát biểu thứ tư",
+      ].join("\n"),
+    );
+    check("[DS] → Đúng/Sai nhiều ý", d.type === "multi-tf", String(d.type));
+    check("[DS] tách được 4 ý con", q?.subQuestions.length === 4, String(q?.subQuestions.length));
+    check("[DS] ý gạch chân = Đúng", q?.subQuestions[0]?.correctAnswer === true);
+    check("[DS] ý không gạch = Sai", q?.subQuestions[1]?.correctAnswer === false);
+    check("[TH] → mức thông hiểu", q?.difficulty === "medium", q?.difficulty);
+  }
+
+  {
+    const { q, d } = draft(
+      ["Câu 3. [VD][TLN] Kết quả phép tính là bao nhiêu?", "<Key=42>"].join("\n"),
+    );
+    check("[TLN] → trả lời ngắn", d.type === "short-answer", String(d.type));
+    check("[TLN] vẫn lấy được đáp án <Key=…>", q?.acceptedAnswers[0] === "42");
+    check("[VD] → mức vận dụng", q?.difficulty === "hard", q?.difficulty);
+  }
+
+  {
+    const { d } = draft("Câu 4. [VD][TL] Trình bày quan điểm của em về vấn đề trên.");
+    check("[TL] → tự luận, dù câu KHÔNG có phương án nào", d.type === "essay", String(d.type));
+  }
+
+  {
+    const { d } = draft(
+      [
+        "Câu 5. [TH][TNN] Những phương án nào đúng?",
+        `${U}A${Uc}. Đúng thứ nhất`,
+        `${U}B${Uc}. Đúng thứ hai`,
+        "C. Sai",
+        "D. Sai nữa",
+      ].join("\n"),
+    );
+    check("[TNN] → trắc nghiệm nhiều đáp án", d.type === "mcq-multi", String(d.type));
+  }
+
+  // Cách viết mà người soạn sẽ dùng thật, phải nhận hết.
+  const dangCau = (tag) =>
+    draft([`Câu 1. ${tag} Nội dung`, "A. một", "B. hai"].join("\n")).d.type;
+  check("viết gộp [NB-TN]", dangCau("[NB-TN]") === "mcq-single");
+  check("viết gộp [NB/TN]", dangCau("[NB/TN]") === "mcq-single");
+  check("viết gộp [NB TN]", dangCau("[NB TN]") === "mcq-single");
+  check("đảo thứ tự [TN][NB]", dangCau("[TN][NB]") === "mcq-single");
+  check("chữ thường [nb][tln]", dangCau("[nb][tln]") === "short-answer");
+  check("[ĐS] viết bằng chữ Đ", dangCau("[ĐS]") === "multi-tf");
+  check("chữ tắt một ký tự [F] dùng chung với mã YCCĐ", dangCau("[F]") === "multi-tf");
+  check("chữ tắt [E]", dangCau("[E]") === "essay");
+  check("[VDC] xếp chung vào vận dụng", (() => {
+    const { q } = draft("Câu 1. [VDC][TL] Nội dung");
+    return q?.difficulty === "hard";
+  })());
+
+  // Không được ăn mất ngoặc vuông của người soạn.
+  {
+    const { q } = draft(
+      ["Câu 1. [NB][TN] Xem hình [Hình 2] và bảng [1] rồi trả lời:", "A. một", "B. hai"].join("\n"),
+    );
+    check(
+      "ngoặc vuông lạ ([Hình 2], [1]) được GIỮ NGUYÊN trong đề bài",
+      /\[Hình 2\]/.test(q?.content ?? "") && /\[1\]/.test(q?.content ?? ""),
+      q?.content,
+    );
+  }
+
+  // Nhãn của người soạn thắng việc đếm phương án — họ ghi ra là có ý.
+  {
+    const { d } = draft(
+      ["Câu 1. [NB][TLN] Câu này ghi rõ là trả lời ngắn", "A. một", "B. hai"].join("\n"),
+    );
+    check("nhãn dạng câu thắng việc đếm phương án", d.type === "short-answer", String(d.type));
+  }
+
+  // Đề vẫn nhập được khi thiếu nhãn — chỉ là phải chọn tay.
+  {
+    const { q, d } = draft(["Câu 1. Không có nhãn nào cả", "A. một", "B. hai"].join("\n"));
+    check("thiếu nhãn: mức độ để TRỐNG chứ không đoán", q?.difficulty === null);
+    check("thiếu nhãn: vẫn đếm phương án ra trắc nghiệm", d.type === "mcq-single");
+  }
 }
 
 console.log(`\n${pass} pass · ${fail} fail`);
