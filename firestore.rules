@@ -63,6 +63,22 @@ service cloud.firestore {
     function isApprover() {
       return isAdmin() || (isSignedIn() && role() == "subject-lead");
     }
+    // TBM có phạm vi: chỉ MÔN + KHỐI được giao trong hồ sơ người dùng.
+    //
+    // Trước đây `isApprover()` cho TBM ghi vào MỌI câu hỏi trong cơ sở, bất
+    // kể môn nào — tức TBM Toán sửa được đáp án môn Sinh. Chấp nhận được khi
+    // câu đã dùng trong đề là khoá cứng không ai sửa; không còn chấp nhận
+    // được từ lúc "sửa trực tiếp" mở ra, vì sửa đáp án rồi chấm lại là đổi
+    // điểm cả lớp.
+    //
+    // `gradeIds` rỗng/thiếu = phụ trách mọi khối trong môn được giao — đúng
+    // quy ước của useUserScope và của canEditInPlace ở client.
+    function leadScopeOk(subjectId, gradeId) {
+      return isSignedIn() && role() == "subject-lead" &&
+        userDoc().get("subjectIds", []).hasAny([subjectId]) &&
+        (userDoc().get("gradeIds", []).size() == 0 ||
+          userDoc().get("gradeIds", []).hasAny([gradeId]));
+    }
     function inSameCampus(cid) {
       return isSuperadmin() || callerCampusId() == cid;
     }
@@ -210,8 +226,15 @@ service cloud.firestore {
         request.resource.data.ownerId == uid() &&
         (request.resource.data.kho == "personal" ||
           request.resource.data.status == "pending");
+      // Sửa / duyệt: admin trong cơ sở, hoặc TBM ĐÚNG môn · khối, hoặc chủ
+      // sở hữu với câu chưa vào kho chung. Client có `canEditInPlace` cùng
+      // luật, nhưng đó chỉ là gợi ý giao diện — đây mới là cổng thật.
       allow update: if isSignedIn() && (
-        (isApprover() && inSameCampus(resource.data.campusId)) ||
+        (isAdmin() && inSameCampus(resource.data.campusId)) ||
+        (leadScopeOk(
+            resource.data.get("subjectId", ""),
+            resource.data.get("gradeId", "")
+          ) && inSameCampus(resource.data.campusId)) ||
         (resource.data.ownerId == uid() &&
           (resource.data.kho == "personal" || resource.data.status == "pending") &&
           request.resource.data.status == resource.data.status)

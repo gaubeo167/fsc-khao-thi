@@ -65,6 +65,12 @@ interface Props {
    * xong vẫn nhìn thấy "Kho chung" y như cũ và tưởng lưu hỏng.
    */
   onSaved?: (kho: Question["kho"]) => void;
+  /**
+   * Lý do sửa, ghi kèm vào audit. Trang ngân hàng truyền vào khi người dùng
+   * chọn "sửa trực tiếp" một câu đang dùng trong đề đã đóng băng — lần sửa
+   * đó đổi đáp án của một câu đã có học sinh làm, nên phải giải trình được.
+   */
+  editReason?: string;
 }
 
 export function CreateQuestionDialog({
@@ -72,6 +78,7 @@ export function CreateQuestionDialog({
   onOpenChange,
   editing,
   onSaved,
+  editReason,
 }: Props) {
   const session = useAuthStore((s) => s.session);
   const create = useQuestionsStore((s) => s.create);
@@ -115,13 +122,17 @@ export function CreateQuestionDialog({
   function handleSubmit(values: QuestionFormValues, finalStatus: Question["status"]) {
     try {
       if (isEdit && editing) {
-        update(editing.id, {
-          ...(values as any),
-          status: finalStatus,
-          approvedBy:
-            finalStatus === "approved" ? session?.userId ?? null : editing.approvedBy ?? null,
-          rejectionNote: null,
-        });
+        update(
+          editing.id,
+          {
+            ...(values as any),
+            status: finalStatus,
+            approvedBy:
+              finalStatus === "approved" ? session?.userId ?? null : editing.approvedBy ?? null,
+            rejectionNote: null,
+          },
+          editReason ? { reason: editReason } : undefined,
+        );
         toast.success(
           finalStatus === "approved"
             ? "Đã lưu & duyệt câu hỏi"

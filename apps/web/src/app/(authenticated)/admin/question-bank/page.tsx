@@ -56,6 +56,13 @@ const ViewQuestionDialog = dynamic(
     ),
   { ssr: false, loading: () => null },
 );
+const InUseEditDialog = dynamic(
+  () =>
+    import("@/features/question-bank/dialogs/in-use-edit-dialog").then(
+      (m) => m.InUseEditDialog,
+    ),
+  { ssr: false, loading: () => null },
+);
 const CopyQuestionDialog = dynamic(
   () =>
     import("@/features/question-bank/dialogs/copy-question-dialog").then(
@@ -66,7 +73,8 @@ const CopyQuestionDialog = dynamic(
 import { useExamFormsStore } from "@/features/exam-forms/state/exam-forms-store";
 import { MaterialsTab } from "@/features/learning-materials/components/materials-tab";
 import { useQuestionsStore } from "@/features/question-bank/state/questions-store";
-import { buildLockedMessage, questionInUse } from "@/lib/in-use";
+import { canEditInPlace } from "@/features/question-bank/lib/edit-permission";
+import { questionInUse } from "@/lib/in-use";
 import { getLatestVersionsOf, versionOf } from "@/lib/version";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import { PageHeader } from "@/features/shell/components/page-header";
@@ -100,11 +108,14 @@ export default function QuestionBankPage() {
     }
     return rows;
   }, [allQuestionsRaw, showArchived, showAllVersions]);
-  // CTA dialog state — "câu hỏi đã được dùng, tạo phiên bản mới?"
+  // CTA dialog state — "câu hỏi đã được dùng: sửa trực tiếp hay tạo bản mới?"
   const [versionPrompt, setVersionPrompt] = useState<{
     source: Question;
     blockerReason: string;
   } | null>(null);
+  // Lý do sửa, ghi kèm audit. Chỉ khác null khi người dùng chọn "sửa trực
+  // tiếp" một câu đang dùng trong đề — lần sửa đó phải giải trình được.
+  const [editReason, setEditReason] = useState<string | null>(null);
 
   // Pinned campus scope: grade + subject filter dropdowns only show options
   // applicable to the operating campus's tier.
@@ -253,21 +264,55 @@ export default function QuestionBankPage() {
     };
   }, [scoped]);
 
+  // Ai được sửa THẲNG vào câu đang dùng trong đề — theo môn · khối được
+  // giao. Dùng lại đúng phạm vi của `useUserScope`, không đẻ luật thứ hai.
+  const editVerdict = useMemo(() => {
+    const q = versionPrompt?.source;
+    if (!session || !q) {
+      return { allowed: false, reason: "" };
+    }
+    return canEditInPlace(
+      {
+        role: session.role,
+        allowedSubjectIds: scope.allowedSubjectIds,
+        allowedGradeIds: scope.allowedGradeIds,
+      },
+      q,
+      {
+        subject: subjects.find((x) => x.id === q.subjectId)?.name ?? null,
+        grade: grades.find((x) => x.id === q.gradeId)?.name ?? null,
+      },
+    );
+  }, [session, scope, versionPrompt, subjects, grades]);
+
   function openCreate() {
     setEditing(null);
+    setEditReason(null);
     setEditorOpen(true);
   }
   function openEdit(q: Question) {
-    // Enterprise rule: a published question that has already been
-    // frozen into a live exam_form cannot be edited in place — doing
-    // so would let analytics + audit drift. Surface the CTA per the
-    // governance message instead of silently disabling.
+    // Câu đã đóng băng vào một đề đang sống thì không mở thẳng trình soạn:
+    // hỏi trước, vì hai lối ra (sửa trực tiếp / tạo bản mới) dẫn tới hai hệ
+    // quả ngược nhau. Bản thân việc sửa KHÔNG đụng tới đề đã phát — đề là
+    // bản chụp riêng — nên đây là câu hỏi về quyền và ý định, không phải
+    // một cái khoá.
     const usage = questionInUse(q.id, examForms);
     if (usage.inUse) {
       setVersionPrompt({ source: q, blockerReason: usage.reason ?? "" });
       return;
     }
     setEditing(q);
+    setEditReason(null);
+    setEditorOpen(true);
+  }
+
+  /** Sửa thẳng vào câu gốc — chỉ admin / TBM đúng môn · khối. */
+  function performDirectEdit(source: Question) {
+    setVersionPrompt(null);
+    setEditing(source);
+    setEditReason(
+      `Sửa trực tiếp câu đang dùng trong đề đã đóng băng (${source.id})`,
+    );
     setEditorOpen(true);
   }
 
@@ -281,6 +326,7 @@ export default function QuestionBankPage() {
     if (!clone) return;
     setVersionPrompt(null);
     setEditing(clone);
+    setEditReason(null);
     setEditorOpen(true);
   }
 
@@ -530,9 +576,13 @@ export default function QuestionBankPage() {
         open={editorOpen}
         onOpenChange={(o) => {
           setEditorOpen(o);
-          if (!o) setEditing(null);
+          if (!o) {
+            setEditing(null);
+            setEditReason(null);
+          }
         }}
         editing={editing}
+        editReason={editReason ?? undefined}
         onSaved={setKhoView}
       />
       <ImportQuestionsDialog open={importOpen} onOpenChange={setImportOpen} />
@@ -575,35 +625,19 @@ export default function QuestionBankPage() {
         onConfirm={performCopy}
       />
 
-      <ConfirmActionDialog
+      <InUseEditDialog
         open={Boolean(versionPrompt)}
         onOpenChange={(o) => !o && setVersionPrompt(null)}
-        variant="default"
-        title="Câu hỏi đã được dùng trong đề thi"
-        description={
-          versionPrompt ? (
-            <>
-              {buildLockedMessage({
-                inUse: true,
-                reason: versionPrompt.blockerReason,
-              })}
-              <div className="mt-2 rounded-md bg-muted/40 px-3 py-2 text-[11.5px] text-muted-foreground">
-                Phiên bản mới sẽ là{" "}
-                <span className="font-semibold">
-                  v{versionOf(versionPrompt.source) + 1}
-                </span>{" "}
-                trong chuỗi <span className="font-mono">{versionPrompt.source.id}</span>
-                . Bắt đầu ở trạng thái{" "}
-                <span className="font-semibold">draft</span> — cần được
-                duyệt lại trước khi dùng vào đề mới.
-              </div>
-            </>
-          ) : (
-            ""
-          )
+        question={versionPrompt?.source ?? null}
+        blockerReason={versionPrompt?.blockerReason ?? ""}
+        nextVersion={
+          versionPrompt ? versionOf(versionPrompt.source) + 1 : 2
         }
-        confirmLabel="Tạo phiên bản mới"
-        onConfirm={() => {
+        verdict={editVerdict}
+        onDirectEdit={() => {
+          if (versionPrompt) performDirectEdit(versionPrompt.source);
+        }}
+        onNewVersion={() => {
           if (versionPrompt) performCloneVersion(versionPrompt.source);
         }}
       />

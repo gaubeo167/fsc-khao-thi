@@ -38,7 +38,9 @@ interface Actions {
    *  updated optimistically so callers can use the returned object
    *  immediately. */
   create(input: Omit<Question, "id" | "createdAt" | "updatedAt">): Question;
-  update(id: string, patch: Partial<Question>): void;
+  /** `opts.reason` được ghi vào audit — dùng cho những lần sửa cần giải
+   *  trình, vd. sửa trực tiếp một câu đang dùng trong đề đã đóng băng. */
+  update(id: string, patch: Partial<Question>, opts?: { reason?: string }): void;
   /** Soft-delete (sets archivedAt). Hard delete is forbidden —
    *  exam_form snapshots + audit + analytics permanently reference
    *  questions. */
@@ -131,7 +133,7 @@ export const useQuestionsStore = create<State & Actions>()((set, get) => ({
     return q;
   },
 
-  update(id, patch) {
+  update(id, patch, opts) {
     const before = get().questions.find((q) => q.id === id);
     const now = new Date().toISOString();
     set({
@@ -153,6 +155,7 @@ export const useQuestionsStore = create<State & Actions>()((set, get) => ({
         before ? ({ ...before, ...patch } as Question) : undefined,
       ),
       campusId: before?.campusId ?? null,
+      ...(opts?.reason ? { reason: opts.reason } : {}),
     });
   },
 
