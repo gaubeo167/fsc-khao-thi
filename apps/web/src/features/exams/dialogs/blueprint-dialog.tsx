@@ -121,6 +121,38 @@ export function BlueprintDialog({ open, onOpenChange, editing }: Props) {
     });
   }, [allQuestions, session, activeCampusId, subjectId, gradeId]);
 
+  /**
+   * Vì sao kho trông như trống.
+   *
+   * `eligiblePool` đòi CÙNG LÚC năm điều kiện, và khi trượt thì màn hình chỉ
+   * hiện một danh sách rỗng — người dùng thấy "câu hỏi tôi đã gắn mục lục mà
+   * bốc đề không có". Đếm sẵn số câu bị loại vì từng lý do để nói ra được.
+   *
+   * Con số thật đo trên production lúc viết: 124 câu có gắn mục lục, nhưng
+   * chỉ 51 câu vào được kho bốc đề — 99 câu nằm ở KHO CÁ NHÂN, 50 câu đã lưu
+   * trữ. Không nói ra thì không ai đoán được.
+   */
+  const poolWhy = useMemo(() => {
+    const campusScope =
+      session?.role === "superadmin" ? activeCampusId : (session?.campusId ?? null);
+    let personal = 0;
+    let notApproved = 0;
+    let archived = 0;
+    let otherCampus = 0;
+    let sameScope = 0;
+    for (const q of allQuestions) {
+      if (subjectId && q.subjectId !== subjectId) continue;
+      if (gradeId && q.gradeId !== gradeId) continue;
+      if (q.type === "ai-generated") continue;
+      sameScope += 1;
+      if (q.archivedAt) archived += 1;
+      else if (q.kho !== "campus") personal += 1;
+      else if (q.status !== "approved") notApproved += 1;
+      else if (campusScope && q.campusId !== campusScope) otherCampus += 1;
+    }
+    return { sameScope, personal, notApproved, archived, otherCampus };
+  }, [allQuestions, session, activeCampusId, subjectId, gradeId]);
+
   const eligiblePoolById = useMemo(
     () => indexQuestions(eligiblePool),
     [eligiblePool],
@@ -450,6 +482,7 @@ export function BlueprintDialog({ open, onOpenChange, editing }: Props) {
           }}
           topicName={pickingFor.name || `Mạch ${topics.indexOf(pickingFor) + 1}`}
           pool={eligiblePool as Question[]}
+          poolWhy={poolWhy}
           initialSelected={pickingFor.pickedQuestionIds}
           // Cross-mạch dedup: ids already picked by OTHER topics in this
           // blueprint are excluded from the picker so the same question can't

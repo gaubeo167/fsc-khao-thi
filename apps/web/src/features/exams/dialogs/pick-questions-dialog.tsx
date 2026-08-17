@@ -21,6 +21,14 @@ interface Props {
   onOpenChange(open: boolean): void;
   topicName: string;
   pool: Question[];
+  /** Vì sao kho trống — đếm sẵn ở màn khung đề, xem `blueprint-dialog`. */
+  poolWhy?: {
+    sameScope: number;
+    personal: number;
+    notApproved: number;
+    archived: number;
+    otherCampus: number;
+  };
   initialSelected: string[];
   /**
    * Question ids that are already picked by OTHER mạch in the same blueprint.
@@ -38,6 +46,7 @@ interface Props {
  * difficulty filtering + selection.
  */
 export function PickQuestionsDialog({
+  poolWhy,
   open,
   onOpenChange,
   topicName,
@@ -274,12 +283,43 @@ export function PickQuestionsDialog({
 
           {/* List */}
           {filtered.length === 0 ? (
-            <div className="rounded-xl border bg-card p-10 text-center">
+            <div className="rounded-xl border bg-card p-8 text-center">
               <p className="text-section-title">Không có câu hỏi phù hợp.</p>
-              <p className="text-meta mt-1">
-                Đảm bảo kho nhà trường có câu hỏi đã duyệt cho môn + khối tương
-                ứng.
-              </p>
+              {/* Nói RÕ vì sao trống.
+                  Kho bốc đề đòi cùng lúc: kho toàn trường · đã duyệt · chưa
+                  lưu trữ · đúng campus. Trượt điều kiện nào cũng ra một danh
+                  sách rỗng giống hệt nhau, nên "câu tôi đã gắn mục lục sao
+                  không thấy" là câu hỏi không thể tự trả lời được. */}
+              {poolWhy && poolWhy.sameScope > 0 ? (
+                <div className="text-meta mx-auto mt-2 max-w-md space-y-1 text-left">
+                  <p>
+                    Môn + khối này có{" "}
+                    <b>{poolWhy.sameScope} câu</b> trong kho, nhưng bốc đề chỉ
+                    lấy câu <b>đã duyệt</b> trong <b>kho toàn trường</b>:
+                  </p>
+                  <ul className="space-y-0.5">
+                    {poolWhy.personal > 0 && (
+                      <li>
+                        • <b>{poolWhy.personal} câu ở kho cá nhân</b> — mở câu
+                        hỏi, đổi sang kho toàn trường rồi gửi duyệt.
+                      </li>
+                    )}
+                    {poolWhy.notApproved > 0 && (
+                      <li>• {poolWhy.notApproved} câu chưa được duyệt.</li>
+                    )}
+                    {poolWhy.archived > 0 && (
+                      <li>• {poolWhy.archived} câu đã lưu trữ.</li>
+                    )}
+                    {poolWhy.otherCampus > 0 && (
+                      <li>• {poolWhy.otherCampus} câu thuộc campus khác.</li>
+                    )}
+                  </ul>
+                </div>
+              ) : (
+                <p className="text-meta mt-1">
+                  Kho nhà trường chưa có câu hỏi đã duyệt cho môn + khối này.
+                </p>
+              )}
             </div>
           ) : (
             <ul className="space-y-2">
