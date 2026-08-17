@@ -12,14 +12,12 @@ import {
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
-import { useAuthStore } from "@/features/auth/state/auth-store";
 import {
   DEFAULT_SCORING,
   effectiveShiftStatus,
   type ShiftStatus,
 } from "@/features/exam-shifts/data/types";
 import { formatScore } from "@/features/exam-shifts/lib/scoring";
-import { useAttemptsStore } from "@/features/shift-exam/state/attempts-store";
 import type { MyShift } from "@/features/student/hooks/use-my-shifts";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import { cn } from "@/lib/utils";
@@ -63,15 +61,8 @@ function diffHumans(ms: number): string {
 
 export function StudentShiftCard({ item }: { item: MyShift }) {
   const subjects = useSubjectsStore((s) => s.subjects);
-  const session = useAuthStore((s) => s.session);
-  const myAttempt = useAttemptsStore((s) =>
-    session
-      ? s.attempts.find(
-          (a) =>
-            a.shiftId === item.shift.id && a.studentId === session.userId,
-        )
-      : undefined,
-  );
+  // Bài làm lấy từ `useMyShifts` — cùng nguồn với thứ tự sắp xếp.
+  const myAttempt = item.attempt;
   const subject = subjects.find((s) => s.id === item.shift.subjectId);
   const now = Date.now();
   const startMs = new Date(item.shift.startAt).getTime();
@@ -80,16 +71,10 @@ export function StudentShiftCard({ item }: { item: MyShift }) {
   // even when the parent isn't re-rendering on its own.
   const status = effectiveShiftStatus(item.shift, now);
 
-  // Attendance state — what THIS student has done so far for this shift.
-  // Drives the prominent "Đã thi" / "Đang thi" / "Chưa thi" badge.
-  const attendance: "submitted" | "in-progress" | "absent" | "not-yet" =
-    myAttempt?.submittedAt
-      ? "submitted"
-      : myAttempt
-        ? "in-progress"
-        : status === "completed" || status === "cancelled"
-          ? "absent"
-          : "not-yet";
+  // Em này đã thi chưa — lấy từ `useMyShifts`, KHÔNG tính lại ở đây. Thứ tự
+  // sắp xếp và màu viền phải đọc cùng một con số, nếu không sẽ có ngày thẻ
+  // ghi "Chưa thi" mà lại nằm dưới đáy danh sách.
+  const attendance = item.attendance;
 
   // Convert stored score to scoring config to display "X/maxScore".
   const scoring = item.shift.scoring ?? DEFAULT_SCORING;
@@ -115,7 +100,9 @@ export function StudentShiftCard({ item }: { item: MyShift }) {
     };
   }
 
-  const canEnter = status === "in-progress";
+  // Nộp rồi thì không mời vào thi lại — nút cũ vẫn sáng "Vào thi ngay" cho
+  // cả em đã nộp, bấm vào chỉ để nhận thông báo đã nộp.
+  const canEnter = status === "in-progress" && attendance !== "submitted";
   const activeAntiCheat = Object.values(item.shift.antiCheat).filter(Boolean).length;
   const totalAntiCheat = Object.keys(item.shift.antiCheat).length;
 
@@ -123,8 +110,20 @@ export function StudentShiftCard({ item }: { item: MyShift }) {
     <article
       className={cn(
         "rounded-xl border bg-card transition-shadow hover:shadow-sm",
-        status === "in-progress" &&
-          "border-emerald-300 ring-2 ring-emerald-200/60",
+        // Viền nói ngay "còn phải làm hay xong rồi", trước cả khi đọc chữ.
+        // Màu chỉ là lớp nhắc lại — huy hiệu "✓ Đã thi / ○ Chưa thi" ở góc
+        // phải vẫn là thứ mang nghĩa, nên không phụ thuộc vào phân biệt màu.
+        attendance === "doing"
+          ? "border-amber-400 ring-2 ring-amber-200/70"
+          : attendance === "submitted"
+            ? "border-violet-300 bg-violet-50/30"
+            : attendance === "absent"
+              ? "border-rose-200 bg-rose-50/20"
+              : status === "in-progress"
+                ? "border-emerald-300 ring-2 ring-emerald-200/60"
+                : status === "cancelled"
+                  ? "border-dashed"
+                  : undefined,
       )}
     >
       <header className="flex flex-wrap items-center gap-2 border-b px-4 py-2.5">
@@ -143,8 +142,8 @@ export function StudentShiftCard({ item }: { item: MyShift }) {
           className={cn(
             "ml-auto rounded-md border px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-[0.06em]",
             attendance === "submitted"
-              ? "border-emerald-300 bg-emerald-50 text-emerald-800"
-              : attendance === "in-progress"
+              ? "border-violet-300 bg-violet-50 text-violet-800"
+              : attendance === "doing"
                 ? "border-amber-300 bg-amber-50 text-amber-800"
                 : attendance === "absent"
                   ? "border-rose-300 bg-rose-50 text-rose-800"
@@ -152,7 +151,7 @@ export function StudentShiftCard({ item }: { item: MyShift }) {
           )}
         >
           {attendance === "submitted" && "✓ Đã thi"}
-          {attendance === "in-progress" && "⏵ Đang thi dở"}
+          {attendance === "doing" && "⏵ Đang thi dở"}
           {attendance === "absent" && "✗ Bỏ thi"}
           {attendance === "not-yet" && "○ Chưa thi"}
         </span>
@@ -234,7 +233,7 @@ export function StudentShiftCard({ item }: { item: MyShift }) {
               <Play className="h-3.5 w-3.5" /> Vào thi ngay
             </Link>
           </Button>
-        ) : status === "completed" ? (
+        ) : attendance === "submitted" || status === "completed" ? (
           <Button
             asChild
             size="sm"

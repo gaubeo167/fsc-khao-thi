@@ -44,6 +44,7 @@ node scripts/test-omath.mjs           # công thức Word → LaTeX + mốc $…
 node scripts/test-audio-marker.mjs    # mốc audio + giới hạn số lần nghe
 node scripts/test-media-url.mjs       # nhận dạng URL video (YouTube/Drive/Vimeo/mp4)
 node scripts/test-toc-scope.mjs       # mục lục KHÔNG mượn của khối khác
+node scripts/test-my-shifts-order.mjs # lịch thi HS: việc cần làm lên trên
 node scripts/test-edit-permission.mjs # ai được sửa trực tiếp câu đã dùng trong đề
 node scripts/test-refresh-frozen.mjs  # đẩy câu đã sửa vào đề đang đóng băng
 node scripts/test-user-update-plan.mjs # sửa hồ sơ ≠ đổi mật khẩu (hai kho khác nhau)
