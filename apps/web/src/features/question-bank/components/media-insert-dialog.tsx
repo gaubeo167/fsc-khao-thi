@@ -17,6 +17,7 @@ import {
 } from "@/lib/storage";
 
 import { buildAudioMarker } from "../lib/audio-marker";
+import { classifyMediaUrl, embedHint } from "./media-utils";
 
 export type MediaKind = "image" | "video" | "audio" | "link";
 
@@ -202,7 +203,9 @@ export function MediaInsertDialog({
       // không thể chạy, mà thông báo "lỗi không xác định" thì không ai đoán ra.
       setError(
         isFirebaseConfigured()
-          ? `Tải lên thất bại: ${err instanceof Error ? err.message : "lỗi không rõ"}`
+          ? err instanceof Error
+            ? err.message
+            : "Tải lên thất bại (không rõ nguyên nhân)."
           : "Chế độ chạy thử không có kho file — dán URL audio thay vì tải lên.",
       );
     } finally {
@@ -322,6 +325,16 @@ export function MediaInsertDialog({
                     />
                   </div>
                   <p className="text-meta mt-1">{Math.round(uploading * 100)}%</p>
+                  {uploading === 0 && (
+                    <p className="text-meta mt-2 text-muted-foreground">
+                      Đứng ở 0% quá lâu thường là kho file chưa mở quyền — chuyển
+                      sang tab “Từ URL” để chèn tạm, rồi báo quản trị chạy{" "}
+                      <code className="rounded bg-muted px-1">
+                        firebase deploy --only storage
+                      </code>
+                      .
+                    </p>
+                  )}
                 </div>
               ) : (
                 <label
@@ -420,6 +433,15 @@ export function MediaInsertDialog({
                 onChange={(e) => setUrl(e.target.value)}
                 placeholder={copy.placeholder}
               />
+              {/* Xem thử NGAY tại đây.
+                  Không có bước này thì người soạn chỉ biết URL hỏng vào lúc
+                  học sinh đang thi — mà lúc đó không sửa được nữa. */}
+              {kind === "video" && url.trim() && (
+                <VideoUrlPreview url={url.trim()} />
+              )}
+              {kind === "audio" && url.trim() && (
+                <audio src={url.trim()} controls className="mt-1 w-full" />
+              )}
             </div>
           )}
 
@@ -498,5 +520,42 @@ export function MediaInsertDialog({
         </footer>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * Xem thử video ngay trong hộp chèn.
+ *
+ * Nhận ra dịch vụ thì nhúng luôn để người soạn thấy đúng cái học sinh sẽ
+ * thấy. Không nhận ra thì nói thẳng là học sinh sẽ chỉ có một thẻ bấm ra
+ * ngoài — ở màn thi đang khoá toàn màn hình, bấm ra ngoài là hỏng bài.
+ */
+function VideoUrlPreview({ url }: { url: string }) {
+  const kind = classifyMediaUrl(url);
+  const hint = embedHint(kind);
+
+  if (hint) {
+    return (
+      <p className="text-meta mt-1 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-amber-900">
+        {hint}
+      </p>
+    );
+  }
+  return (
+    <div className="mt-1 overflow-hidden rounded-lg border bg-black">
+      {kind.type === "direct" ? (
+        <video src={url} controls className="block max-h-52 w-full object-contain" />
+      ) : (
+        <div className="aspect-video w-full">
+          <iframe
+            src={kind.type === "link" ? url : kind.embedUrl}
+            title="Xem thử"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+            className="block h-full w-full border-0"
+          />
+        </div>
+      )}
+    </div>
   );
 }

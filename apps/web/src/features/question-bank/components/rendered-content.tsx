@@ -251,7 +251,7 @@ function renderMediaSnippet(
     const label = videoMatch[2].trim() || "Video";
     const kind = classifyMediaUrl(src);
 
-    if (kind.type === "youtube" || kind.type === "vimeo") {
+    if (kind.type === "youtube" || kind.type === "vimeo" || kind.type === "drive") {
       return (
         <span key={`vid-${key}`} className="my-2 block overflow-hidden rounded-lg border bg-black">
           <span className="block aspect-video w-full">
@@ -291,6 +291,8 @@ function renderMediaSnippet(
       );
     }
 
+    // Không nhúng được: vẫn cho bấm ra ngoài, nhưng nói rõ đây là đường dẫn
+    // ngoài — ở màn thi thì bấm là rời khỏi bài.
     return (
       <a
         key={`vid-${key}`}
