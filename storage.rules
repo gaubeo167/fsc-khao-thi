@@ -75,12 +75,25 @@ service firebase.storage {
     // Cùng đánh đổi với /materials: ai có đường dẫn thì tải được.
     match /question-media/{ownerUid}/{file=**} {
       allow read: if isSignedIn();
-      // uid trong đường dẫn phải là chính người ghi → không ghi đè file của
-      // giáo viên khác.
-      allow write: if isTeacherOrAbove() &&
+
+      // KHÔNG gọi isTeacherOrAbove() ở đây, dù nó có sẵn ngay bên trên.
+      //
+      // Hàm đó đọc /users qua `firestore.get(...)` — tức là rules của Storage
+      // gọi sang Firestore. Đó là "cross-service rules", và nó chỉ chạy khi
+      // service agent của Storage được cấp quyền đọc Firestore. Với dự án vừa
+      // BẬT Storage (fsc-khao-thi bật hôm nay) quyền đó có thể chưa có, và khi
+      // gọi hỏng thì rules TỪ CHỐI — trả 403 y hệt như bị chặn vì phân quyền.
+      // Đã mất ba vòng đi tìm mới ra, vì thông báo lỗi giống hệt nhau.
+      //
+      // Bỏ nó đi thì mất gì: học sinh cũng ghi được vào THƯ MỤC RIÊNG của
+      // chính mình. Không mất gì đáng kể — không màn nào cho học sinh tải
+      // file, thư mục của người này người kia không đụng được, và dung lượng
+      // vẫn chặn 20MB. Đổi lại, đường tải file không còn phụ thuộc vào một
+      // dịch vụ thứ hai.
+      allow write: if isSignedIn() &&
         ownerUid == uid() &&
         request.resource.size < 20 * 1024 * 1024;
-      allow delete: if isTeacherOrAbove() && ownerUid == uid();
+      allow delete: if isSignedIn() && ownerUid == uid();
     }
 
     // Default deny.
