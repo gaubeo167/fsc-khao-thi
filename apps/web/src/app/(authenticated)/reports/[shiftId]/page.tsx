@@ -7,6 +7,7 @@ import {
   FileSpreadsheet,
   Hourglass,
   Loader2,
+  RotateCcw,
   ShieldAlert,
   Sparkles,
   Trophy,
@@ -18,6 +19,7 @@ import { notFound, useParams } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import { useUsersStore } from "@/features/admin/users/users-store";
+import { RegradeDialog } from "@/features/reports/dialogs/regrade-dialog";
 import { useUserScope } from "@/features/auth/lib/use-scope";
 import { useAuthStore } from "@/features/auth/state/auth-store";
 import { useCampusStore } from "@/features/campus/state/campus-store";
@@ -45,6 +47,7 @@ import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import { cn } from "@/lib/utils";
 
 export default function ReportDetailPage() {
+  const [regradeOpen, setRegradeOpen] = useState(false);
   const params = useParams<{ shiftId: string }>();
   const shiftId = params.shiftId;
   const session = useAuthStore((s) => s.session);
@@ -294,7 +297,31 @@ export default function ReportDetailPage() {
           )}
           {exporting ? "Đang xuất…" : "Xuất Excel"}
         </button>
+
+        {/* Chấm lại: chỉ có nghĩa khi ca đã có bài nộp. Đặt cạnh Xuất Excel vì
+            hai việc này đi cùng nhau — phát hiện điểm sai lúc soát bảng điểm. */}
+        <button
+          type="button"
+          onClick={() => setRegradeOpen(true)}
+          disabled={report.perStudent.length === 0}
+          title={
+            report.perStudent.length === 0
+              ? "Chưa có bài nộp nào để chấm lại"
+              : "Chấm lại toàn bộ bài của ca thi này"
+          }
+          className="text-small inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 font-semibold text-amber-800 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <RotateCcw className="h-4 w-4" />
+          Chấm lại
+        </button>
       </div>
+
+      <RegradeDialog
+        open={regradeOpen}
+        onOpenChange={setRegradeOpen}
+        shiftId={shiftId}
+        attemptCount={report.perStudent.length}
+      />
 
       {/* AI insights — surface at the very top so teacher reads them first */}
       {insights.length > 0 && (
