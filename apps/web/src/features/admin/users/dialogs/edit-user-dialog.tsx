@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
+import { toast } from "sonner";
 
 import { zodResolverSafe } from "@/lib/zod-resolver";
 
@@ -27,6 +28,10 @@ interface Props {
 
 export function EditUserDialog({ user, onClose }: Props) {
   const update = useUsersStore((s) => s.update);
+  // Lỗi lưu phải hiện NGAY TRONG hộp thoại, không chỉ toast: trước đây
+  // `onSubmit` không bắt lỗi nào cả, nên một lần lưu hỏng trông y hệt một
+  // lần lưu thành công.
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const form = useForm<EditUserValues>({
     resolver: zodResolverSafe(EditUserSchema),
@@ -78,29 +83,44 @@ export function EditUserDialog({ user, onClose }: Props) {
 
   async function onSubmit(values: EditUserValues) {
     if (!user) return;
-    await update(user.id, {
-      name: values.name,
-      // Only overwrite email when admin actually typed one. Empty
-      // value would clobber the synthetic Firebase Auth address used
-      // by students.
-      ...(values.email ? { email: values.email } : {}),
-      role: values.role,
-      campusId: values.campusId || null,
-      subject: values.subject || null,
-      className: values.className || null,
-      subjectIds: values.subjectIds ?? [],
-      gradeIds: values.gradeIds ?? [],
-      classIds: values.classIds ?? [],
-      permissions: values.permissions,
-      studentCode: values.studentCode || null,
-      username: values.username || null,
-      parentPhone: values.parentPhone || null,
-      parentEmail: values.parentEmail || null,
-      // Pass password only when actually provided so the store keeps the
-      // existing one otherwise.
-      ...(values.password ? { password: values.password } : {}),
-      status: values.status,
-    });
+    setSaveError(null);
+    const changingPassword = Boolean(values.password);
+    try {
+      await update(user.id, {
+        name: values.name,
+        // Only overwrite email when admin actually typed one. Empty
+        // value would clobber the synthetic Firebase Auth address used
+        // by students.
+        ...(values.email ? { email: values.email } : {}),
+        role: values.role,
+        campusId: values.campusId || null,
+        subject: values.subject || null,
+        className: values.className || null,
+        subjectIds: values.subjectIds ?? [],
+        gradeIds: values.gradeIds ?? [],
+        classIds: values.classIds ?? [],
+        permissions: values.permissions,
+        studentCode: values.studentCode || null,
+        username: values.username || null,
+        parentPhone: values.parentPhone || null,
+        parentEmail: values.parentEmail || null,
+        // Ô để trống = giữ nguyên mật khẩu cũ. Có giá trị thì store sẽ
+        // gọi /api/admin/reset-password để đặt thật vào Firebase Auth.
+        ...(values.password ? { password: values.password } : {}),
+        status: values.status,
+      });
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : "Lưu thay đổi thất bại.";
+      setSaveError(msg);
+      toast.error(msg);
+      return;
+    }
+    toast.success(
+      changingPassword
+        ? `Đã lưu và ĐỔI MẬT KHẨU cho ${user.name}. Mật khẩu cũ hết hiệu lực ngay.`
+        : "Đã lưu thay đổi",
+    );
     onClose();
   }
 
@@ -131,6 +151,12 @@ export function EditUserDialog({ user, onClose }: Props) {
             editingUserId={user?.id}
             editingRole={user?.role}
           />
+
+          {saveError ? (
+            <div className="text-small rounded-md border border-destructive/40 bg-destructive/8 px-3 py-2 text-destructive">
+              {saveError}
+            </div>
+          ) : null}
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>

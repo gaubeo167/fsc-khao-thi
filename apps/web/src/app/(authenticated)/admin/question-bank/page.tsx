@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -74,6 +75,7 @@ import { useExamFormsStore } from "@/features/exam-forms/state/exam-forms-store"
 import { MaterialsTab } from "@/features/learning-materials/components/materials-tab";
 import { useQuestionsStore } from "@/features/question-bank/state/questions-store";
 import { canEditInPlace } from "@/features/question-bank/lib/edit-permission";
+import { authHeaders } from "@/lib/api-client";
 import { questionInUse } from "@/lib/in-use";
 import { getLatestVersionsOf, versionOf } from "@/lib/version";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
@@ -304,6 +306,56 @@ export default function QuestionBankPage() {
     setEditing(q);
     setEditReason(null);
     setEditorOpen(true);
+  }
+
+  /**
+   * Đẩy câu vừa sửa vào các đề ĐANG SỐNG có chứa nó.
+   *
+   * Đề đã đóng băng là thứ học sinh đọc VÀ là thứ dùng để chấm — ngân hàng
+   * không tham gia. Không có bước này thì sửa đáp án xong, ca thi đang diễn
+   * ra vẫn chấm bằng đáp án cũ, và mỗi em vào sau lại ăn thêm một lần lỗi.
+   *
+   * KHÔNG đụng tới bài đã nộp: điểm đã chấm chỉ đổi qua "Chấm lại ca thi".
+   */
+  async function syncQuestionToForms(questionId: string) {
+    try {
+      const res = await fetch(`/api/questions/${questionId}/sync-forms`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(await authHeaders()),
+        },
+        body: JSON.stringify({ reason: "Sửa trực tiếp câu đang dùng trong đề" }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(
+          data?.message ??
+            "Đã lưu câu hỏi nhưng KHÔNG cập nhật được vào đề đang dùng.",
+        );
+        return;
+      }
+      if ((data.formsUpdated ?? 0) === 0) {
+        return;
+      }
+      const shifts = (data.shiftIds ?? []).length;
+      toast.success(
+        `Đã cập nhật câu vào ${data.formsUpdated} đề (${shifts} ca thi). Lượt thi từ giờ dùng đáp án mới — bài ĐÃ NỘP cần bấm "Chấm lại ca thi".`,
+        { duration: 8000 },
+      );
+      if (data.structureChanged) {
+        toast.warning(
+          "Tập phương án đã đổi nên thứ tự trộn của các mã đề bị đặt lại theo ngân hàng.",
+          { duration: 8000 },
+        );
+      }
+    } catch (e) {
+      toast.error(
+        e instanceof Error
+          ? `Không cập nhật được vào đề đang dùng: ${e.message}`
+          : "Không cập nhật được vào đề đang dùng.",
+      );
+    }
   }
 
   /** Sửa thẳng vào câu gốc — chỉ admin / TBM đúng môn · khối. */
@@ -583,7 +635,12 @@ export default function QuestionBankPage() {
         }}
         editing={editing}
         editReason={editReason ?? undefined}
-        onSaved={setKhoView}
+        onSaved={(kho, questionId) => {
+          setKhoView(kho);
+          // Chỉ lối "sửa trực tiếp" mới cần đẩy vào đề — lối tạo phiên bản
+          // mới sinh ra câu nháp, chưa nằm trong đề nào.
+          if (editReason && questionId) void syncQuestionToForms(questionId);
+        }}
       />
       <ImportQuestionsDialog open={importOpen} onOpenChange={setImportOpen} />
       <ViewQuestionDialog question={viewing} onClose={() => setViewing(null)} />

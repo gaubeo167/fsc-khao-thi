@@ -64,7 +64,7 @@ interface Props {
    * sách sang đúng kho đó — nếu không, người soạn lưu vào "Kho cá nhân"
    * xong vẫn nhìn thấy "Kho chung" y như cũ và tưởng lưu hỏng.
    */
-  onSaved?: (kho: Question["kho"]) => void;
+  onSaved?: (kho: Question["kho"], questionId: string) => void;
   /**
    * Lý do sửa, ghi kèm vào audit. Trang ngân hàng truyền vào khi người dùng
    * chọn "sửa trực tiếp" một câu đang dùng trong đề đã đóng băng — lần sửa
@@ -140,7 +140,10 @@ export function CreateQuestionDialog({
               ? "Đã gửi duyệt câu hỏi"
               : "Đã lưu bản nháp",
         );
-        onSaved?.(((values as any).kho ?? editing.kho) as Question["kho"]);
+        onSaved?.(
+          ((values as any).kho ?? editing.kho) as Question["kho"],
+          editing.id,
+        );
       } else {
         const created = create({
           ...(values as any),
@@ -158,7 +161,7 @@ export function CreateQuestionDialog({
               ? `Đã gửi duyệt ${created.id} — chờ TBM/Admin xác nhận`
               : `Đã lưu bản nháp ${created.id}`,
         );
-        onSaved?.(created.kho);
+        onSaved?.(created.kho, created.id);
       }
       onOpenChange(false);
     } catch (e) {

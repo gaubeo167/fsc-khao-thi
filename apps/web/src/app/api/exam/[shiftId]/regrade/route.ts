@@ -36,52 +36,11 @@ import {
   computeAttemptScore,
   computeWeightedAttemptScore,
 } from "@/lib/exam/grade";
+import {
+  bankIdOfSnapshot,
+  refreshFrozenQuestion,
+} from "@/lib/exam/refresh-frozen";
 import { getAdmin } from "@/lib/firebase-admin";
-
-/** Chỉ những trường ĐÁP ÁN được phép làm mới từ ngân hàng. */
-function refreshAnswerKey(frozen: Question, live: Question): Question {
-  const out = { ...frozen } as unknown as Record<string, unknown>;
-  const f = frozen as unknown as Record<string, unknown>;
-  const l = live as unknown as Record<string, unknown>;
-
-  if (Array.isArray(f.options) && Array.isArray(l.options)) {
-    // Khớp theo THỨ TỰ, không theo id: bản đóng băng có thể đã đảo phương án.
-    // Nội dung giữ của bản đóng băng, chỉ lấy cờ đúng/sai theo nội dung khớp.
-    const liveByContent = new Map(
-      (l.options as Array<{ content: string; isCorrect: boolean }>).map((o) => [
-        (o.content ?? "").trim(),
-        !!o.isCorrect,
-      ]),
-    );
-    out.options = (f.options as Array<{ content: string; isCorrect: boolean }>).map(
-      (o) => ({
-        ...o,
-        isCorrect: liveByContent.get((o.content ?? "").trim()) ?? o.isCorrect,
-      }),
-    );
-  }
-  if (typeof l.correctAnswer === "boolean") out.correctAnswer = l.correctAnswer;
-  if (Array.isArray(l.acceptedAnswers)) out.acceptedAnswers = l.acceptedAnswers;
-  if (Array.isArray(f.subQuestions) && Array.isArray(l.subQuestions)) {
-    const liveByStatement = new Map(
-      (l.subQuestions as Array<{ statement: string; correctAnswer: boolean }>).map(
-        (s) => [(s.statement ?? "").trim(), !!s.correctAnswer],
-      ),
-    );
-    out.subQuestions = (
-      f.subQuestions as Array<{ statement: string; correctAnswer: boolean }>
-    ).map((s) => ({
-      ...s,
-      correctAnswer:
-        liveByStatement.get((s.statement ?? "").trim()) ?? s.correctAnswer,
-    }));
-  }
-  if (Array.isArray(l.blanks)) out.blanks = l.blanks;
-  if (Array.isArray(l.pairs)) out.pairs = l.pairs;
-  if (Array.isArray(l.items)) out.items = l.items;
-  if (Array.isArray(l.zones)) out.zones = l.zones;
-  return out as unknown as Question;
-}
 
 export async function POST(
   req: Request,
@@ -135,8 +94,7 @@ export async function POST(
     const ids = new Set<string>();
     for (const v of form.variants ?? []) {
       for (const q of v.questions ?? []) {
-        const src = (q as unknown as { sourceQuestionId?: string }).sourceQuestionId;
-        ids.add(src ?? (q as unknown as { id: string }).id);
+        ids.add(bankIdOfSnapshot(q as unknown as Record<string, unknown>));
       }
     }
     // ── Lấy BẢN MỚI NHẤT của câu, không phải bản đóng băng ──────────────
@@ -195,13 +153,19 @@ export async function POST(
     const nextVariants = (form.variants ?? []).map((v) => ({
       ...v,
       questions: (v.questions ?? []).map((q) => {
-        const src =
-          (q as unknown as { sourceQuestionId?: string }).sourceQuestionId ??
-          (q as unknown as { id: string }).id;
-        const l = live.get(src);
+        const snap = q as unknown as Record<string, unknown>;
+        const l = live.get(bankIdOfSnapshot(snap));
         if (!l) return q;
-        keysUpdated += 1;
-        return refreshAnswerKey(q as unknown as Question, l) as unknown as typeof q;
+        // Chấm lại KHÔNG chép đề bài: bài phải chấm theo đúng cái học sinh
+        // đã đọc. Sửa đề sau kỳ thi là viết lại lịch sử — đề sai thì huỷ
+        // câu, không phải chấm lại.
+        const res = refreshFrozenQuestion(
+          snap,
+          l as unknown as Record<string, unknown>,
+          { syncContent: false },
+        );
+        if (res.changed) keysUpdated += 1;
+        return res.next as unknown as typeof q;
       }),
     }));
     form.variants = nextVariants;

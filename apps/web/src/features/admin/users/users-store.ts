@@ -27,6 +27,10 @@ import {
 } from "@/features/auth/data/seed-users";
 import type { Role } from "@/features/auth/state/auth-store";
 import { recordAudit } from "@/lib/audit/record";
+import {
+  partialSaveMessage,
+  planUserUpdate,
+} from "@/features/admin/users/lib/plan-update";
 import { getAuthSafe, getDb, isFirebaseConfigured } from "@/lib/firebase";
 import { loginLookupKey } from "@/features/auth/lib/firebase-auth";
 import { COLLECTIONS } from "@/lib/firestore-collections";
@@ -238,19 +242,19 @@ export const useUsersStore = create<UsersState & UsersActions>()((set, get) => (
 
   async update(id, patch) {
     const before = get().users.find((u) => u.id === id);
+    // Hồ sơ đi vào Firestore, mật khẩu đi qua Admin SDK — hai kho khác nhau.
+    // `planUserUpdate` tách đôi để mật khẩu không bị nuốt mất giữa đường.
+    const { profilePatch, newPassword } = planUserUpdate(
+      patch as Record<string, unknown>,
+    );
     // Optimistic local update — same shape regardless of Firebase mode.
     set({
       users: get().users.map((u) => {
         if (u.id !== id) return u;
-        const next = { ...u };
-        for (const [k, v] of Object.entries(patch)) {
-          if (k === "password") {
-            if (v) next.password = v as string;
-            continue;
-          }
-          if (v === undefined) continue;
-          (next as Record<string, unknown>)[k] = v === null ? null : v;
-        }
+        const next = { ...u, ...profilePatch } as SeedUser;
+        // Chỉ chế độ demo mới giữ mật khẩu trong bộ nhớ; có Firebase thì
+        // mật khẩu không nằm ở Firestore, ghi vào đây là tự lừa mình.
+        if (newPassword && !isFirebaseConfigured()) next.password = newPassword;
         return next;
       }),
     });
@@ -258,12 +262,7 @@ export const useUsersStore = create<UsersState & UsersActions>()((set, get) => (
       return get().users.find((u) => u.id === id) ?? null;
     }
     const ref = doc(getDb(), COLLECTIONS.users, id);
-    const cleaned: Record<string, unknown> = { updatedAt: serverTimestamp() };
-    for (const [k, v] of Object.entries(patch)) {
-      if (k === "password" || v === undefined) continue;
-      cleaned[k] = v === null ? null : v;
-    }
-    await updateDoc(ref, cleaned);
+    await updateDoc(ref, { ...profilePatch, updatedAt: serverTimestamp() });
     // Đổi username / mã HS / email thì mapping đăng nhập phải đi theo, nếu
     // không người dùng gõ định danh mới sẽ không đăng nhập được (hoặc tệ hơn:
     // khoá cũ vẫn trỏ tới email cũ).
@@ -285,6 +284,22 @@ export const useUsersStore = create<UsersState & UsersActions>()((set, get) => (
       after: pickUserAuditFields(after ?? undefined),
       campusId: before?.campusId ?? null,
     });
+    // Đổi mật khẩu là việc THỨ HAI, ghi vào Firebase Auth qua Admin SDK.
+    // Hồ sơ đã lưu xong rồi nên nếu bước này hỏng, ta ném lỗi nói rõ nửa
+    // nào đã xong — trước đây mật khẩu bị bỏ im lặng và giao diện vẫn báo
+    // thành công, nên admin tưởng đã đổi trong khi học sinh vẫn đăng nhập
+    // bằng mật khẩu cũ.
+    if (newPassword) {
+      try {
+        await get().resetPassword(id, newPassword);
+      } catch (err) {
+        throw new Error(
+          partialSaveMessage(
+            err instanceof Error ? err.message : "lỗi không xác định",
+          ),
+        );
+      }
+    }
     return after;
   },
 
