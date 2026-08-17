@@ -62,9 +62,34 @@ export async function uploadFile(
     contentType: (file as File).type || "application/octet-stream",
   });
   return new Promise<UploadResult>((resolve, reject) => {
+    // Chốt chống TREO Ở 0%.
+    //
+    // Khi kho file chưa mở quyền (chưa deploy storage.rules) hoặc bucket
+    // trong biến môi trường trỏ sai, SDK không phải lúc nào cũng báo lỗi —
+    // nó thử lại âm thầm và thanh tiến độ nằm im ở 0% mãi. Người dùng không
+    // có cách nào biết đang chờ cái gì.
+    //
+    // Đếm giờ tới lần có tiến triển ĐẦU TIÊN, không phải tới lúc xong: file
+    // to thì tải lâu là bình thường, nhưng không nhúc nhích trong 20 giây thì
+    // gần như chắc chắn là hỏng cấu hình chứ không phải mạng chậm.
+    let moved = false;
+    const stall = setTimeout(() => {
+      if (moved) return;
+      task.cancel();
+      reject(
+        new Error(
+          "Không kết nối được kho file sau 20 giây. Thường là do chưa chạy " +
+            "`firebase deploy --only storage`, hoặc bucket trong " +
+            "NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET trỏ sai.",
+        ),
+      );
+    }, 20_000);
+    const done = () => clearTimeout(stall);
+
     task.on(
       "state_changed",
       (snap) => {
+        if (snap.bytesTransferred > 0) moved = true;
         onProgress?.({
           bytesTransferred: snap.bytesTransferred,
           totalBytes: snap.totalBytes,
@@ -72,8 +97,12 @@ export async function uploadFile(
             snap.totalBytes > 0 ? snap.bytesTransferred / snap.totalBytes : 0,
         });
       },
-      (err) => reject(err),
+      (err) => {
+        done();
+        reject(new Error(storageErrorMessage(err)));
+      },
       async () => {
+        done();
         try {
           const downloadUrl = await getDownloadURL(task.snapshot.ref);
           resolve({
@@ -89,6 +118,36 @@ export async function uploadFile(
       },
     );
   });
+}
+
+/**
+ * Đổi mã lỗi của Firebase Storage thành câu người dùng đọc được VÀ làm được.
+ *
+ * `storage/unauthorized` in ra màn hình thì không ai biết phải làm gì; nói
+ * "chưa deploy storage.rules" thì có việc để làm ngay.
+ */
+export function storageErrorMessage(err: unknown): string {
+  const code =
+    typeof err === "object" && err && "code" in err ? String((err as { code: unknown }).code) : "";
+  switch (code) {
+    case "storage/unauthorized":
+      return "Kho file từ chối quyền ghi. Chạy `firebase deploy --only storage` để cập nhật storage.rules.";
+    case "storage/bucket-not-found":
+    case "storage/project-not-found":
+      return "Không tìm thấy kho file. Kiểm NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET trong biến môi trường.";
+    case "storage/unauthenticated":
+      return "Phiên đăng nhập đã hết hạn. Đăng nhập lại rồi tải lên.";
+    case "storage/retry-limit-exceeded":
+      return "Mạng chập chờn nên tải lên bị bỏ dở. Thử lại, hoặc dùng file nhỏ hơn.";
+    case "storage/canceled":
+      return "Đã huỷ tải lên.";
+    case "storage/quota-exceeded":
+      return "Kho file đã đầy dung lượng của gói.";
+    default:
+      return err instanceof Error && err.message
+        ? err.message
+        : "Tải lên thất bại (không rõ nguyên nhân).";
+  }
 }
 
 /** Best-effort delete of a stored object. Swallows "not found" errors
