@@ -506,18 +506,32 @@ function AudioBlock({
 }) {
   const ref = React.useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = React.useState(false);
-  const enforced = marker.maxPlays != null && limit != null;
-  const used = enforced ? limit!.playsOf(index) : 0;
-  // KHÔNG dùng `Math.max` ở file này: `Math` đã bị component công thức cùng
-  // tên che mất (xem import ở đầu file).
-  const left =
-    marker.maxPlays != null ? (marker.maxPlays - used > 0 ? marker.maxPlays - used : 0) : null;
+  /**
+   * Đếm tại chỗ, dùng khi KHÔNG có bộ đếm của bài làm (kho câu hỏi, xem
+   * trước, xem lại câu).
+   *
+   * Vì sao vẫn khoá ở đây dù không phải lúc thi: người soạn bấm thử mà không
+   * thấy chặn thì không tin là nó chặn — đúng phản hồi đã nhận. Đếm tại chỗ
+   * cho họ thấy đúng hành vi học sinh sẽ gặp. Nó reset khi mở lại trang, nên
+   * không thay được bộ đếm ở máy chủ, chỉ để xem thử.
+   */
+  const [localPlays, setLocalPlays] = React.useState(0);
+
+  const capped = marker.maxPlays != null;
+  const used = capped ? (limit ? limit.playsOf(index) : localPlays) : 0;
+  const left = capped ? (marker.maxPlays! - used > 0 ? marker.maxPlays! - used : 0) : null;
 
   async function start() {
     if (!ref.current || playing) return;
-    if (enforced) {
-      const ok = await limit!.onPlay(index, marker.maxPlays!);
-      if (!ok) return;
+    if (capped) {
+      if (left === 0) return;
+      if (limit) {
+        // Có bài làm: máy chủ quyết, client không tự cho phép.
+        const ok = await limit.onPlay(index, marker.maxPlays!);
+        if (!ok) return;
+      } else {
+        setLocalPlays((n) => n + 1);
+      }
     }
     ref.current.currentTime = 0;
     setPlaying(true);
@@ -530,8 +544,10 @@ function AudioBlock({
         ♪
       </span>
       <span className="min-w-0 flex-1">
+        {/* Chỉ hiện NHÃN. Không hiện đường dẫn, không hiện tên file — tên file
+            hay là "bai-nghe-de-2-dap-an.mp3", vừa lộ thông tin vừa xấu. */}
         <span className="block font-semibold text-violet-900">{marker.label}</span>
-        {enforced ? (
+        {capped ? (
           <>
             <audio
               ref={ref}
@@ -539,7 +555,7 @@ function AudioBlock({
               onEnded={() => setPlaying(false)}
               className="hidden"
             />
-            <span className="mt-1 flex items-center gap-2">
+            <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
               <button
                 type="button"
                 onClick={() => void start()}
@@ -548,20 +564,28 @@ function AudioBlock({
               >
                 {playing ? "Đang phát…" : left === 0 ? "Hết lượt nghe" : "Nghe"}
               </button>
-              <span className="text-meta text-violet-800">
-                Còn {left}/{marker.maxPlays} lượt
+              {/* Đếm NGƯỢC số lượt còn lại — cái học sinh cần biết là "còn mấy
+                  lần nữa", không phải "đã nghe mấy lần". */}
+              <span
+                className={cn(
+                  "text-meta font-semibold",
+                  left === 0 ? "text-rose-700" : "text-violet-800",
+                )}
+              >
+                {left === 0
+                  ? "Đã dùng hết lượt nghe"
+                  : `Còn ${left}/${marker.maxPlays} lượt nghe`}
               </span>
+              {!limit && (
+                <span className="text-meta text-muted-foreground">
+                  (xem thử — vào thi thì máy chủ giữ bộ đếm, tải lại trang
+                  không thêm lượt)
+                </span>
+              )}
             </span>
           </>
         ) : (
-          <>
-            <audio ref={ref} src={marker.src} controls className="mt-1 w-full" />
-            {marker.maxPlays != null && (
-              <span className="text-meta mt-0.5 block text-violet-800">
-                Khi thi: chỉ được nghe {marker.maxPlays} lần.
-              </span>
-            )}
-          </>
+          <audio ref={ref} src={marker.src} controls className="mt-1 w-full" />
         )}
       </span>
     </span>

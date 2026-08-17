@@ -197,7 +197,9 @@ export function MediaInsertDialog({
         (p) => setUploading(p.fraction),
       );
       setUploadedAudio({ url: res.downloadUrl, name: file.name });
-      if (!label) setLabel(file.name.replace(/\.[^.]+$/, ""));
+      // KHÔNG tự điền nhãn bằng tên file. Nhãn là thứ HỌC SINH đọc thấy, mà
+      // tên file thường là "bai-nghe-de-2-dap-an.mp3" — vừa lộ thông tin vừa
+      // xấu. Để trống thì trình phát hiện "Bài nghe".
     } catch (err) {
       // Nói rõ chế độ offline: ở local không có khoá Firebase thì upload
       // không thể chạy, mà thông báo "lỗi không xác định" thì không ai đoán ra.

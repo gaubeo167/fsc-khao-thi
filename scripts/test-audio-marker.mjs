@@ -45,14 +45,16 @@ const check = (name, ok, extra = "") => {
   check("mốc cũ: đọc được nhãn", m?.label === "Bài nghe số 1", JSON.stringify(m));
   check("mốc cũ: KHÔNG giới hạn số lần", m?.maxPlays === null, JSON.stringify(m));
 }
+// Nhãn mặc định là "Bài nghe", KHÔNG phải tên file: nhãn là thứ học sinh đọc
+// thấy, mà tên file thường kiểu "bai-nghe-de-2-dap-an.mp3".
 check(
   "mốc cũ không có nhãn → nhãn mặc định",
-  parseAudioMarker("[audio:https://x.mp3]")?.label === "Audio",
+  parseAudioMarker("[audio:https://x.mp3]")?.label === "Bài nghe",
   JSON.stringify(parseAudioMarker("[audio:https://x.mp3]")),
 );
 check(
   "mốc cũ nhãn rỗng → nhãn mặc định",
-  parseAudioMarker("[audio:https://x.mp3 | ]")?.label === "Audio",
+  parseAudioMarker("[audio:https://x.mp3 | ]")?.label === "Bài nghe",
 );
 
 /* ── Mốc MỚI có số lần ────────────────────────────────────────────────── */

@@ -34,7 +34,7 @@ export function parseAudioMarker(snippet: string): AudioMarker | null {
   const n = m[3] ? Number(m[3]) : null;
   return {
     src: (m[1] ?? "").trim(),
-    label: (m[2] ?? "").trim() || "Audio",
+    label: (m[2] ?? "").trim() || "Bài nghe",
     // 0 lần nghe là vô nghĩa (chèn audio rồi cấm nghe) — hiểu là không giới hạn.
     maxPlays: n != null && n >= 1 ? n : null,
   };
@@ -46,7 +46,7 @@ export function buildAudioMarker(
   label: string,
   maxPlays?: number | null,
 ): string {
-  const l = (label.trim() || "Audio").replaceAll("]", "\\]").replaceAll("|", "-");
+  const l = (label.trim() || "Bài nghe").replaceAll("]", "\\]").replaceAll("|", "-");
   const limit = maxPlays != null && maxPlays >= 1 ? ` | ${Math.floor(maxPlays)}` : "";
   return `[audio:${src.trim()} | ${l}${limit}]`;
 }
