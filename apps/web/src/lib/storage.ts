@@ -56,6 +56,25 @@ export async function uploadFile(
       "[storage] Firebase chưa được cấu hình. Set NEXT_PUBLIC_FIREBASE_* trước khi upload.",
     );
   }
+  // Kiểm cấu hình TRƯỚC khi gửi byte nào.
+  //
+  // Bucket rỗng thì SDK tự lùi về `{projectId}.appspot.com`. Dự án mới của
+  // Firebase lại dùng tên `{projectId}.firebasestorage.app`, nên cái đích đó
+  // KHÔNG tồn tại — và bucket không tồn tại trả về 403, SDK dịch thành
+  // `storage/unauthorized`. Người dùng đọc được "kho file từ chối quyền ghi"
+  // và đi sửa phân quyền, trong khi phân quyền chẳng liên quan gì.
+  //
+  // Đây là ca đã xảy ra thật trên production: biến môi trường để rỗng suốt 91
+  // ngày, và thông báo lỗi chỉ sai địa chỉ.
+  const bucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
+  if (!bucket) {
+    throw new Error(
+      "Chưa cấu hình kho file: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET đang rỗng. " +
+        "Đặt biến này trên Vercel rồi BUILD LẠI — biến NEXT_PUBLIC_* được nhúng " +
+        "vào bundle lúc build, đổi giá trị thôi thì bản đang chạy vẫn giữ giá trị cũ.",
+    );
+  }
+
   const storage = getStorageSafe();
   const objectRef = ref(storage, path);
   const task = uploadBytesResumable(objectRef, file, {
@@ -140,7 +159,15 @@ export function storageErrorMessage(err: unknown): string {
     typeof err === "object" && err && "code" in err ? String((err as { code: unknown }).code) : "";
   switch (code) {
     case "storage/unauthorized":
-      return "Kho file từ chối quyền ghi. Chạy `firebase deploy --only storage` để cập nhật storage.rules.";
+      // Hai nguyên nhân cho CÙNG một mã lỗi, và cái thứ hai hay bị bỏ sót:
+      // bucket không tồn tại cũng trả 403 y như bị rules chặn.
+      return (
+        `Kho file từ chối quyền ghi (bucket: ${process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "(rỗng)"}). ` +
+        "Hai nguyên nhân: (1) chưa chạy `firebase deploy --only storage`; " +
+        "(2) tên bucket sai nên nó không tồn tại — dự án mới dùng đuôi " +
+        "`.firebasestorage.app`, không phải `.appspot.com`. Nếu vừa sửa biến " +
+        "môi trường thì phải build lại rồi tải lại trang bằng Ctrl+Shift+R."
+      );
     case "storage/bucket-not-found":
     case "storage/project-not-found":
       return "Không tìm thấy kho file. Kiểm NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET trong biến môi trường.";
