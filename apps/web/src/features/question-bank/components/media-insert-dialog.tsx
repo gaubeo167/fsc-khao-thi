@@ -327,12 +327,12 @@ export function MediaInsertDialog({
                   <p className="text-meta mt-1">{Math.round(uploading * 100)}%</p>
                   {uploading === 0 && (
                     <p className="text-meta mt-2 text-muted-foreground">
-                      Đứng ở 0% quá lâu thường là kho file chưa mở quyền — chuyển
-                      sang tab “Từ URL” để chèn tạm, rồi báo quản trị chạy{" "}
+                      Đứng ở 0% quá lâu thường là dự án chưa bật kho file
+                      (Firebase Console → Storage → Get Started), hoặc chưa chạy{" "}
                       <code className="rounded bg-muted px-1">
                         firebase deploy --only storage
                       </code>
-                      .
+                      . Trong lúc chờ, chuyển sang tab “Từ URL” để chèn tạm.
                     </p>
                   )}
                 </div>

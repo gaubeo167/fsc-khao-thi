@@ -76,11 +76,20 @@ export async function uploadFile(
     const stall = setTimeout(() => {
       if (moved) return;
       task.cancel();
+      // Ba nguyên nhân, xếp theo thứ tự đã gặp THẬT:
+      //
+      // 1. Dự án chưa BẬT Firebase Storage. Đây là ca đã xảy ra trên
+      //    fsc-khao-thi: chưa bấm "Get Started" nên không có bucket nào cả.
+      //    SDK không báo lỗi rõ — nó thử lại một cái đích không tồn tại, và
+      //    thanh tiến độ nằm im ở 0%.
+      // 2. Có bucket nhưng chưa deploy storage.rules → từ chối quyền ghi.
+      // 3. Biến môi trường trỏ sai bucket.
       reject(
         new Error(
-          "Không kết nối được kho file sau 20 giây. Thường là do chưa chạy " +
-            "`firebase deploy --only storage`, hoặc bucket trong " +
-            "NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET trỏ sai.",
+          "Không kết nối được kho file sau 20 giây. Theo thứ tự hay gặp: " +
+            "(1) dự án chưa bật Firebase Storage — vào Firebase Console → " +
+            "Storage → Get Started; (2) chưa chạy `firebase deploy --only " +
+            "storage`; (3) NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET trỏ sai bucket.",
         ),
       );
     }, 20_000);
