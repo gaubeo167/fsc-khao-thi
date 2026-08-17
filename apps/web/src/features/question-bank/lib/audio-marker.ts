@@ -27,6 +27,23 @@ export interface AudioMarker {
   maxPlays: number | null;
 }
 
+/**
+ * Nhãn có phải chỉ là TÊN FILE hay không.
+ *
+ * Câu hỏi soạn trước bản này có nhãn được tự điền bằng tên file, và nhãn đó
+ * đã nằm trong nội dung đã lưu — sửa chỗ tự điền không cứu được chúng. Nên
+ * bắt ở lúc ĐỌC: nhãn trông như tên file thì thay bằng "Bài nghe".
+ *
+ * Dấu hiệu: có đuôi file âm thanh, hoặc không có khoảng trắng mà lại có gạch
+ * nối/gạch dưới ("bai-nghe-de-2"). Nhãn người viết thật thì có dấu cách.
+ */
+export function looksLikeFileName(label: string): boolean {
+  const t = label.trim();
+  if (!t) return false;
+  if (/\.(mp3|wav|ogg|oga|m4a|aac|flac|weba|webm)$/i.test(t)) return true;
+  return !/\s/.test(t) && /[-_]/.test(t) && t.length > 8;
+}
+
 /** Đọc một mốc audio. Trả `null` nếu chuỗi không phải mốc audio. */
 export function parseAudioMarker(snippet: string): AudioMarker | null {
   const m = AUDIO_RE.exec(snippet.trim());
@@ -34,7 +51,10 @@ export function parseAudioMarker(snippet: string): AudioMarker | null {
   const n = m[3] ? Number(m[3]) : null;
   return {
     src: (m[1] ?? "").trim(),
-    label: (m[2] ?? "").trim() || "Bài nghe",
+    label: (() => {
+      const raw = (m[2] ?? "").trim();
+      return !raw || looksLikeFileName(raw) ? "Bài nghe" : raw;
+    })(),
     // 0 lần nghe là vô nghĩa (chèn audio rồi cấm nghe) — hiểu là không giới hạn.
     maxPlays: n != null && n >= 1 ? n : null,
   };

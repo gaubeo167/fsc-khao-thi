@@ -505,89 +505,128 @@ function AudioBlock({
   limit?: Props["audioLimit"];
 }) {
   const ref = React.useRef<HTMLAudioElement | null>(null);
-  const [playing, setPlaying] = React.useState(false);
   /**
    * Đếm tại chỗ, dùng khi KHÔNG có bộ đếm của bài làm (kho câu hỏi, xem
-   * trước, xem lại câu).
-   *
-   * Vì sao vẫn khoá ở đây dù không phải lúc thi: người soạn bấm thử mà không
-   * thấy chặn thì không tin là nó chặn — đúng phản hồi đã nhận. Đếm tại chỗ
-   * cho họ thấy đúng hành vi học sinh sẽ gặp. Nó reset khi mở lại trang, nên
-   * không thay được bộ đếm ở máy chủ, chỉ để xem thử.
+   * trước). Reset khi tải lại trang — chỉ để người soạn thấy đúng hành vi
+   * học sinh sẽ gặp, không thay được bộ đếm ở máy chủ.
    */
   const [localPlays, setLocalPlays] = React.useState(0);
+  const [msg, setMsg] = React.useState<string | null>(null);
+  /** Chỗ xa nhất đã nghe TRONG LƯỢT hiện tại — mốc để chặn tua ngược. */
+  const furthest = React.useRef(0);
+  /** Lượt hiện tại đã được tính chưa (tính một lần cho mỗi lần nghe lại). */
+  const counted = React.useRef(false);
 
   const capped = marker.maxPlays != null;
   const used = capped ? (limit ? limit.playsOf(index) : localPlays) : 0;
   const left = capped ? (marker.maxPlays! - used > 0 ? marker.maxPlays! - used : 0) : null;
 
-  async function start() {
-    if (!ref.current || playing) return;
-    if (capped) {
-      if (left === 0) return;
-      if (limit) {
-        // Có bài làm: máy chủ quyết, client không tự cho phép.
-        const ok = await limit.onPlay(index, marker.maxPlays!);
-        if (!ok) return;
-      } else {
-        setLocalPlays((n) => n + 1);
-      }
+  /**
+   * Bấm play.
+   *
+   * Vì sao KHÔNG tự dựng nút "Nghe" như bản trước: bản đó không có thanh tiến
+   * trình, không tạm dừng được, không biết còn bao lâu. Bài nghe 5 phút mà
+   * không được tạm dừng thì không dùng nổi.
+   *
+   * Nên dùng lại đúng thanh điều khiển của trình duyệt — có sẵn play/pause,
+   * thanh chạy, thời gian — rồi chỉ chặn đúng cái cần chặn:
+   *
+   *   · hết lượt      → không cho bắt đầu lượt mới
+   *   · tua ngược     → không cho nghe lại phần đã qua trong cùng một lượt
+   *   · tạm dừng      → CHO, và không tính thêm lượt khi bấm tiếp
+   *
+   * Một "lượt" tính từ lúc bắt đầu nghe tới lúc hết bài. Tạm dừng rồi nghe
+   * tiếp vẫn là lượt đó.
+   */
+  async function onPlay() {
+    const el = ref.current;
+    if (!el || !capped) return;
+    if (counted.current) return; // đang giữa lượt, bấm tiếp sau khi tạm dừng
+
+    if (left === 0) {
+      el.pause();
+      setMsg("Đã dùng hết lượt nghe của bài này.");
+      return;
     }
-    ref.current.currentTime = 0;
-    setPlaying(true);
-    void ref.current.play();
+    if (limit) {
+      // Máy chủ quyết. Dừng lại trong lúc hỏi để không phát trước rồi mới biết
+      // là không được phép.
+      el.pause();
+      const ok = await limit.onPlay(index, marker.maxPlays!);
+      if (!ok) {
+        setMsg("Không tính được lượt nghe — thử lại, hoặc báo giám thị.");
+        return;
+      }
+      counted.current = true;
+      setMsg(null);
+      void el.play();
+      return;
+    }
+    counted.current = true;
+    setLocalPlays((n) => n + 1);
+    setMsg(null);
   }
 
   return (
-    <span className="my-2 flex items-center gap-3 rounded-lg border bg-violet-50/50 px-3 py-2.5 text-[13px] ring-1 ring-violet-200">
-      <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-violet-100 text-violet-600">
-        ♪
-      </span>
-      <span className="min-w-0 flex-1">
-        {/* Chỉ hiện NHÃN. Không hiện đường dẫn, không hiện tên file — tên file
-            hay là "bai-nghe-de-2-dap-an.mp3", vừa lộ thông tin vừa xấu. */}
-        <span className="block font-semibold text-violet-900">{marker.label}</span>
-        {capped ? (
-          <>
-            <audio
-              ref={ref}
-              src={marker.src}
-              onEnded={() => setPlaying(false)}
-              className="hidden"
-            />
-            <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-              <button
-                type="button"
-                onClick={() => void start()}
-                disabled={playing || left === 0}
-                className="inline-flex h-8 items-center gap-1.5 rounded-md bg-violet-600 px-3 text-small font-semibold text-white transition hover:bg-violet-700 disabled:bg-violet-200 disabled:text-violet-500"
-              >
-                {playing ? "Đang phát…" : left === 0 ? "Hết lượt nghe" : "Nghe"}
-              </button>
-              {/* Đếm NGƯỢC số lượt còn lại — cái học sinh cần biết là "còn mấy
-                  lần nữa", không phải "đã nghe mấy lần". */}
-              <span
-                className={cn(
-                  "text-meta font-semibold",
-                  left === 0 ? "text-rose-700" : "text-violet-800",
-                )}
-              >
-                {left === 0
-                  ? "Đã dùng hết lượt nghe"
-                  : `Còn ${left}/${marker.maxPlays} lượt nghe`}
-              </span>
-              {!limit && (
-                <span className="text-meta text-muted-foreground">
-                  (xem thử — vào thi thì máy chủ giữ bộ đếm, tải lại trang
-                  không thêm lượt)
-                </span>
-              )}
-            </span>
-          </>
-        ) : (
-          <audio ref={ref} src={marker.src} controls className="mt-1 w-full" />
+    <span className="my-2 block rounded-lg border bg-violet-50/50 px-3 py-2.5 text-[13px] ring-1 ring-violet-200">
+      <span className="flex items-center gap-2">
+        <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-violet-100 text-violet-600">
+          ♪
+        </span>
+        {/* Chỉ NHÃN. Không đường dẫn, không tên file. */}
+        <span className="min-w-0 flex-1 font-semibold text-violet-900">
+          {marker.label}
+        </span>
+        {capped && (
+          <span
+            className={cn(
+              "text-meta shrink-0 rounded-full px-2 py-0.5 font-semibold",
+              left === 0
+                ? "bg-rose-100 text-rose-700"
+                : "bg-violet-100 text-violet-800",
+            )}
+          >
+            {left === 0 ? "Hết lượt nghe" : `Còn ${left}/${marker.maxPlays} lượt`}
+          </span>
         )}
       </span>
+
+      <audio
+        ref={ref}
+        src={marker.src}
+        controls
+        controlsList="nodownload noplaybackrate"
+        onPlay={() => void onPlay()}
+        onTimeUpdate={(e) => {
+          const t = e.currentTarget.currentTime;
+          if (t > furthest.current) furthest.current = t;
+        }}
+        onSeeking={(e) => {
+          if (!capped) return;
+          // Tua ngược = nghe lại phần đã qua mà không tốn lượt. Kéo về đúng
+          // chỗ đang nghe. Tạm dừng vẫn hoạt động bình thường vì tạm dừng
+          // không sinh sự kiện tua.
+          if (e.currentTarget.currentTime < furthest.current - 0.7) {
+            e.currentTarget.currentTime = furthest.current;
+            setMsg("Không tua lại được — mỗi lượt nghe chỉ chạy một chiều.");
+          }
+        }}
+        onEnded={() => {
+          // Hết bài: lượt này đóng lại, lần bấm play sau là lượt mới.
+          furthest.current = 0;
+          counted.current = false;
+        }}
+        className="mt-1.5 w-full"
+      />
+
+      {capped && (
+        <span className="text-meta mt-1 block text-violet-800">
+          {msg ??
+            (limit
+              ? "Tạm dừng rồi nghe tiếp không tốn thêm lượt. Nghe hết bài mới tính là dùng xong một lượt."
+              : "Xem thử — vào thi thì máy chủ giữ bộ đếm, tải lại trang không thêm lượt.")}
+        </span>
+      )}
     </span>
   );
 }

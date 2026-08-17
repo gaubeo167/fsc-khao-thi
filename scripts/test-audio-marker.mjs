@@ -29,7 +29,8 @@ execFileSync(
   ],
   { cwd: "apps/web", stdio: "pipe" },
 );
-const { parseAudioMarker, buildAudioMarker, audioPlayKey } = await import(out);
+const { parseAudioMarker, buildAudioMarker, audioPlayKey, looksLikeFileName } =
+  await import(out);
 
 let pass = 0,
   fail = 0;
@@ -56,6 +57,25 @@ check(
   "mốc cũ nhãn rỗng → nhãn mặc định",
   parseAudioMarker("[audio:https://x.mp3 | ]")?.label === "Bài nghe",
 );
+
+/* ── Nhãn là TÊN FILE thì không hiện ra cho học sinh ──────────────────── */
+//
+// Câu soạn trước bản này có nhãn tự điền bằng tên file, và nhãn đó đã nằm
+// trong nội dung ĐÃ LƯU — sửa chỗ tự điền không cứu được chúng. Nên bắt ở
+// lúc đọc.
+check("nhãn .mp3 → thay bằng Bài nghe", parseAudioMarker("[audio:x.mp3 | bainghe1.mp3]")?.label === "Bài nghe");
+check("nhãn .m4a", parseAudioMarker("[audio:x.mp3 | Track01.m4a]")?.label === "Bài nghe");
+check(
+  "nhãn kiểu tên file không đuôi (gạch nối, không dấu cách)",
+  parseAudioMarker("[audio:x.mp3 | bai-nghe-de-2-dap-an]")?.label === "Bài nghe",
+);
+check(
+  "nhãn NGƯỜI VIẾT (có dấu cách) thì giữ nguyên",
+  parseAudioMarker("[audio:x.mp3 | Bài nghe số 1 - phần A]")?.label === "Bài nghe số 1 - phần A",
+);
+check("nhãn ngắn có gạch nối vẫn giữ", parseAudioMarker("[audio:x.mp3 | Phần-A]")?.label === "Phần-A");
+check("một chữ thường vẫn giữ", parseAudioMarker("[audio:x.mp3 | Listening]")?.label === "Listening");
+check("looksLikeFileName: rỗng → false", looksLikeFileName("") === false);
 
 /* ── Mốc MỚI có số lần ────────────────────────────────────────────────── */
 {
