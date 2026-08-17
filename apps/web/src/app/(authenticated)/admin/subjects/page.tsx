@@ -203,6 +203,27 @@ export default function SubjectsAdminPage() {
     [tocNodes, tocSubjectId, tocGradeId],
   );
 
+  /**
+   * Câu hỏi của đúng môn + khối đang xem, và bao nhiêu trong số đó CHƯA gắn
+   * mục lục.
+   *
+   * Vì sao hiện ngay ở đây: "mục lục trống" và "mục lục có nhưng câu chưa gắn"
+   * là hai tình trạng khác hẳn nhau mà màn hình cũ nhìn giống hệt — người
+   * dùng đi tìm câu hỏi trong mục lục và không thấy, không có gì nói vì sao.
+   */
+  const tocQuestionStats = useMemo(() => {
+    const nodeIds = new Set(tocForCurrent.map((n) => n.id));
+    let total = 0;
+    let tagged = 0;
+    for (const q of questions) {
+      if (q.archivedAt) continue;
+      if (q.subjectId !== tocSubjectId || q.gradeId !== tocGradeId) continue;
+      total += 1;
+      if (q.tocNodeId && nodeIds.has(q.tocNodeId)) tagged += 1;
+    }
+    return { total, tagged, untagged: total - tagged };
+  }, [questions, tocSubjectId, tocGradeId, tocForCurrent]);
+
   const rootCount = tocForCurrent.filter((n) => n.parentId === null).length;
   const allBranchIds = useMemo(
     () =>
@@ -585,12 +606,31 @@ export default function SubjectsAdminPage() {
                 </div>
               </header>
 
+              {/* Nói ra tình trạng câu hỏi của môn + khối này.
+                  "Mục lục trống" và "mục lục có nhưng câu chưa gắn" là hai
+                  chuyện khác hẳn nhau, mà màn hình cũ nhìn giống hệt. */}
+              {tocQuestionStats.untagged > 0 && (
+                <div className="text-meta mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-amber-900">
+                  <b>{tocQuestionStats.untagged}</b> / {tocQuestionStats.total} câu
+                  hỏi của {tocSubject?.name} · {tocGrade?.name} CHƯA gắn mục lục
+                  nào — chúng không hiện ra khi lọc theo mục lục. Mở câu hỏi và
+                  chọn chỗ cất, hoặc gắn hàng loạt ở Ngân hàng câu hỏi.
+                </div>
+              )}
+
               {tocForCurrent.length === 0 ? (
                 <div className="rounded-lg border border-dashed bg-muted/20 p-8 text-center">
                   <p className="text-section-title">Mục lục trống</p>
                   <p className="text-small mt-1 text-muted-foreground">
                     Bắt đầu bằng cách thêm chương đầu tiên cho {tocSubject?.name} ·{" "}
                     {tocGrade?.name}.
+                    {tocQuestionStats.total > 0 && (
+                      <>
+                        {" "}Môn · khối này đang có{" "}
+                        <b>{tocQuestionStats.total} câu hỏi</b> nhưng chưa có mục
+                        lục nào để cất.
+                      </>
+                    )}
                   </p>
                   <Button size="sm" className="mt-3" onClick={addRootChapter}>
                     <Plus className="h-4 w-4" />
