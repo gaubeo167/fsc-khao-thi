@@ -30,6 +30,7 @@ import { useAuthStore } from "@/features/auth/state/auth-store";
 import { useCampusStore } from "@/features/campus/state/campus-store";
 import { useCampusScope } from "@/features/campus/lib/use-campus-scope";
 import { useGradesStore } from "@/features/grades/state/grades-store";
+import { tocInScope } from "@/features/subjects/lib/toc-scope";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import {
   TOC_LEVELS,
@@ -93,14 +94,9 @@ export function UploadMaterialDialog({ open, onOpenChange }: Props) {
   // hasn't authored its own TOC yet.
   const { tocOptions, tocFallback } = useMemo(() => {
     if (!subjectId) return { tocOptions: [], tocFallback: false };
-    let inScope = tocNodes.filter(
-      (n) => n.subjectId === subjectId && n.gradeId === gradeId,
-    );
-    let fell = false;
-    if (inScope.length === 0) {
-      inScope = tocNodes.filter((n) => n.subjectId === subjectId);
-      if (inScope.length > 0) fell = true;
-    }
+    // KHÔNG lùi về khối khác — xem `toc-scope.ts`.
+    const inScope = tocInScope(tocNodes, subjectId, gradeId);
+    const fell = false;
     const byParent = new Map<string | null, TocNode[]>();
     for (const n of inScope) {
       const list = byParent.get(n.parentId) ?? [];

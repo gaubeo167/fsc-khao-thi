@@ -7,6 +7,7 @@ import { Controller, type Control, type UseFormWatch } from "react-hook-form";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { flattenToc, tocInScope } from "@/features/subjects/lib/toc-scope";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import {
   TOC_LEVELS,
@@ -29,46 +30,12 @@ export function TocTagFields({ control, watch }: Props) {
   const tocNodes = useSubjectsStore((s) => s.tocNodes);
 
   const { flattened, fallbackUsed } = useMemo(() => {
-    if (!subjectId) return { flattened: [], fallbackUsed: false };
-    // Primary: exact (subject, grade) match.
-    let inScope = tocNodes.filter(
-      (n) => n.subjectId === subjectId && n.gradeId === gradeId,
-    );
-    let fellBack = false;
-    // Fallback: if the admin only built TOC for one grade of this
-    // subject, reuse it for other grades so the dropdown isn't empty.
-    if (inScope.length === 0) {
-      inScope = tocNodes.filter((n) => n.subjectId === subjectId);
-      if (inScope.length > 0) fellBack = true;
-    }
-    const byParent = new Map<string | null, TocNode[]>();
-    for (const n of inScope) {
-      const list = byParent.get(n.parentId) ?? [];
-      list.push(n);
-      byParent.set(n.parentId, list);
-    }
-    for (const list of byParent.values()) list.sort((a, b) => a.order - b.order);
-
-    const out: Array<{
-      id: string;
-      label: string;
-      depth: number;
-      code?: string;
-    }> = [];
-    function walk(parentId: string | null, depth: number) {
-      const children = byParent.get(parentId) ?? [];
-      for (const c of children) {
-        out.push({
-          id: c.id,
-          label: c.name,
-          depth,
-          code: c.code,
-        });
-        walk(c.id, depth + 1);
-      }
-    }
-    walk(null, 0);
-    return { flattened: out, fallbackUsed: fellBack };
+    // KHÔNG lùi về mục lục của khối khác. Xem `toc-scope.ts` — trước đây chỗ
+    // này mượn mục lục khối 10 cho mọi khối tiếng Anh.
+    return {
+      flattened: flattenToc(tocInScope(tocNodes, subjectId, gradeId)),
+      fallbackUsed: false,
+    };
   }, [subjectId, gradeId, tocNodes]);
 
   return (

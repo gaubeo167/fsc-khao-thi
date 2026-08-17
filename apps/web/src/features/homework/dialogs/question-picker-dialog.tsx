@@ -26,6 +26,7 @@ import { Select } from "@/components/ui/select";
 import { useAuthStore } from "@/features/auth/state/auth-store";
 import type { Question } from "@/features/question-bank/data/seed-questions";
 import { useQuestionsStore } from "@/features/question-bank/state/questions-store";
+import { tocInScope } from "@/features/subjects/lib/toc-scope";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import {
   TOC_LEVELS,
@@ -105,12 +106,8 @@ export function QuestionPickerDialog({
   // homework form. Built lazily so closed dialogs don't recompute.
   const tocOptions = useMemo(() => {
     if (!subjectId) return [];
-    let inScope = tocNodes.filter(
-      (n) => n.subjectId === subjectId && n.gradeId === gradeId,
-    );
-    if (inScope.length === 0) {
-      inScope = tocNodes.filter((n) => n.subjectId === subjectId);
-    }
+    // KHÔNG lùi về khối khác — xem `toc-scope.ts`.
+    const inScope = tocInScope(tocNodes, subjectId, gradeId);
     const byParent = new Map<string | null, TocNode[]>();
     for (const n of inScope) {
       const list = byParent.get(n.parentId) ?? [];

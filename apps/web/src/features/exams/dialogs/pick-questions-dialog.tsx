@@ -13,6 +13,7 @@ import { findQuestionType } from "@/features/question-bank/data/question-types";
 import type { Question } from "@/features/question-bank/data/seed-questions";
 import { ViewQuestionDialog } from "@/features/question-bank/dialogs/view-question-dialog";
 import { TOC_LEVELS } from "@/features/subjects/data/seed-toc";
+import { tocInScope } from "@/features/subjects/lib/toc-scope";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import { cn } from "@/lib/utils";
 
@@ -75,16 +76,8 @@ export function PickQuestionsDialog({
   const { tocOptions, descOf } = useMemo(() => {
     const subjectId = pool[0]?.subjectId;
     const gradeId = pool[0]?.gradeId ?? null;
-    // Nhận cả node DÙNG CHUNG cho mọi khối (`gradeId == null`).
-    //
-    // Khớp cứng `n.gradeId === gradeId` làm biến mất toàn bộ nhánh dùng
-    // chung — và câu hỏi gắn vào nhánh đó thì lọc theo mục lục không bao giờ
-    // ra. Mọi màn khác đã nhận null từ lâu (xem màn nhập đề), chỉ chỗ này
-    // còn chặt.
-    const scoped = tocNodes.filter(
-      (n) =>
-        n.subjectId === subjectId && (n.gradeId == null || n.gradeId === gradeId),
-    );
+    // Một bản luật duy nhất cho cả app — xem `toc-scope.ts`.
+    const scoped = tocInScope(tocNodes, subjectId, gradeId);
     if (scoped.length === 0) {
       return { tocOptions: [] as Array<{ id: string; label: string; depth: number; count: number }>, descOf: new Map<string, Set<string>>() };
     }

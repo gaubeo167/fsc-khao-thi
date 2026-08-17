@@ -234,7 +234,8 @@ export function YccdWizard({
     let c = allComps.filter(
       (x) => x.subjectId === subjectId && (x.gradeId === gradeId || x.gradeId == null),
     );
-    if (c.length === 0) c = allComps.filter((x) => x.subjectId === subjectId);
+    // KHÔNG lùi về khung của khối khác: gắn câu lớp 1 vào chuẩn đầu ra lớp
+    // 10 là hỏng dữ liệu lặng lẽ. Khối chưa có khung thì hiện rỗng.
     return c;
   }, [allComps, subjectId, gradeId]);
 

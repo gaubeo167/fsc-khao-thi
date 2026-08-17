@@ -50,41 +50,23 @@ export function CompetencyPicker({
       otherGradeIds: [] as string[],
     };
     if (!subjectId) return none;
-    const isLeaf = (n: Competency) => n.kind === "outcome";
-    const sortByCode = (list: Competency[]) =>
-      list
-        .slice()
-        .sort(
-          (a, b) => (a.code ?? "").localeCompare(b.code ?? "") || a.order - b.order,
-        );
-
-    const exact = competencies.filter(
+    // KHÔNG lùi về khung của khối khác — cùng luật với mục lục, xem
+    // `toc-scope.ts`. Khối chưa có khung thì ô chọn hiện "chưa có khung
+    // YCCĐ", đó là lời mời đi nhập khung chứ không phải chỗ để mượn tạm.
+    const scope = competencies.filter(
       (n) =>
-        isLeaf(n) &&
+        n.kind === "outcome" &&
         n.subjectId === subjectId &&
         (n.gradeId === gradeId || n.gradeId == null),
     );
-    if (exact.length > 0) {
-      return {
-        outcomes: sortByCode(exact),
-        fromOtherGrade: false,
-        otherGradeIds: [] as string[],
-      };
-    }
-    // Lùi về mọi khối của môn: khung nhập dưới khối khác vẫn dùng được.
-    // NHƯNG phải nói ra. Im lặng ở đây chính là chỗ người dùng thấy "chọn
-    // Toán khối 1 mà ra khung của khối 10" và tưởng hệ thống lẫn môn — trong
-    // khi thật ra khung đó đang nằm nhầm khối, và không có dấu hiệu nào cho
-    // thấy danh sách đang là của khối khác.
-    const anyGrade = competencies.filter(
-      (n) => isLeaf(n) && n.subjectId === subjectId,
-    );
     return {
-      outcomes: sortByCode(anyGrade),
-      fromOtherGrade: anyGrade.length > 0,
-      otherGradeIds: Array.from(
-        new Set(anyGrade.map((n) => n.gradeId).filter(Boolean) as string[]),
-      ),
+      outcomes: scope
+        .slice()
+        .sort(
+          (a, b) => (a.code ?? "").localeCompare(b.code ?? "") || a.order - b.order,
+        ),
+      fromOtherGrade: false,
+      otherGradeIds: [] as string[],
     };
   }, [competencies, subjectId, gradeId]);
 

@@ -194,13 +194,13 @@ export function ImportQuestionsDialog({
   const outcomeIndex = useMemo(() => {
     if (!subjectId) return buildOutcomeIndex([]);
     const leaves = competencies.filter((c) => c.kind === "outcome" && c.code);
-    let scope = leaves.filter(
+    // KHÔNG lùi về khung của khối khác. Gắn câu lớp 1 vào chuẩn đầu ra lớp
+    // 10 là hỏng dữ liệu lặng lẽ — cùng lỗi mà mục lục vừa mắc phải (xem
+    // `toc-scope.ts`). Khối chưa có khung thì banner ở màn kiểm tra nói rõ.
+    const scope = leaves.filter(
       (c) =>
         c.subjectId === subjectId && (c.gradeId === gradeId || c.gradeId == null),
     );
-    if (scope.length === 0) {
-      scope = leaves.filter((c) => c.subjectId === subjectId);
-    }
     return buildOutcomeIndex(scope);
   }, [competencies, subjectId, gradeId]);
 
