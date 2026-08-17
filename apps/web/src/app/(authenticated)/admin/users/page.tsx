@@ -107,6 +107,18 @@ export default function UsersAdminPage() {
     for (const c of allClasses) m.set(c.id, c.gradeId);
     return m;
   }, [allClasses]);
+  /** Mã lớp → khối. Dùng cho học sinh chỉ có `className`, không có `classIds`. */
+  const classGradeByCode = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of allClasses) if (c.code) m.set(c.code, c.gradeId);
+    return m;
+  }, [allClasses]);
+  /** Id lớp → mã lớp, để đối chiếu ngược khi lọc theo lớp. */
+  const classCodeById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of allClasses) if (c.code) m.set(c.id, c.code);
+    return m;
+  }, [allClasses]);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
@@ -158,12 +170,25 @@ export default function UsersAdminPage() {
       //   - students: walk their classIds, map each to its grade, check membership
       if (filters.gradeId !== "all") {
         if (u.role === "student") {
-          const myClassIds = u.classIds ?? [];
-          const myGradeIds = new Set(
-            myClassIds
-              .map((cid) => classGradeMap.get(cid))
-              .filter((g): g is string => !!g),
-          );
+          // Học sinh thuộc khối nào: tra QUA CẢ HAI đường.
+          //
+          // `classIds` là đường "đúng" về mặt mô hình, nhưng dữ liệu thật
+          // không có: 15/25 học sinh trên production có classIds RỖNG, chỉ có
+          // `className`. Mọi màn khác trong app (tạo ca thi, khối–lớp, giám
+          // sát) khớp bằng `className` == mã lớp, nên chúng thấy học sinh còn
+          // màn này thì không — người dùng gặp đúng cảnh "tạo ca thi có học
+          // sinh khối 1, quản lý người dùng thì trống".
+          //
+          // Nhận cả hai đường cho tới khi dữ liệu được vá; sửa một màn cho
+          // khớp phần còn lại rẻ hơn nhiều so với đi lấp classIds cho toàn
+          // bộ học sinh rồi hy vọng không sót.
+          const myGradeIds = new Set<string>();
+          for (const cid of u.classIds ?? []) {
+            const g = classGradeMap.get(cid);
+            if (g) myGradeIds.add(g);
+          }
+          const byCode = u.className ? classGradeByCode.get(u.className) : undefined;
+          if (byCode) myGradeIds.add(byCode);
           if (!myGradeIds.has(filters.gradeId)) return false;
         } else {
           const gradeIds = u.gradeIds ?? [];
@@ -173,12 +198,16 @@ export default function UsersAdminPage() {
       // Class filter — primarily for students (who have classIds).
       // Teachers also store classIds for "Lớp quản lý"; honor either.
       if (filters.classId !== "all") {
+        // Cùng lý do như bộ lọc khối: nhận cả `classIds` lẫn `className`.
         const classIds = u.classIds ?? [];
-        if (!classIds.includes(filters.classId)) return false;
+        const codeOfSelected = classCodeById.get(filters.classId);
+        const matchByCode =
+          u.className != null && codeOfSelected != null && u.className === codeOfSelected;
+        if (!classIds.includes(filters.classId) && !matchByCode) return false;
       }
       return true;
     });
-  }, [scoped, filters, session?.role, classGradeMap]);
+  }, [scoped, filters, session?.role, classGradeMap, classGradeByCode, classCodeById]);
 
   // Reset pagination on filter change
   useEffect(() => {

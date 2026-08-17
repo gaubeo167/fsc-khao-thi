@@ -75,8 +75,15 @@ export function PickQuestionsDialog({
   const { tocOptions, descOf } = useMemo(() => {
     const subjectId = pool[0]?.subjectId;
     const gradeId = pool[0]?.gradeId ?? null;
+    // Nhận cả node DÙNG CHUNG cho mọi khối (`gradeId == null`).
+    //
+    // Khớp cứng `n.gradeId === gradeId` làm biến mất toàn bộ nhánh dùng
+    // chung — và câu hỏi gắn vào nhánh đó thì lọc theo mục lục không bao giờ
+    // ra. Mọi màn khác đã nhận null từ lâu (xem màn nhập đề), chỉ chỗ này
+    // còn chặt.
     const scoped = tocNodes.filter(
-      (n) => n.subjectId === subjectId && n.gradeId === gradeId,
+      (n) =>
+        n.subjectId === subjectId && (n.gradeId == null || n.gradeId === gradeId),
     );
     if (scoped.length === 0) {
       return { tocOptions: [] as Array<{ id: string; label: string; depth: number; count: number }>, descOf: new Map<string, Set<string>>() };
@@ -103,6 +110,13 @@ export function PickQuestionsDialog({
       if (q.tocNodeId) countByToc.set(q.tocNodeId, (countByToc.get(q.tocNodeId) ?? 0) + 1);
     }
     const options: Array<{ id: string; label: string; depth: number; count: number }> = [];
+    // Node MỒ CÔI: cha nằm ngoài phạm vi (khác môn/khối, hoặc đã bị xoá).
+    // Không gom lại thì cả nhánh không bao giờ được duyệt tới, và câu hỏi gắn
+    // ở đó biến mất khỏi bộ lọc mà không có dấu hiệu gì.
+    const inScope = new Set(scoped.map((n) => n.id));
+    const roots = scoped.filter((n) => !n.parentId || !inScope.has(n.parentId));
+    childrenOf.set(null, roots.sort((a, b) => a.order - b.order));
+
     const walk = (parentId: string | null, depth: number) => {
       for (const c of childrenOf.get(parentId) ?? []) {
         let count = 0;
