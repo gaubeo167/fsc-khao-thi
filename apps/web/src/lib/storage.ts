@@ -102,3 +102,35 @@ export async function deleteStoredFile(path: string): Promise<void> {
     console.warn(`[storage] deleteObject ${path} failed (ignored)`, err);
   }
 }
+
+/* ── Media của câu hỏi (audio bài nghe) ────────────────────────────────── */
+
+/** Trần dung lượng một file audio. ~20 phút mp3 128kbps. */
+export const MAX_QUESTION_AUDIO_BYTES = 20 * 1024 * 1024;
+
+/**
+ * Đường lưu file media của câu hỏi.
+ *
+ *   question-media/{uid}/{dấu-thời-gian}-{tên-file-đã-làm-sạch}
+ *
+ * Vì sao KHÔNG nhét thẳng vào nội dung câu hỏi dưới dạng base64 như ảnh:
+ * base64 làm phình 33%, mà một tài liệu Firestore chỉ chứa được 1MB. Ảnh
+ * chặn ở 2MB đã sát trần; một bài nghe 5 phút là 5MB, nhét vào là câu hỏi
+ * KHÔNG LƯU ĐƯỢC — và lỗi chỉ nổ lúc bấm lưu, sau khi người soạn đã gõ xong
+ * cả câu.
+ *
+ * uid nằm trong đường dẫn để rules chặn người này ghi đè file người kia mà
+ * không phải đọc Firestore.
+ */
+export function questionAudioPath(uid: string, fileName: string): string {
+  const clean = (fileName || "audio")
+    .normalize("NFKD")
+    // Bỏ dấu tiếng Việt: tên file có dấu đi qua URL storage thành %-encode
+    // dài loằng ngoằng, và một số trình phát cũ không đọc được.
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^\w.\-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(-80);
+  return `question-media/${uid}/${Date.now()}-${clean || "audio"}`;
+}

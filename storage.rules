@@ -64,6 +64,25 @@ service firebase.storage {
       allow delete: if isTeacherOrAbove();
     }
 
+    // ───── /question-media — audio bài nghe gắn vào câu hỏi ──────────
+    //
+    // Vì sao audio KHÔNG nhét base64 vào nội dung câu hỏi như ảnh: tài liệu
+    // Firestore chỉ chứa được 1MB, mà một bài nghe 5 phút đã là 5MB. Nhét
+    // vào là câu hỏi không lưu được.
+    //
+    // Đọc: mọi người đã đăng nhập — học sinh phải tải được file khi làm bài,
+    // và ở thời điểm đó chưa có cách biết em thuộc ca thi nào từ Storage.
+    // Cùng đánh đổi với /materials: ai có đường dẫn thì tải được.
+    match /question-media/{ownerUid}/{file=**} {
+      allow read: if isSignedIn();
+      // uid trong đường dẫn phải là chính người ghi → không ghi đè file của
+      // giáo viên khác.
+      allow write: if isTeacherOrAbove() &&
+        ownerUid == uid() &&
+        request.resource.size < 20 * 1024 * 1024;
+      allow delete: if isTeacherOrAbove() && ownerUid == uid();
+    }
+
     // Default deny.
     match /{allPaths=**} {
       allow read, write: if false;
