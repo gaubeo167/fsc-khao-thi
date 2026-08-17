@@ -139,15 +139,58 @@ export async function POST(
         ids.add(src ?? (q as unknown as { id: string }).id);
       }
     }
-    const live = new Map<string, Question>();
+    // ── Lấy BẢN MỚI NHẤT của câu, không phải bản đóng băng ──────────────
+    //
+    // Sửa một câu ĐANG DÙNG trong đề thì hệ thống không ghi đè, nó tạo một
+    // BẢN MỚI với id mới (xem `cloneAsNewVersion`) — cố ý, để đề đã phát
+    // không đổi dưới chân học sinh. Hệ quả: tra theo id trong bản đóng băng
+    // sẽ ra đúng bản CŨ, tức bản còn nguyên đáp án sai. Chấm lại kiểu đó thì
+    // chấm lại y như cũ.
+    //
+    // Nên phải lần theo chuỗi phiên bản: id đóng băng → gốc chuỗi
+    // (`versionOfRootId`) → bản mới nhất ĐÃ DUYỆT của chuỗi đó.
     const all = [...ids].filter(Boolean);
+    const frozenDocs = new Map<string, Question>();
     for (let i = 0; i < all.length; i += 30) {
       const snaps = await Promise.all(
         all.slice(i, i + 30).map((id) => db.collection("questions").doc(id).get()),
       );
       for (const s of snaps) {
-        if (s.exists) live.set(s.id, { ...(s.data() as Question), id: s.id });
+        if (s.exists) frozenDocs.set(s.id, { ...(s.data() as Question), id: s.id });
       }
+    }
+    /** id đóng băng → gốc chuỗi phiên bản. */
+    const rootOf = new Map<string, string>();
+    for (const [id, q] of frozenDocs) {
+      rootOf.set(id, (q as unknown as { versionOfRootId?: string }).versionOfRootId ?? id);
+    }
+    const roots = [...new Set(rootOf.values())];
+
+    /** gốc chuỗi → bản mới nhất đã duyệt. */
+    const newestByRoot = new Map<string, Question>();
+    const consider = (q: Question) => {
+      const root = (q as unknown as { versionOfRootId?: string }).versionOfRootId ?? q.id;
+      if (q.archivedAt) return;
+      // Bản nháp/chờ duyệt KHÔNG được dùng để chấm: sửa dở dang mà đã đổi
+      // điểm cả lớp thì còn tệ hơn để nguyên đáp án sai.
+      if (q.status !== "approved") return;
+      const cur = newestByRoot.get(root);
+      const vOf = (x: Question) => (x as unknown as { version?: number }).version ?? 1;
+      if (!cur || vOf(q) > vOf(cur)) newestByRoot.set(root, q);
+    };
+    for (const q of frozenDocs.values()) consider(q);
+    for (let i = 0; i < roots.length; i += 30) {
+      const snap = await db
+        .collection("questions")
+        .where("versionOfRootId", "in", roots.slice(i, i + 30))
+        .get();
+      for (const d of snap.docs) consider({ ...(d.data() as Question), id: d.id });
+    }
+
+    const live = new Map<string, Question>();
+    for (const [frozenId, root] of rootOf) {
+      const newest = newestByRoot.get(root);
+      if (newest) live.set(frozenId, newest);
     }
     const nextVariants = (form.variants ?? []).map((v) => ({
       ...v,

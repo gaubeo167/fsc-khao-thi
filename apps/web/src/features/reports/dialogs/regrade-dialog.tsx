@@ -82,8 +82,8 @@ export function RegradeDialog({
           <div className="min-w-0">
             <h2 className="text-section-title">Chấm lại ca thi</h2>
             <p className="text-meta mt-0.5">
-              {attemptCount} bài đã nộp sẽ được chấm lại bằng đáp án mới nhất
-              trong ngân hàng câu hỏi.
+              {attemptCount} bài đã nộp sẽ được chấm lại bằng <b>bản mới nhất
+              đã duyệt</b> của từng câu hỏi.
             </p>
           </div>
         </header>
@@ -105,9 +105,13 @@ export function RegradeDialog({
                 <p className="text-meta inline-flex items-start gap-1.5 text-amber-900">
                   <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   <span>
-                    Chỉ ĐÁP ÁN được lấy mới từ ngân hàng. Đề bài giữ nguyên như
-                    học sinh đã đọc — sửa đề bài sau kỳ thi là viết lại lịch sử.
-                    Nếu đề bài sai thì phải huỷ câu, không phải chấm lại.
+                    Sửa câu đang dùng trong đề thì hệ thống tạo BẢN MỚI —
+                    nhớ <b>gửi duyệt bản đó</b> trước khi chấm lại, vì bản
+                    nháp không được dùng để chấm.
+                    <br />
+                    Chỉ ĐÁP ÁN được lấy mới. Đề bài giữ nguyên như học sinh đã
+                    đọc — sửa đề bài sau kỳ thi là viết lại lịch sử; đề sai thì
+                    phải huỷ câu, không phải chấm lại.
                   </span>
                 </p>
               </div>
