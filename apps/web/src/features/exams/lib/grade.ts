@@ -1,3 +1,4 @@
+import { dsRatio } from "@/lib/exam/ds-score";
 import { keyText, matchShortAnswer } from "@/lib/exam/short-answer-match";
 import type { Question } from "@/features/question-bank/data/seed-questions";
 
@@ -193,24 +194,15 @@ export function gradeQuestion(
         if (map[sub.id] === sub.correctAnswer) okCount++;
       }
       const allCorrect = okCount === question.subQuestions.length;
-      // Đúng–Sai lũy tiến (MOET): 1 ý 0,1 · 2 ý 0,25 · 3 ý 0,5 · 4 ý 1 điểm.
-      // Bảng là điểm tuyệt đối của câu đủ ý → quy về tỉ lệ 0..1.
-      let tfScore = allCorrect ? 1 : 0;
-      if (!allCorrect && policy && policy.ds && policy.ds !== "full") {
-        const subs = question.subQuestions;
-        if (policy.ds === "weighted") {
-          const totalW = subs.reduce((n, s) => n + (s.weight ?? 1), 0);
-          const gotW = subs.reduce(
-            (n, s) => n + (map[s.id] === s.correctAnswer ? s.weight ?? 1 : 0),
-            0,
-          );
-          tfScore = totalW > 0 ? gotW / totalW : 0;
-        } else {
-          const table = policy.dsGraduatedTable ?? { 1: 0.1, 2: 0.25, 3: 0.5, 4: 1 };
-          const full = table[subs.length] ?? Math.max(...Object.values(table), 1);
-          tfScore = full > 0 ? Math.min(1, (table[okCount] ?? 0) / full) : 0;
-        }
-      }
+      // Cùng một luật với bộ chấm ca thi thật — xem `lib/exam/ds-score.ts`.
+      // Trước đây chỗ này là bản chép tay thứ hai, mang y nguyên lỗi câu 5 ý.
+      const tfScore = dsRatio(
+        question.subQuestions.map((s) => ({
+          right: map[s.id] === s.correctAnswer,
+          weight: s.weight,
+        })),
+        policy,
+      );
       return {
         verdict: allCorrect ? "correct" : okCount > 0 ? "partial" : "wrong",
         score: tfScore,

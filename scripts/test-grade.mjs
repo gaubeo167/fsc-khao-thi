@@ -6,8 +6,15 @@
  *
  * Vì sao có file này: điểm/câu của đề (đề YCCĐ chấm theo phần, Đúng–Sai lũy
  * tiến theo số ý đúng) từng bị bỏ qua hoàn toàn — máy chấm cho mỗi câu 1 điểm
- * rồi quy phần trăm. Các ca dưới khoá lại đúng hành vi MOET, và khoá cả hành
- * vi CŨ (không có policy → đúng hết mới có điểm) để đề khung không bị đổi.
+ * rồi quy phần trăm. Các ca dưới khoá lại đúng hành vi MOET.
+ *
+ * ĐỔI Ý (17/08/2026): trước đây file này khoá "không có policy → đúng hết mới
+ * có điểm", với lý do giữ đề khung không đổi hành vi. Lý do đó sai. Quy định
+ * của Bộ nói Đúng–Sai chấm lũy tiến; đề không cài gì thì phải theo quy định,
+ * không phải theo cách nghiêm hơn quy định. Đo trên dữ liệu thật lúc đổi:
+ * 36/42 đề đang sống không có `scoringPolicy`, 13 đề trong đó có câu Đúng–Sai
+ * — tức "không cài" là ĐƯỜNG ĐI CHÍNH, không phải ca hiếm. Muốn chấm trọn câu
+ * thì chọn `ds: "full"`, một quyết định có ý thức.
  */
 import { execFileSync } from "node:child_process";
 import { mkdtempSync } from "node:fs";
@@ -49,9 +56,11 @@ eq("Đ–S đúng 2 ý", gradeQuestionRatio(ds, ans({ a: true, b: false, c: fals
 eq("Đ–S đúng 3 ý", gradeQuestionRatio(ds, ans({ a: true, b: false, c: true, d: true }), POLICY), 0.5);
 eq("Đ–S đúng 4 ý", gradeQuestionRatio(ds, ans({ a: true, b: false, c: true, d: false }), POLICY), 1);
 eq("Đ–S sai hết", gradeQuestionRatio(ds, ans({ a: false, b: true, c: false, d: true }), POLICY), 0);
-// HỒI QUY: policy "full" giữ nguyên hành vi cũ (đúng hết mới có điểm)
+// Chọn "trọn câu" thì vẫn phải là trọn câu — đó là quyền của người ra đề.
 eq("Đ–S mode full · đúng 3 ý", gradeQuestionRatio(ds, ans({ a: true, b: false, c: true, d: true }), FULL), 0);
-eq("Đ–S không có policy (đề khung)", gradeQuestionRatio(ds, ans({ a: true, b: false, c: true, d: true }), null), 0);
+// Nhưng KHÔNG cài gì thì theo quy định của Bộ, không phải theo "trọn câu".
+eq("Đ–S không có policy → lũy tiến theo quy định", gradeQuestionRatio(ds, ans({ a: true, b: false, c: true, d: true }), null), 0.5);
+eq("Đ–S không có policy · đúng 1 ý", gradeQuestionRatio(ds, ans({ a: true, b: true, c: false, d: true }), null), 0.1);
 
 const mcq = {
   id: "q-mcq", type: "mcq-multi",

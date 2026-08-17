@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   CheckCircle2,
   Circle,
+  CircleDot,
   Clock,
   EyeOff,
   Trophy,
@@ -488,6 +489,16 @@ export default function ExamResultPage() {
             const grade = isManual
               ? essayGrades.find((g) => g.questionId === qid)
               : undefined;
+            const qScore = q ? perQuestionScore[q.id] ?? 0 : 0;
+            const earnedHere = q ? earnedMap?.[q.id] : undefined;
+            // Đúng MỘT PHẦN: Đúng–Sai lũy tiến, mcq-multi từng phần, trả lời
+            // ngắn ăn % đáp án. Trước đây chỗ này chỉ có ✓ hoặc ✗ — học sinh
+            // được 0,5đ trên câu 1đ vẫn thấy dấu ✗ đỏ và tưởng mất trắng.
+            const isPartial =
+              typeof earnedHere === "number" &&
+              qScore > 0 &&
+              earnedHere > 1e-9 &&
+              earnedHere < qScore - 1e-9;
             const correctnessIcon = !q ? (
               <Circle className="h-4 w-4 text-muted-foreground" />
             ) : isManual ? (
@@ -502,7 +513,15 @@ export default function ExamResultPage() {
                 <Clock className="h-4 w-4 text-amber-600" />
               )
             ) : ans ? (
-              isCorrect(q, ans) ? (
+              isPartial ? (
+                <span
+                  className="text-micro inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-0.5 font-semibold text-amber-800"
+                  title="Đúng một phần — chấm theo từng ý"
+                >
+                  <CircleDot className="h-3 w-3" />
+                  {formatScore(earnedHere!)}/{formatScore(qScore)}
+                </span>
+              ) : isCorrect(q, ans) ? (
                 <CheckCircle2 className="h-4 w-4 text-emerald-600" />
               ) : (
                 <XCircle className="h-4 w-4 text-rose-600" />
@@ -510,7 +529,6 @@ export default function ExamResultPage() {
             ) : (
               <Circle className="h-4 w-4 text-muted-foreground" />
             );
-            const qScore = q ? perQuestionScore[q.id] ?? 0 : 0;
             return (
               <li
                 key={qid}

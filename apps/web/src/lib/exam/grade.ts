@@ -16,6 +16,7 @@
 import type { Question } from "@/features/question-bank/data/seed-questions";
 import type { Answer } from "@/features/shift-exam/state/attempts-store";
 
+import { dsRatio } from "./ds-score";
 import { matchShortAnswer } from "./short-answer-match";
 
 export function gradeQuestion(
@@ -63,8 +64,15 @@ export function gradeQuestion(
     }
     case "multi-tf": {
       if (a.kind !== "multi-tf") return { points: 0, correct: false };
-      const allOk = q.subQuestions.every((sub) => a.values[sub.id] === sub.correctAnswer);
-      return allOk ? { points: 1, correct: true } : { points: 0, correct: false };
+      // Điểm TỪNG PHẦN theo quy định của Bộ (xem `ds-score.ts`). `correct`
+      // vẫn chỉ bật khi đúng HẾT ý — cột "số câu đúng" giữ nguyên nghĩa,
+      // còn `points` mới là thứ được cộng thành điểm.
+      const subs = q.subQuestions.map((sub) => ({
+        right: a.values[sub.id] === sub.correctAnswer,
+        weight: sub.weight,
+      }));
+      const ratio = dsRatio(subs);
+      return { points: ratio, correct: ratio >= 1 };
     }
     case "matching": {
       if (a.kind !== "matching") return { points: 0, correct: false };
@@ -232,28 +240,18 @@ export function gradeQuestionRatio(
 ): number | null {
   if (q.type === "essay" || q.type === "ai-generated") return null;
 
-  // Đúng–Sai chùm: MOET chấm LŨY TIẾN theo số ý đúng (1 ý 0,1đ · 2 ý 0,25đ ·
-  // 3 ý 0,5đ · 4 ý 1đ với câu 1 điểm). Bảng là điểm tuyệt đối cho câu đủ ý,
-  // nên quy về tỉ lệ = bảng[k] / bảng[tổng số ý] để vẫn đúng khi điểm/câu khác 1.
-  if (q.type === "multi-tf" && policy && policy.ds !== "full") {
+  // Đúng–Sai chùm — cả ba chế độ (lũy tiến / trọng số / trọn câu) nằm trong
+  // `dsRatio`. Đề KHÔNG cài `scoringPolicy` thì mặc định LŨY TIẾN theo quy
+  // định của Bộ: thiếu cấu hình không phải là lý do để chấm nghiêm hơn luật.
+  if (q.type === "multi-tf") {
     if (!a || a.kind !== "multi-tf") return 0;
-    const subs = q.subQuestions ?? [];
-    if (subs.length === 0) return 0;
-    const rightCount = subs.filter((s) => a.values[s.id] === s.correctAnswer).length;
-    if (policy.ds === "weighted") {
-      // Trọng số từng ý (mặc định đều nhau khi không đặt).
-      const totalW = subs.reduce((n, s) => n + (s.weight ?? 1), 0);
-      if (totalW <= 0) return 0;
-      const gotW = subs.reduce(
-        (n, s) => n + (a.values[s.id] === s.correctAnswer ? s.weight ?? 1 : 0),
-        0,
-      );
-      return gotW / totalW;
-    }
-    const table = policy.dsGraduatedTable ?? { 1: 0.1, 2: 0.25, 3: 0.5, 4: 1 };
-    const full = table[subs.length] ?? Math.max(...Object.values(table), 1);
-    if (full <= 0) return 0;
-    return Math.min(1, (table[rightCount] ?? 0) / full);
+    return dsRatio(
+      (q.subQuestions ?? []).map((s) => ({
+        right: a.values[s.id] === s.correctAnswer,
+        weight: s.weight,
+      })),
+      policy,
+    );
   }
 
   // MCQ nhiều đáp án chấm TỪNG PHẦN — công thức đã chốt trong ScoringPolicy:

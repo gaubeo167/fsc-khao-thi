@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   CheckCircle2,
   Circle,
+  CircleDot,
   Clock,
   Eye,
   ShieldAlert,
@@ -314,6 +315,7 @@ export default function ReportAttemptDetailPage() {
                     ans={ans}
                     grade={grade}
                     qScore={qScore}
+                    earned={earnedMap?.[qid]}
                   />
                 </div>
                 <div className="grid gap-2 sm:grid-cols-2">
@@ -353,6 +355,7 @@ function CorrectnessBadge({
   ans,
   grade,
   qScore,
+  earned,
 }: {
   q: Question | undefined;
   ans: Answer | undefined;
@@ -363,6 +366,8 @@ function CorrectnessBadge({
       }
     | undefined;
   qScore: number;
+  /** Điểm SERVER đã chấm cho câu này. Có thì nó là sự thật, không tính lại. */
+  earned?: number;
 }) {
   if (!q) return <Circle className="h-4 w-4 text-muted-foreground" />;
   const isManual = q.type === "essay" || q.type === "ai-generated";
@@ -384,6 +389,21 @@ function CorrectnessBadge({
     return (
       <span className="inline-flex items-center gap-1 rounded-md border bg-muted px-2 py-0.5 text-[10.5px] font-semibold text-foreground/65">
         Bỏ trống · 0/{formatScore(qScore)}
+      </span>
+    );
+  }
+  // ĐÚNG MỘT PHẦN — câu Đúng–Sai chấm lũy tiến, mcq-multi chấm từng phần,
+  // trả lời ngắn ăn % đáp án. Dấu ✗ đỏ ở đây là nói dối: học sinh có điểm.
+  if (
+    typeof earned === "number" &&
+    qScore > 0 &&
+    earned > 1e-9 &&
+    earned < qScore - 1e-9
+  ) {
+    return (
+      <span className="text-micro inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-0.5 font-semibold text-amber-800">
+        <CircleDot className="h-3 w-3" />
+        {formatScore(earned)}/{formatScore(qScore)}
       </span>
     );
   }
