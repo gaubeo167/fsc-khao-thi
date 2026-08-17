@@ -12,6 +12,8 @@ import { MediaInsertDialog, type MediaKind } from "./media-insert-dialog";
 import { cn } from "@/lib/utils";
 import { MATH_ANY_SRC, mathAnyRe } from "@/lib/math-delimiters";
 
+import { buildAudioMarker, parseAudioMarker } from "../lib/audio-marker";
+
 interface Props {
   value: string;
   onChange: (next: string) => void;
@@ -66,6 +68,8 @@ interface MediaTarget {
   kind: MediaKind;
   src: string;
   label: string;
+  /** Giới hạn lượt nghe của thẻ audio đang sửa, `null` khi không có. */
+  maxPlays?: string | null;
 }
 
 /**
@@ -720,12 +724,20 @@ export function WysiwygEditor({
     });
   }
 
-  function buildAudioChip(src: string, label: string): HTMLElement {
+  function buildAudioChip(
+    src: string,
+    label: string,
+    maxPlays: number | null = null,
+  ): HTMLElement {
     const span = document.createElement("span");
     span.setAttribute("contenteditable", "false");
     span.setAttribute("data-audio", "1");
     span.setAttribute("data-src", src);
     span.setAttribute("data-label", label);
+    // Giới hạn lượt nghe phải BÁM VÀO THẺ. Không mang theo thì lúc xuất
+    // ngược ra chữ nó biến mất — người soạn đặt "2 lần", lưu xong mở lại là
+    // không giới hạn, và không có gì báo.
+    if (maxPlays != null) span.setAttribute("data-maxplays", String(maxPlays));
     span.className =
       "fsc-audio-chip my-2 flex cursor-pointer items-center gap-3 rounded-lg border bg-violet-50/50 px-3 py-2.5 text-[13px] ring-1 ring-violet-200 transition-colors hover:bg-violet-50";
     const icon = document.createElement("span");
@@ -737,7 +749,8 @@ export function WysiwygEditor({
     meta.className = "min-w-0 flex-1";
     const title = document.createElement("span");
     title.className = "block font-semibold text-violet-900";
-    title.textContent = label || "Audio";
+    title.textContent =
+      (label || "Audio") + (maxPlays != null ? ` · nghe ${maxPlays} lần` : "");
     const url = document.createElement("span");
     url.className = "block truncate text-[11px] text-violet-700/80";
     url.textContent = src;
@@ -804,6 +817,7 @@ export function WysiwygEditor({
         el.getAttribute("data-alt") ??
         el.getAttribute("data-label") ??
         "",
+      maxPlays: el.getAttribute("data-maxplays"),
     });
     setMediaKind(kind);
   }
@@ -816,7 +830,8 @@ export function WysiwygEditor({
     const trimmed = snippet.trim();
     const isImage = /^!\[[^\]]*\]\([^)\s]+(?:\s+=\d+(?:x\d+)?)?\)$/.test(trimmed);
     const isVideo = /^\[video:[^|\]]+?\s*\|\s*[^\]]*\]$/.test(trimmed);
-    const isAudio = /^\[audio:[^|\]]+?\s*\|\s*[^\]]*\]$/.test(trimmed);
+    const audioMarker = parseAudioMarker(trimmed);
+    const isAudio = audioMarker != null;
 
     if (isImage || isVideo || isAudio) {
       if (mediaTarget) {
@@ -828,9 +843,12 @@ export function WysiwygEditor({
         } else if (isVideo) {
           const m = /^\[video:([^|\]]+?)\s*\|\s*([^\]]*)\]$/.exec(trimmed);
           if (m) chip = buildVideoChip(m[1].trim(), m[2].trim());
-        } else if (isAudio) {
-          const m = /^\[audio:([^|\]]+?)\s*\|\s*([^\]]*)\]$/.exec(trimmed);
-          if (m) chip = buildAudioChip(m[1].trim(), m[2].trim());
+        } else if (isAudio && audioMarker) {
+          chip = buildAudioChip(
+            audioMarker.src,
+            audioMarker.label,
+            audioMarker.maxPlays,
+          );
         }
         if (chip) {
           mediaTarget.el.replaceWith(chip);
@@ -1217,6 +1235,7 @@ export function WysiwygEditor({
         kind={mediaKind ?? "image"}
         initialSrc={mediaTarget?.src}
         initialLabel={mediaTarget?.label}
+        initialMaxPlays={mediaTarget?.maxPlays ?? null}
         onInsert={handleMediaInsert}
       />
 
@@ -1323,11 +1342,13 @@ function parseToHtml(value: string): string {
         html += escapeHtml(matched);
       }
     } else if (matched.startsWith("[audio:")) {
-      const am = /^\[audio:([^|\]]+?)\s*\|\s*([^\]]*)\]$/.exec(matched);
+      const am = parseAudioMarker(matched);
       if (am) {
-        const src = am[1].trim();
-        const label = am[2].trim();
-        html += `<span contenteditable="false" data-audio="1" data-src="${escapeAttr(src)}" data-label="${escapeAttr(label)}" class="fsc-audio-chip my-2 flex cursor-pointer items-center gap-3 rounded-lg border bg-violet-50/50 px-3 py-2.5 text-[13px] ring-1 ring-violet-200 transition-colors hover:bg-violet-50"><span class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-violet-100 text-violet-600">♪</span><span class="min-w-0 flex-1"><span class="block font-semibold text-violet-900">${escapeHtml(label || "Audio")}</span><span class="block truncate text-[11px] text-violet-700/80">${escapeHtml(src)}</span></span></span>`;
+        const src = am.src;
+        const label = am.label + (am.maxPlays != null ? ` · nghe ${am.maxPlays} lần` : "");
+        const maxAttr =
+          am.maxPlays != null ? ` data-maxplays="${escapeAttr(String(am.maxPlays))}"` : "";
+        html += `<span contenteditable="false" data-audio="1" data-src="${escapeAttr(src)}" data-label="${escapeAttr(am.label)}"${maxAttr} class="fsc-audio-chip my-2 flex cursor-pointer items-center gap-3 rounded-lg border bg-violet-50/50 px-3 py-2.5 text-[13px] ring-1 ring-violet-200 transition-colors hover:bg-violet-50"><span class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-violet-100 text-violet-600">♪</span><span class="min-w-0 flex-1"><span class="block font-semibold text-violet-900">${escapeHtml(label || "Audio")}</span><span class="block truncate text-[11px] text-violet-700/80">${escapeHtml(src)}</span></span></span>`;
       } else {
         html += escapeHtml(matched);
       }
@@ -1465,7 +1486,8 @@ function serialize(root: HTMLElement): string {
     if (el.dataset.audio === "1") {
       const src = el.getAttribute("data-src") ?? "";
       const label = el.getAttribute("data-label") ?? "";
-      return `\n\n[audio:${src} | ${label}]\n\n`;
+      const max = el.getAttribute("data-maxplays");
+      return `\n\n${buildAudioMarker(src, label, max ? Number(max) : null)}\n\n`;
     }
     if (el.dataset.blank === "1") {
       const idx = el.getAttribute("data-index") ?? "1";
