@@ -3,6 +3,8 @@
 import { useCallback, useMemo } from "react";
 
 import { useAuthStore } from "@/features/auth/state/auth-store";
+import { operatingCampusId } from "@/features/campus/lib/campus-scope";
+import { useCampusStore } from "@/features/campus/state/campus-store";
 import { useExamFormsStore } from "@/features/exam-forms/state/exam-forms-store";
 import { useBlueprintsStore } from "@/features/exams/state/blueprints-store";
 import { useGeneratedStore } from "@/features/exams/state/generated-store";
@@ -34,8 +36,25 @@ import { useQuestionsStore } from "../state/questions-store";
  */
 export function useDeletability() {
   const questions = useQuestionsStore((s) => s.questions);
-  /** Chỉ người TẠO câu mới xoá vĩnh viễn được — xem `question-delete.ts`. */
-  const actorUserId = useAuthStore((s) => s.session?.userId ?? null);
+  /**
+   * Người đang thao tác — quyết định ai xoá vĩnh viễn được câu nào.
+   * Luật ở `question-delete.ts`, và PHẢI khớp `firestore.rules`.
+   */
+  const userId = useAuthStore((s) => s.session?.userId ?? null);
+  const role = useAuthStore((s) => s.session?.role ?? null);
+  const sessionCampusId = useAuthStore((s) => s.session?.campusId ?? null);
+  const activeCampusId = useCampusStore((s) => s.activeCampusId);
+  const actor = useMemo(
+    () =>
+      userId
+        ? {
+            userId,
+            role,
+            campusId: operatingCampusId(role, sessionCampusId, activeCampusId),
+          }
+        : null,
+    [userId, role, sessionCampusId, activeCampusId],
+  );
   const questionsHydrated = useQuestionsStore((s) => s.hydrated);
   const examForms = useExamFormsStore((s) => s.forms);
   const examFormsHydrated = useExamFormsStore((s) => s.hydrated);
@@ -88,14 +107,14 @@ export function useDeletability() {
 
   const verdictFor = useCallback(
     (questionId: string): DeleteVerdict =>
-      canHardDelete(questionId, sources, hydration, actorUserId),
-    [sources, hydration, actorUserId],
+      canHardDelete(questionId, sources, hydration, actor),
+    [sources, hydration, actor],
   );
 
   const split = useCallback(
     <T extends { id: string }>(rows: readonly T[]) =>
-      splitDeletable(rows, sources, hydration, actorUserId),
-    [sources, hydration, actorUserId],
+      splitDeletable(rows, sources, hydration, actor),
+    [sources, hydration, actor],
   );
 
   return { ready, verdictFor, split };

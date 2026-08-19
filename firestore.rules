@@ -248,9 +248,25 @@ service cloud.firestore {
           (resource.data.kho == "personal" || resource.data.status == "pending") &&
           request.resource.data.status == resource.data.status)
       );
+      // Xoá CỨNG (mất hẳn). Luật nghiệp vụ:
+      //   · admin trong cơ sở  → xoá được. Đây cũng là đường leo thang khi
+      //     giáo viên cần xoá một câu đã duyệt.
+      //   · người TẠO câu      → xoá được câu của mình khi câu CHƯA vào kho
+      //     chung, tức kho cá nhân hoặc chưa được duyệt (draft/pending/
+      //     rejected). Đã duyệt vào kho chung thì phải qua admin.
+      //
+      // Luật cũ chỉ nhận `kho == "personal"`, nên giáo viên không xoá nổi cả
+      // bản nháp của chính mình trong kho chung. Mà `removeDoc` chỉ
+      // `console.warn` khi hỏng, nên nó hỏng IM LẶNG — giao diện xoá khỏi
+      // danh sách, tải lại trang thì câu quay về.
+      //
+      // Việc "câu đã dùng trong đề chưa" KHÔNG kiểm được ở đây (phải soát 6
+      // collection khác); đó là việc của `lib/question-delete.ts` phía client.
+      // Luật này là lớp chặn về QUYỀN, không phải về tham chiếu.
       allow delete: if isSignedIn() && (
         (isAdmin() && inSameCampus(resource.data.campusId)) ||
-        (resource.data.ownerId == uid() && resource.data.kho == "personal")
+        (resource.data.ownerId == uid() &&
+          (resource.data.kho == "personal" || resource.data.status != "approved"))
       );
     }
 

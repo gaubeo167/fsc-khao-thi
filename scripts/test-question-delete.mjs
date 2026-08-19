@@ -244,6 +244,11 @@ const verdict = (over = {}, hyd = READY) => canHardDelete("Q1", src(over), hyd);
   check("chưa tải xong → không câu nào xoá được", none.deletable.length === 0 && none.blocked.length === 3);
 }
 
+/** Giáo viên — không phải quản trị. */
+const GV = { userId: "u-me", role: "teacher", campusId: "c1" };
+/** Quản trị cơ sở c1. */
+const ADMIN = { userId: "u-admin", role: "campus-admin", campusId: "c1" };
+
 /* ── 10. QUYỀN: ai tạo câu nào thì xoá vĩnh viễn được câu đó ───────────── */
 // Trước đây nút xoá chỉ nhìn `canMutate`, tức MỌI nhân viên xoá vĩnh viễn được
 // câu của bất kỳ ai. Xoá cứng là thao tác duy nhất không có đường lùi.
@@ -256,9 +261,9 @@ const verdict = (over = {}, hyd = READY) => canHardDelete("Q1", src(over), hyd);
 
   check(
     "câu MÌNH tạo, chưa dùng ở đâu → xoá được",
-    canHardDelete("Q1", s, READY, "u-me").deletable === true,
+    canHardDelete("Q1", s, READY, GV).deletable === true,
   );
-  const nguoiKhac = canHardDelete("Q2", s, READY, "u-me");
+  const nguoiKhac = canHardDelete("Q2", s, READY, GV);
   check("câu NGƯỜI KHÁC tạo → CHẶN", nguoiKhac.deletable === false);
   check(
     "blocker ghi rõ là vấn đề quyền",
@@ -278,7 +283,7 @@ const verdict = (over = {}, hyd = READY) => canHardDelete("Q1", src(over), hyd);
       homework: [{ id: "H9", title: "BTVN bí mật", questionIds: ["Q2"] }],
     }),
     READY,
-    "u-me",
+    GV,
   );
   check(
     "chặn vì quyền thì KHÔNG liệt kê tham chiếu của người khác",
@@ -301,18 +306,103 @@ const verdict = (over = {}, hyd = READY) => canHardDelete("Q1", src(over), hyd);
         ],
       }),
       READY,
-      "u-me",
+      GV,
     ).deletable === false,
   );
   check(
     "không tìm thấy câu trong kho → chặn, không đoán bừa là của mình",
-    canHardDelete("Q-la", s, READY, "u-me").deletable === false,
+    canHardDelete("Q-la", s, READY, GV).deletable === false,
   );
 
   // Hàng loạt: chỉ xoá phần của mình, câu người khác rơi sang nhóm bị chặn.
-  const chia = splitDeletable(kho, s, READY, "u-me");
+  const chia = splitDeletable(kho, s, READY, GV);
   check("hàng loạt: tách đúng phần của mình", chia.deletable.map((r) => r.id).join() === "Q1");
   check("hàng loạt: câu người khác bị chặn", chia.blocked[0]?.row.id === "Q2");
+}
+
+/* ── 11. Câu ĐÃ DUYỆT vào kho chung: người tạo phải qua quản trị ───────── */
+// Luật nghiệp vụ người dùng chốt: giáo viên xoá được câu của mình khi chưa vào
+// kho chung; đã duyệt rồi thì là tài sản chung, phải nhờ admin. Luật này PHẢI
+// khớp `firestore.rules` — lệch thì giao diện cho bấm rồi Firestore từ chối, mà
+// `removeDoc` chỉ console.warn nên hỏng IM LẶNG.
+{
+  const q = (over) => ({ id: "Q1", ownerId: "u-me", campusId: "c1", ...over });
+
+  check(
+    "GV · câu MÌNH tạo, kho chung, ĐÃ DUYỆT → CHẶN, phải qua quản trị",
+    canHardDelete("Q1", src({ questions: [q({ kho: "campus", status: "approved" })] }), READY, GV)
+      .deletable === false,
+  );
+  check(
+    "…và lý do chỉ đúng đường: nhờ quản trị",
+    /quản trị/.test(
+      canHardDelete("Q1", src({ questions: [q({ kho: "campus", status: "approved" })] }), READY, GV)
+        .reason,
+    ),
+  );
+  for (const st of ["draft", "pending", "rejected"]) {
+    check(
+      `GV · câu mình tạo, kho chung, status=${st} (chưa duyệt) → xoá được`,
+      canHardDelete("Q1", src({ questions: [q({ kho: "campus", status: st })] }), READY, GV)
+        .deletable === true,
+    );
+  }
+  check(
+    "GV · kho CÁ NHÂN dù đã duyệt → vẫn xoá được (không phải tài sản chung)",
+    canHardDelete("Q1", src({ questions: [q({ kho: "personal", status: "approved" })] }), READY, GV)
+      .deletable === true,
+  );
+
+  // Quản trị là đường leo thang.
+  check(
+    "ADMIN · câu người khác tạo, đã duyệt, cùng cơ sở → xoá được",
+    canHardDelete(
+      "Q1",
+      src({ questions: [q({ ownerId: "u-ai-do", kho: "campus", status: "approved" })] }),
+      READY,
+      ADMIN,
+    ).deletable === true,
+  );
+  check(
+    "ADMIN · nhưng câu thuộc cơ sở KHÁC → CHẶN",
+    canHardDelete(
+      "Q1",
+      src({ questions: [q({ ownerId: "u-ai-do", campusId: "c2", kho: "campus", status: "approved" })] }),
+      READY,
+      ADMIN,
+    ).deletable === false,
+  );
+  check(
+    "ADMIN vẫn KHÔNG vượt qua tham chiếu — câu trong BTVN thì chặn",
+    canHardDelete(
+      "Q1",
+      src({
+        questions: [q({ kho: "campus", status: "approved" })],
+        homework: [{ id: "H1", title: "BTVN", questionIds: ["Q1"] }],
+      }),
+      READY,
+      ADMIN,
+    ).deletable === false,
+  );
+
+  // Hàng loạt: tách đúng phần giáo viên được xoá.
+  const kho2 = [
+    { id: "Q1", ownerId: "u-me", campusId: "c1", kho: "campus", status: "draft" },
+    { id: "Q2", ownerId: "u-me", campusId: "c1", kho: "campus", status: "approved" },
+    { id: "Q3", ownerId: "u-khac", campusId: "c1", kho: "campus", status: "draft" },
+  ];
+  const chia = splitDeletable(kho2, src({ questions: kho2 }), READY, GV);
+  check(
+    "hàng loạt · GV chỉ xoá được câu mình tạo VÀ chưa duyệt",
+    chia.deletable.map((r) => r.id).join() === "Q1",
+    chia.deletable.map((r) => r.id).join(),
+  );
+  const chiaAdmin = splitDeletable(kho2, src({ questions: kho2 }), READY, ADMIN);
+  check(
+    "hàng loạt · ADMIN xoá được cả ba",
+    chiaAdmin.deletable.length === 3,
+    String(chiaAdmin.deletable.length),
+  );
 }
 
 console.log(`\n${pass} qua, ${fail} trượt`);

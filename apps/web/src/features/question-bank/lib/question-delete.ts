@@ -92,7 +92,13 @@ export interface DeletionSources {
   }>;
   /** Toàn bộ kho câu — để soát chuỗi phiên bản VÀ tra người tạo. */
   questions: Array<
-    Pick<Question, "id"> & { versionOfRootId?: string; ownerId?: string | null }
+    Pick<Question, "id"> & {
+      versionOfRootId?: string;
+      ownerId?: string | null;
+      kho?: string | null;
+      status?: string | null;
+      campusId?: string | null;
+    }
   >;
 }
 
@@ -169,14 +175,30 @@ export function allHydrated(h: DeletionHydration): boolean {
  *
  * Luật quyền nằm CHUNG cổng với luật tham chiếu, không tách ra chỗ khác: hai
  * cổng là hai đường, và sớm muộn một đường sẽ quên mất điều kiện của đường
- * kia. `actorUserId` bỏ trống = không soát quyền (dùng cho test luật tham
- * chiếu thuần).
+ * kia. `actor` bỏ trống = không soát quyền (dùng cho test luật tham chiếu
+ * thuần).
+ *
+ * Luật này PHẢI khớp `firestore.rules` (match /questions → allow delete). Ở đây
+ * chỉ là cổng giao diện; server mới là cổng thật. Lệch nhau thì giao diện cho
+ * bấm rồi Firestore từ chối, mà `removeDoc` chỉ `console.warn` — người dùng
+ * thấy câu biến mất, tải lại trang thì nó quay về.
  */
+export interface DeleteActor {
+  userId: string;
+  /** Vai trò, để nhận ra quản trị. Xem `ADMIN_ROLES`. */
+  role?: string | null;
+  /** Cơ sở đang thao tác — quản trị chỉ toàn quyền TRONG cơ sở mình. */
+  campusId?: string | null;
+}
+
+/** Vai trò quản trị — cùng danh sách với `edit-permission.ts` và rules. */
+const ADMIN_ROLES = new Set(["superadmin", "academic-director", "campus-admin"]);
+
 export function canHardDelete(
   questionId: string,
   src: DeletionSources,
   hydrated: DeletionHydration,
-  actorUserId?: string | null,
+  actor?: DeleteActor | null,
 ): DeleteVerdict {
   if (!allHydrated(hydrated)) {
     return {
@@ -197,7 +219,7 @@ export function canHardDelete(
   // Trả về sớm chứ không gom chung với các blocker tham chiếu: "câu này không
   // phải của bạn" đã là câu trả lời trọn vẹn, liệt kê thêm nó nằm trong đề nào
   // chỉ là nhiễu — và còn rò rỉ thông tin về dữ liệu của người khác.
-  if (actorUserId != null) {
+  if (actor != null) {
     const me = src.questions.find((q) => q.id === questionId);
     if (!me) {
       return {
@@ -209,12 +231,30 @@ export function canHardDelete(
           "Không đối chiếu được người tạo câu này nên không xoá vĩnh viễn được. Dùng Lưu trữ.",
       };
     }
-    if (me.ownerId !== actorUserId) {
+    const isAdmin =
+      ADMIN_ROLES.has(actor.role ?? "") &&
+      (!actor.campusId || !me.campusId || me.campusId === actor.campusId);
+    const isOwner = me.ownerId === actor.userId;
+    // Câu đã DUYỆT vào kho chung là tài sản chung — người tạo không tự xoá
+    // được nữa, phải qua admin. Kho cá nhân hoặc chưa duyệt thì tự xoá.
+    const daVaoKhoChung = me.kho !== "personal" && me.status === "approved";
+
+    if (!isAdmin && !isOwner) {
       return {
         deletable: false,
         blockers: [{ kind: "not-owner", label: "Câu này do người khác tạo" }],
         reason:
-          "Chỉ người TẠO câu mới xoá vĩnh viễn được câu đó. Bạn vẫn Lưu trữ được — câu ẩn khỏi kho và khôi phục lại được.",
+          "Chỉ người TẠO câu (hoặc quản trị của cơ sở) mới xoá vĩnh viễn được. Bạn vẫn Lưu trữ được — câu ẩn khỏi kho và khôi phục lại được.",
+      };
+    }
+    if (!isAdmin && isOwner && daVaoKhoChung) {
+      return {
+        deletable: false,
+        blockers: [
+          { kind: "not-owner", label: "Câu đã được duyệt vào kho chung của trường" },
+        ],
+        reason:
+          "Câu đã duyệt vào kho chung là tài sản chung nên người tạo không tự xoá vĩnh viễn được — nhờ quản trị cơ sở xoá. Bạn vẫn Lưu trữ được.",
       };
     }
   }
@@ -318,12 +358,12 @@ export function splitDeletable<T extends { id: string }>(
   rows: readonly T[],
   src: DeletionSources,
   hydrated: DeletionHydration,
-  actorUserId?: string | null,
+  actor?: DeleteActor | null,
 ): { deletable: T[]; blocked: Array<{ row: T; verdict: DeleteVerdict }> } {
   const deletable: T[] = [];
   const blocked: Array<{ row: T; verdict: DeleteVerdict }> = [];
   for (const r of rows) {
-    const v = canHardDelete(r.id, src, hydrated, actorUserId);
+    const v = canHardDelete(r.id, src, hydrated, actor);
     if (v.deletable) deletable.push(r);
     else blocked.push({ row: r, verdict: v });
   }
