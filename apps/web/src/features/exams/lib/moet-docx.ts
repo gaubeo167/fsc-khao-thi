@@ -130,6 +130,8 @@ export async function buildExamDocx(args: {
       children: [new d.TextRun({ text, ...o })],
     });
   const blank = () => new d.Paragraph({ children: [] });
+  /** Điểm ghi kiểu Việt — đề và ma trận phải cùng một cách viết. */
+  const diemVn = (n: number) => String(round2(n)).replace(".", ",");
 
   const m = args.meta;
   const lop = m.gradeName.replace(/\D/g, "") || m.gradeName;
@@ -192,17 +194,41 @@ export async function buildExamDocx(args: {
     }
   };
 
-  tn.forEach((block, i) => {
-    body.push(P(`${roman(i + 1)}.${block.part.label}`, { bold: true }));
-    const hd = huongDan(block.part, block.items.length);
-    if (hd) body.push(P(hd, { italics: true }));
-    renderItems(block);
-  });
+  /**
+   * Tiêu đề phần: in đậm + chừa khoảng trên/dưới.
+   *
+   * Không có khoảng cách thì tiêu đề dính liền câu cuối của phần trước, đọc
+   * lướt sẽ tưởng nó là một dòng của câu đó — đúng chỗ người dùng kêu "không
+   * rõ ràng các phần".
+   */
+  const heading = (text: string, big = false) =>
+    new d.Paragraph({
+      spacing: { before: big ? 360 : 280, after: 140 },
+      children: [new d.TextRun({ text, bold: true, size: big ? 26 : 24 })],
+    });
+
+  // PHẦN A / PHẦN B phải đối xứng. Đề mẫu chỉ có "PHẦN B" mà không có "PHẦN
+  // A", nên người đọc gặp B mà chưa từng thấy A — vừa khó hiểu vừa dễ tưởng
+  // mình cầm thiếu tờ. Có A thì ranh giới trắc nghiệm / tự luận rõ ngay.
+  if (tn.length > 0) {
+    const diemA = round2(tn.reduce((s, b) => s + b.points, 0));
+    body.push(heading(`PHẦN A: PHẦN TRẮC NGHIỆM (${diemVn(diemA)} điểm)`, true));
+    tn.forEach((block, i) => {
+      body.push(heading(`${roman(i + 1)}. ${block.part.label.replace(/^\s*/, "")}`));
+      const hd = huongDan(block.part, block.items.length);
+      if (hd) body.push(P(hd, { italics: true }));
+      body.push(blank());
+      renderItems(block);
+    });
+  }
 
   if (tl.length > 0) {
-    const diem = round2(tl.reduce((s, b) => s + b.points, 0));
-    body.push(P(`PHẦN B: PHẦN TỰ LUẬN (${diem} điểm)`, { bold: true }));
-    tl.forEach((block) => renderItems(block));
+    const diemB = round2(tl.reduce((s, b) => s + b.points, 0));
+    body.push(heading(`PHẦN B: PHẦN TỰ LUẬN (${diemVn(diemB)} điểm)`, true));
+    tl.forEach((block) => {
+      body.push(blank());
+      renderItems(block);
+    });
   }
 
   if (leftover.length > 0) {

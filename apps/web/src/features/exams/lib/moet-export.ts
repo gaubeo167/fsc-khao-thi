@@ -412,6 +412,16 @@ export function stripAnswerArtifacts(s: string): string {
     .replace(/<\s*KEY\s*=[^>]*>/gi, "")
     .replace(/&lt;\s*KEY\s*=[^&]*&gt;/gi, "")
     .replace(/\bLời giải\s*:[\s\S]*$/i, "")
+    // Tiêu đề PHẦN lọt vào nội dung câu. Trong đề gốc, dòng "PHẦN B: PHẦN TỰ
+    // LUẬN (3 điểm)" nằm NGAY SAU đáp án của câu trả lời ngắn cuối cùng, nên
+    // một bản nhập sơ ý là nó dính vào nội dung câu đó — và khi in ra đề, giữa
+    // câu hỏi với dòng "Trả lời:" mọc ra một tiêu đề phần, đọc như thể phần tự
+    // luận bắt đầu từ giữa phần trắc nghiệm.
+    //
+    // Cắt ở đây thay vì chỉ sửa bộ đọc: dữ liệu lỡ dính rồi thì vẫn nằm trong
+    // kho, và đề in ra sai thì không ai sửa kịp trước giờ phát đề.
+    .replace(/\bPHẦN\s+[A-ZĐ]\s*:[^\n]*$/i, "")
+    .replace(/\bPHẦN\s+(?:TỰ\s+LUẬN|TRẮC\s+NGHIỆM)\b[^\n]*$/i, "")
     .replace(/\s+/g, " ")
     .trim();
 }

@@ -273,6 +273,34 @@ const q = (id, type, over = {}) => ({ id, type, content: `Nội dung ${id}`, ...
     dm("Cho biết [hình 1] mô tả gì?"),
   );
   check("câu sạch thì giữ nguyên", dm("Nguyên phân xảy ra ở đâu?") === "Nguyên phân xảy ra ở đâu?");
+
+  // Trong đề gốc, "PHẦN B: PHẦN TỰ LUẬN (3 điểm)" nằm NGAY SAU đáp án của câu
+  // trả lời ngắn cuối, nên một bản nhập sơ ý là nó dính vào nội dung câu đó.
+  // In ra thì giữa câu hỏi và dòng "Trả lời:" mọc lên một tiêu đề phần.
+  check(
+    "cắt tiêu đề PHẦN lọt vào cuối nội dung câu",
+    dm("Có bao nhiêu thành tựu của công nghệ tế bào động vật? PHẦN B: PHẦN TỰ LUẬN (3 điểm)") ===
+      "Có bao nhiêu thành tựu của công nghệ tế bào động vật?",
+    dm("Có bao nhiêu thành tựu của công nghệ tế bào động vật? PHẦN B: PHẦN TỰ LUẬN (3 điểm)"),
+  );
+  check(
+    "cắt cả dạng không có chữ cái phần",
+    dm("Nội dung câu. PHẦN TỰ LUẬN (3 điểm)") === "Nội dung câu.",
+    dm("Nội dung câu. PHẦN TỰ LUẬN (3 điểm)"),
+  );
+  // Không được cắt nhầm chữ "phần" dùng bình thường trong đề.
+  check(
+    "KHÔNG cắt nhầm 'một phần' / 'phần trăm' giữa câu",
+    dm("Tính phần trăm số tế bào con còn lại là bao nhiêu?") ===
+      "Tính phần trăm số tế bào con còn lại là bao nhiêu?",
+    dm("Tính phần trăm số tế bào con còn lại là bao nhiêu?"),
+  );
+  check(
+    "KHÔNG cắt khi 'phần' nằm giữa, không phải cuối",
+    dm("Phần A của sơ đồ mô tả gì? Hãy giải thích.") ===
+      "Phần A của sơ đồ mô tả gì? Hãy giải thích.",
+    dm("Phần A của sơ đồ mô tả gì? Hãy giải thích."),
+  );
   check("chuỗi rỗng / null không nổ", dm("") === "" && dm(null) === "");
 }
 
