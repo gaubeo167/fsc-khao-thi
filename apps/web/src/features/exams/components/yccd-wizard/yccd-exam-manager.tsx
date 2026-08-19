@@ -255,6 +255,28 @@ export function YccdExamManager() {
   const nameOfCompetency = (id: string) =>
     competencies.find((c) => c.id === id)?.title ?? id;
   const competencyById = (id: string) => competencies.find((c) => c.id === id);
+  /**
+   * Bài (topic) chứa một YCCĐ — lần theo parentId lên trên.
+   *
+   * Bản đặc tả xếp theo Bài, còn câu hỏi gắn vào node LÁ. Không lần ngược thì
+   * mọi mã câu rơi ra ngoài bảng và bản đặc tả trống trơn.
+   */
+  const topicOfCompetency = (id: string): string | null => {
+    let cur = competencies.find((c) => c.id === id);
+    const guard = new Set<string>();
+    while (cur && !guard.has(cur.id)) {
+      guard.add(cur.id);
+      if (cur.kind === "topic") return cur.id;
+      cur = cur.parentId ? competencies.find((c) => c.id === cur!.parentId) : undefined;
+    }
+    return null;
+  };
+  /** Năm học hiện tại theo mốc tháng 8 — "2025-2026". */
+  const schoolYearLabel = () => {
+    const now = new Date();
+    const y = now.getMonth() >= 7 ? now.getFullYear() : now.getFullYear() - 1;
+    return `${y}-${y + 1}`;
+  };
 
   /** Bối cảnh in đầu file — lấy theo gói đề, không đoán. */
   function metaOf(pkg: ExamPackage | undefined, duration: number) {
@@ -302,12 +324,22 @@ export function YccdExamManager() {
     const sample = generated.find((g) => g.packageId === pkg.id);
     try {
       const { buildMatrixDocx, downloadBlob } = await import("../../lib/moet-docx");
+      const m = metaOf(pkg, sample?.duration ?? pkg.duration ?? 0);
       const blob = await buildMatrixDocx({
-        meta: metaOf(pkg, sample?.duration ?? pkg.duration ?? 0),
+        meta: {
+          schoolName: m.schoolName,
+          departmentName: undefined,
+          // Tên kỳ lấy từ tên gói đề — giáo viên đã đặt "GK1"/"Cuối kì I" ở đó.
+          examTitle: pkg.name,
+          schoolYear: schoolYearLabel(),
+          subjectName: m.subjectName,
+          gradeName: m.gradeName,
+        },
         matrix,
         scoring: pkg.scoringPolicy ?? null,
         nameOfCompetency,
         competencyById,
+        topicOfCompetency,
         sampleQuestionIds: sample?.questionIds ?? [],
         questionById: new Map(questions.map((q) => [q.id, q])),
       });

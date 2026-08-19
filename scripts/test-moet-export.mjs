@@ -35,7 +35,10 @@ const {
   splitIntoParts,
   unitsOf,
   buildMatrixTable,
-  buildSpecRows,
+  buildSpecTable,
+  groupOfPart,
+  refOfQuestion,
+  subLetter,
   roman,
   optionLabel,
   round2,
@@ -134,6 +137,23 @@ const q = (id, type, over = {}) => ({ id, type, content: `Nội dung ${id}`, ...
   check("cộng dòng đúng (3+4)", tbl.rows[0].total === 7, String(tbl.rows[0].total));
   check("cộng cột đúng", tbl.columnTotals.mcq[1] === 3 && tbl.columnTotals.ds[2] === 4);
   check("tổng toàn bảng = 8", tbl.grandTotal === 8, String(tbl.grandTotal));
+  // Cột "Tổng" của mẫu là cộng NGANG theo mức, không phải một ô tổng duy nhất.
+  check("cột Tổng theo mức: Biết=3", tbl.bloomTotals[1] === 3, String(tbl.bloomTotals[1]));
+  check("cột Tổng theo mức: Hiểu=4", tbl.bloomTotals[2] === 4, String(tbl.bloomTotals[2]));
+  check("cột Tổng theo mức: Vận dụng=1", tbl.bloomTotals[3] === 1, String(tbl.bloomTotals[3]));
+  // Điểm: mcq 3×0.25=0.75 · ds 4×0.25=1.0 · tl 1×1=1.0 → 2.75
+  check("điểm theo phần: mcq=0.75", tbl.pointsByPart.mcq === 0.75, String(tbl.pointsByPart.mcq));
+  check("điểm theo phần: ds=1 (4 Ý × 0.25)", tbl.pointsByPart.ds === 1, String(tbl.pointsByPart.ds));
+  check("tổng điểm = 2.75", tbl.totalPoints === 2.75, String(tbl.totalPoints));
+  check(
+    "tỉ lệ % của dòng = điểm dòng / tổng điểm bài",
+    tbl.rows[0].percent === 17.5,
+    String(tbl.rows[0].percent),
+  );
+  check(
+    "điểm theo mức cộng lại = tổng điểm",
+    round2(Object.values(tbl.pointsByBloom).reduce((a, b) => a + b, 0)) === tbl.totalPoints,
+  );
   check(
     "tổng cột cộng lại = tổng toàn bảng",
     Object.values(tbl.columnTotals).reduce(
@@ -145,42 +165,63 @@ const q = (id, type, over = {}) => ({ id, type, content: `Nội dung ${id}`, ...
   ).rows[0].chapterName === null);
 }
 
-/* ── 4. Bản đặc tả: YCCĐ ra câu nào ────────────────────────────────────── */
+/* ── 4. Bản đặc tả theo mẫu thật ───────────────────────────────────────── */
 {
+  const MATRIX = {
+    parts: PARTS,
+    rows: [{ topicId: "t1", chapterId: "ch1" }],
+    cells: [],
+  };
   const byId = new Map([
-    ["q1", q("q1", "mcq-single", { competencyIds: ["c1"] })],
-    ["q2", q("q2", "mcq-single", { competencyIds: ["c1"] })],
-    ["q3", q("q3", "essay", { competencyIds: ["c2"] })],
-    ["q4", q("q4", "mcq-single")], // chưa gắn YCCĐ
+    ["q1", q("q1", "mcq-single", { competencyIds: ["y-biet"] })],
+    ["q2", q("q2", "mcq-single", { competencyIds: ["y-hieu"] })],
+    ["q3", q("q3", "multi-tf", {
+      competencyIds: ["y-biet"],
+      subQuestions: [
+        { competencyId: "y-biet" }, { competencyId: "y-biet" },
+        { competencyId: "y-hieu" }, { competencyId: "y-vd" },
+      ],
+    })],
+    ["q4", q("q4", "essay", { competencyIds: ["y-vd"] })],
   ]);
+  const COMP = {
+    "y-biet": { title: "Nêu được khái niệm", bloomLevel: 1, parentId: "t1" },
+    "y-hieu": { title: "Giải thích được", bloomLevel: 2, parentId: "t1" },
+    "y-vd":   { title: "Vận dụng được", bloomLevel: 3, parentId: "t1" },
+  };
   const { blocks } = splitIntoParts(["q1", "q2", "q3", "q4"], byId, PARTS);
-  const comp = (id) =>
-    ({
-      c1: { code: "SI10.02.15.D01", title: "Nêu được…", bloomLevel: 1 },
-      c2: { code: "SI10.02.15.E01", title: "Vận dụng…", bloomLevel: 3 },
-    })[id];
-  const rows = buildSpecRows(blocks, comp);
+  const spec = buildSpecTable(blocks, MATRIX, {
+    nameOf: (id) => ({ ch1: "Chủ đề 1", t1: "Bài 1" })[id] ?? id,
+    competencyById: (id) => COMP[id],
+    topicOf: () => "t1",
+  });
 
-  check("gom theo YCCĐ, không lặp dòng", rows.filter((r) => r.code === "SI10.02.15.D01").length === 1);
-  check(
-    "một YCCĐ ra 2 câu thì liệt kê cả 2",
-    rows.find((r) => r.code === "SI10.02.15.D01").questionRefs.length === 2,
-  );
-  check(
-    "mã câu ghi theo PHẦN (I.1, I.2)",
-    rows.find((r) => r.code === "SI10.02.15.D01").questionRefs.join() === "I.1,I.2",
-    rows.find((r) => r.code === "SI10.02.15.D01").questionRefs.join(),
-  );
-  check(
-    "câu tự luận ở phần III → nhãn III.1",
-    rows.find((r) => r.code === "SI10.02.15.E01").questionRefs.join() === "III.1",
-    rows.find((r) => r.code === "SI10.02.15.E01").questionRefs.join(),
-  );
-  // Câu chưa gắn chuẩn đầu ra là thứ người duyệt CẦN thấy, không được bỏ đi.
-  const chuaGan = rows.find((r) => r.title === "(chưa gắn YCCĐ)");
-  check("câu chưa gắn YCCĐ vẫn được liệt kê", !!chuaGan);
-  check("và đúng câu đó (I.3)", chuaGan.questionRefs.join() === "I.3", chuaGan?.questionRefs.join());
-  check("sắp theo mã YCCĐ", rows[0].code === "SI10.02.15.D01");
+  check("mỗi Bài một khối, ba dòng mức độ", spec.length === 1 && spec[0].levels.length === 3);
+  check("tên chương/bài đúng", spec[0].chapterName === "Chủ đề 1" && spec[0].topicName === "Bài 1");
+  const L = (b) => spec[0].levels.find((l) => l.bloom === b);
+  check("YCCĐ xếp đúng mức Biết", L(1).outcomes.join() === "Nêu được khái niệm");
+  check("YCCĐ xếp đúng mức Vận dụng", L(3).outcomes.includes("Vận dụng được"));
+  check("mã câu trắc nghiệm ở mức Biết = C1", L(1).refs.mcq[1].join() === "C1", L(1).refs.mcq[1].join());
+  check("mã câu trắc nghiệm ở mức Hiểu = C2", L(2).refs.mcq[2].join() === "C2", L(2).refs.mcq[2].join());
+
+  // Đây là chỗ mẫu thật đòi hỏi nhất: MỘT câu Đúng–Sai có ý nằm ở BA mức khác
+  // nhau, và mã câu phải xuống tới từng ý (C1.a,b / C1.c / C1.d).
+  check("Đ/S: hai ý mức Biết gộp thành C1.a,b", L(1).refs.ds[1].join() === "C1.a,b", L(1).refs.ds[1].join());
+  check("Đ/S: ý mức Hiểu là C1.c", L(2).refs.ds[2].join() === "C1.c", L(2).refs.ds[2].join());
+  check("Đ/S: ý mức Vận dụng là C1.d", L(3).refs.ds[3].join() === "C1.d", L(3).refs.ds[3].join());
+  check("tự luận ghi hậu tố .TL", L(3).refs.tl[3].join() === "C1.TL", L(3).refs.tl[3].join());
+  check("ô không thuộc mức của dòng thì rỗng", L(1).refs.tl[1].length === 0);
+}
+
+/* ── 4b. Nhóm cột TNKQ / Tự luận + mã câu ──────────────────────────────── */
+{
+  check("phần trắc nghiệm thuộc nhóm TNKQ", groupOfPart(PARTS[0]) === "TNKQ");
+  check("phần Đúng–Sai cũng thuộc TNKQ", groupOfPart(PARTS[1]) === "TNKQ");
+  check("phần tự luận thuộc nhóm Tự luận", groupOfPart(PARTS[2]) === "Tự luận");
+  check("mã câu trắc nghiệm: C3", refOfQuestion(PARTS[0], 3) === "C3");
+  check("mã câu Đ/S kèm ý: C2.a,c", refOfQuestion(PARTS[1], 2, ["a", "c"]) === "C2.a,c");
+  check("mã câu tự luận: C1.TL", refOfQuestion(PARTS[2], 1) === "C1.TL");
+  check("chữ cái ý", [0, 1, 2, 3].map(subLetter).join() === "a,b,c,d");
 }
 
 /* ── 5. Nhãn ───────────────────────────────────────────────────────────── */
