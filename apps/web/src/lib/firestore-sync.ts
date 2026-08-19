@@ -30,6 +30,8 @@ import {
   type Unsubscribe,
 } from "firebase/firestore";
 
+import { normalizeTimestamps } from "./firestore-timestamps";
+
 import { getDb, isFirebaseConfigured } from "./firebase";
 
 /**
@@ -64,7 +66,14 @@ export function subscribeCollection<T>(args: SubscribeArgs<T>): Unsubscribe {
   return onSnapshot(
     q,
     (snap) => {
-      const rows = snap.docs.map((d) => args.fromDoc(d.id, d.data()));
+      // Chuẩn hoá Timestamp → chuỗi ISO TRƯỚC khi giao cho kho dữ liệu.
+      // `writeDoc` ghi `updatedAt` bằng `serverTimestamp()` nên đọc về là đối
+      // tượng, trong khi cả mã nguồn khai kiểu `string` và gọi `new Date(...)`
+      // — không vá ở đây thì mọi màn hiện "Invalid Date", và chỉ hiện trên
+      // dữ liệu thật nên chạy máy mình không bao giờ thấy.
+      const rows = snap.docs.map((d) =>
+        args.fromDoc(d.id, normalizeTimestamps(d.data())),
+      );
       args.onChange(rows);
     },
     (err) => {

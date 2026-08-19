@@ -178,6 +178,12 @@ export function YccdExamManager() {
         key={mode.view === "edit" ? `edit-${mode.pkg.id}` : "new"}
         editing={mode.view === "edit" ? mode.pkg : null}
         onExit={() => setMode({ view: "list" })}
+        onViewGenerated={() => {
+          // Đóng trình tạo đề TRƯỚC rồi mới chuyển tab — kho đề nằm ngay
+          // trang này, còn trình tạo đề thì che hết danh sách.
+          setMode({ view: "list" });
+          setTab("generated");
+        }}
       />
     );
   }

@@ -93,9 +93,19 @@ const q = (id, type, over = {}) => ({ id, type, content: `Nội dung ${id}`, ...
     blocks[0].items.map((i) => i.indexInPart).join() === "1,2" &&
       blocks[2].items[0].indexInPart === 1,
   );
-  // Điểm phần Đúng–Sai tính theo Ý: 4 ý × 0.25 = 1.0, không phải 1 câu × 0.25.
-  check("điểm phần Đúng–Sai tính theo Ý (4×0.25=1)", blocks[1].points === 1, String(blocks[1].points));
-  check("điểm phần trắc nghiệm (2×0.25=0.5)", blocks[0].points === 0.5, String(blocks[0].points));
+  // Điểm tính theo CÂU, kể cả Đúng–Sai.
+  //
+  // Ca này TRƯỚC ĐÂY khoá ngược lại ("4 ý × 0,25 = 1") và vì thế bản xuất in
+  // ra "PHẦN A: PHẦN TRẮC NGHIỆM (13 điểm)" cho một đề 10 điểm. Chuẩn nằm ở
+  // chỗ chấm thật: `computeYccdPerQuestion` gán cho MỖI CÂU đúng
+  // `pointsPerQuestion`, còn câu Đúng–Sai chấm ra tỉ lệ 0…1 của điểm câu đó.
+  // Số lệnh hỏi (xem `unitsOf`) và số điểm là hai đại lượng khác nhau.
+  check(
+    "điểm phần Đúng–Sai tính theo CÂU (1 câu × 0,25), KHÔNG nhân số ý",
+    blocks[1].points === 0.25,
+    String(blocks[1].points),
+  );
+  check("điểm phần trắc nghiệm (2×0,25=0,5)", blocks[0].points === 0.5, String(blocks[0].points));
 
   // Câu không thuộc phần nào phải NÊU RA, không nhét bừa.
   const byId2 = new Map([["x", q("x", "matching")]]);
@@ -324,6 +334,56 @@ const q = (id, type, over = {}) => ({ id, type, content: `Nội dung ${id}`, ...
     examTitleParts("KIỂM TRA").ky === "KIỂM TRA",
     examTitleParts("KIỂM TRA").ky,
   );
+}
+
+/* ── Đề THẬT của người dùng: 10 điểm thì phải in ra 10 điểm ────────────── */
+// Cấu hình chụp lại từ màn "Cấu trúc + Điểm" của FSC Đà Nẵng 3, môn Sinh 10:
+//   12 câu nhiều lựa chọn × 0,25 = 3
+//    2 câu Đúng–Sai       × 1    = 2
+//    4 câu trả lời ngắn   × 0,5  = 2
+//    3 câu tự luận        × 1    = 3   → tổng 10
+//
+// Bản hỏng in "PHẦN A: PHẦN TRẮC NGHIỆM (13 điểm)" vì cộng 2 câu Đúng–Sai
+// thành 8 (2 × 4 ý × 1). Ca này khoá cả ba con số: A · B · tổng.
+{
+  const P4 = [
+    { id: "mcq", label: "Trắc nghiệm nhiều lựa chọn", questionTypes: ["mcq-single", "mcq-multi"], pointsPerQuestion: 0.25 },
+    { id: "ds", label: "Trắc nghiệm Đúng – Sai", questionTypes: ["multi-tf"], pointsPerQuestion: 1 },
+    { id: "sa", label: "Trắc nghiệm trả lời ngắn", questionTypes: ["short-answer"], pointsPerQuestion: 0.5 },
+    { id: "tl", label: "Tự luận", questionTypes: ["essay"], pointsPerQuestion: 1 },
+  ];
+  const ids = [];
+  const byId = new Map();
+  const them = (n, type, extra) => {
+    for (let i = 0; i < n; i += 1) {
+      const id = `${type}-${i}`;
+      ids.push(id);
+      byId.set(id, q(id, type, extra));
+    }
+  };
+  them(12, "mcq-single");
+  them(2, "multi-tf", { subQuestions: [{}, {}, {}, {}] });
+  them(4, "short-answer");
+  them(3, "essay");
+
+  const { blocks } = splitIntoParts(ids, byId, P4);
+  const diem = Object.fromEntries(blocks.map((b) => [b.part.id, b.points]));
+  check("nhiều lựa chọn: 12 × 0,25 = 3", diem.mcq === 3, String(diem.mcq));
+  check("Đúng–Sai: 2 câu × 1 = 2 (KHÔNG phải 8)", diem.ds === 2, String(diem.ds));
+  check("trả lời ngắn: 4 × 0,5 = 2", diem.sa === 2, String(diem.sa));
+  check("tự luận: 3 × 1 = 3", diem.tl === 3, String(diem.tl));
+
+  const A = blocks.filter((b) => groupOfPart(b.part) === "TNKQ").reduce((s, b) => s + b.points, 0);
+  const B = blocks.filter((b) => groupOfPart(b.part) === "Tự luận").reduce((s, b) => s + b.points, 0);
+  check("PHẦN A = 7 điểm (bản hỏng in 13)", round2(A) === 7, String(A));
+  check("PHẦN B = 3 điểm", round2(B) === 3, String(B));
+  check("A + B = đúng 10 như màn cấu hình", round2(A + B) === 10, String(A + B));
+
+  // Số LỆNH HỎI vẫn đếm theo ý — hai đại lượng khác nhau, đừng gộp.
+  const soLenhHoi = blocks
+    .find((b) => b.part.id === "ds")
+    .items.reduce((s, it) => s + unitsOf(it.question), 0);
+  check("số lệnh hỏi của phần Đúng–Sai vẫn là 8 (2 câu × 4 ý)", soLenhHoi === 8, String(soLenhHoi));
 }
 
 console.log(`\n${pass} qua, ${fail} trượt`);

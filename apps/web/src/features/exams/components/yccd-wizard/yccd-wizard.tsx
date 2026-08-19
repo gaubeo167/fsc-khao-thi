@@ -73,11 +73,21 @@ const DEFAULT_POINTS: Record<string, number> = {
 export function YccdWizard({
   editing = null,
   onExit,
+  onViewGenerated,
 }: {
   /** Sửa đề YCCĐ đã tạo — nạp lại toàn bộ 6 bước. null = tạo mới. */
   editing?: ExamPackage | null;
   /** Quay lại danh sách đề. */
   onExit?: () => void;
+  /**
+   * Về kho "Đề đã sinh".
+   *
+   * Là HÀM chứ không phải link: kho đề nằm ngay trên trang này
+   * (`/admin/yccd-exam`), nên đi bằng link là điều hướng về CHÍNH chỗ đang
+   * đứng — React không dựng lại cây, trình tạo đề vẫn mở, người dùng bấm mà
+   * không thấy gì đổi. Phải đóng trình tạo đề rồi chuyển tab tại chỗ.
+   */
+  onViewGenerated?: () => void;
 } = {}) {
   const subjects = useSubjectsStore((s) => s.subjects);
   const tocNodes = useSubjectsStore((s) => s.tocNodes);
@@ -1055,6 +1065,7 @@ export function YccdWizard({
                 totalPoints={totalPoints}
                 saved={savedPkgId != null}
                 onSave={handleSave}
+                onViewGenerated={onViewGenerated}
               />
             )}
           </div>
@@ -2394,6 +2405,10 @@ function StepGenerate({
 }
 
 // ─────────────────────────── Step 6: lưu ────────────────────────────────
+/** Nút hành động sau khi lưu — một chỗ khai để hai nhánh không lệch nhau. */
+const NUT_KHO_DE =
+  "rounded-md border bg-card px-3 py-1.5 text-[12.5px] font-semibold text-primary hover:bg-surface-2";
+
 function StepSave({
   pkgName,
   setPkgName,
@@ -2401,6 +2416,7 @@ function StepSave({
   totalPoints,
   saved,
   onSave,
+  onViewGenerated,
 }: {
   pkgName: string;
   setPkgName: (s: string) => void;
@@ -2408,6 +2424,7 @@ function StepSave({
   totalPoints: number;
   saved: boolean;
   onSave: () => void;
+  onViewGenerated?: () => void;
 }) {
   const nQ = drafts[0]?.questionIds.length ?? 0;
   return (
@@ -2431,16 +2448,25 @@ function StepSave({
             >
               → Duyệt đề
             </Link>
-            <Link
-              // Kho đề của YCCĐ nằm ở /admin/yccd-exam, KHÔNG phải
-              // /admin/exam-blueprints — trang kia là kho của luồng "Tạo đề
-              // theo khung đề", một luồng khác. Link cũ đưa người dùng sang
-              // danh sách đề không có đề họ vừa sinh.
-              href="/admin/yccd-exam?tab=generated"
-              className="rounded-md border bg-card px-3 py-1.5 text-[12.5px] font-semibold text-primary hover:bg-surface-2"
-            >
-              → Xem “Đề đã sinh”
-            </Link>
+            {/*
+              Kho đề của YCCĐ nằm NGAY TRÊN TRANG NÀY (/admin/yccd-exam) —
+              không phải /admin/exam-blueprints, trang kia là kho của luồng
+              "Tạo đề theo khung đề".
+ 
+              Vì cùng một trang nên KHÔNG đi bằng link: điều hướng về chính
+              chỗ đang đứng thì React không dựng lại cây, trình tạo đề vẫn mở
+              và tab (chỉ đọc `?tab=` lúc gắn) không đổi — bấm xong không thấy
+              gì xảy ra. Gọi hàm để đóng trình tạo đề rồi chuyển tab tại chỗ.
+            */}
+            {onViewGenerated ? (
+              <button type="button" onClick={onViewGenerated} className={NUT_KHO_DE}>
+                → Xem “Đề đã sinh”
+              </button>
+            ) : (
+              <Link href="/admin/yccd-exam?tab=generated" className={NUT_KHO_DE}>
+                → Xem “Đề đã sinh”
+              </Link>
+            )}
             <Link
               href="/admin/shifts"
               className="rounded-md border bg-card px-3 py-1.5 text-[12.5px] font-semibold hover:bg-surface-2"

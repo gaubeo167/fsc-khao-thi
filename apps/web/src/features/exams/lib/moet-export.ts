@@ -75,7 +75,16 @@ export function splitIntoParts(
     return {
       part,
       items,
-      points: round2(items.reduce((s, it) => s + unitsOf(it.question) * (part.pointsPerQuestion ?? 0), 0)),
+      // Điểm tính theo CÂU, không theo ý.
+      //
+      // Đây là chỗ đã sai và in ra đề: nhân theo số ý làm phần trắc nghiệm
+      // của một đề 10 điểm hiện thành 13 điểm (2 câu Đúng–Sai × 4 ý × 1đ = 8
+      // thay vì 2). Chuẩn nằm ở chỗ chấm thật — `computeYccdPerQuestion`
+      // trong exam-forms/lib/materialize.ts gán cho MỖI CÂU đúng
+      // `pointsPerQuestion`, còn câu Đúng–Sai chấm ra TỈ LỆ 0…1 của điểm câu
+      // đó (bảng lũy tiến 0,1 · 0,25 · 0,5 · 1 chia trong lòng một câu).
+      // Màn cấu hình cũng ghi "đ/câu" và cộng tổng theo câu.
+      points: round2(items.length * (part.pointsPerQuestion ?? 0)),
     };
   });
   const leftover: Question[] = [];
@@ -88,10 +97,15 @@ export function splitIntoParts(
 }
 
 /**
- * Số ĐƠN VỊ tính của một câu.
+ * Số LỆNH HỎI của một câu, theo cách đếm của Bộ: Đúng–Sai nhiều ý tính theo
+ * số ý, mọi dạng khác tính 1.
  *
- * Đúng–Sai nhiều ý tính theo số ý; mọi dạng khác tính 1. Dùng chung cho cả
- * cộng điểm lẫn đếm ô ma trận, để hai chỗ không thể lệch nhau.
+ * ⚠️ KHÔNG dùng để nhân điểm. Trong khung điểm của Bộ, một câu Đúng–Sai đáng
+ * 1 điểm CẢ CÂU (4 ý chia trong lòng nó theo bảng lũy tiến 0,1 · 0,25 · 0,5 ·
+ * 1) chứ không phải 1 điểm mỗi ý. Nhân theo ý ở đây từng làm đề 10 điểm in ra
+ * "PHẦN A: PHẦN TRẮC NGHIỆM (13 điểm)".
+ *
+ * Số lệnh hỏi và số điểm là hai đại lượng khác nhau — đừng gộp lại.
  */
 export function unitsOf(q: Question): number {
   if (q.type === "multi-tf") return q.subQuestions?.length ?? 0;
@@ -118,7 +132,7 @@ export function groupOfPart(part: YccdPart): "TNKQ" | "Tự luận" {
     : "TNKQ";
 }
 
-/** Điểm mỗi ĐƠN VỊ của phần (Đúng–Sai tính theo ý, nên đây là điểm mỗi ý). */
+/** Điểm mỗi CÂU của phần — kể cả Đúng–Sai (xem `unitsOf`). */
 export function pointsPerUnit(part: YccdPart): number {
   return part.pointsPerQuestion ?? 0;
 }

@@ -593,7 +593,8 @@ export async function buildMatrixDocx(args: {
       rows: [h1, h2, h3, h4, ...bodyRows, footLenhHoi, footDiem, footTiLe],
     }),
     P(
-      "Ghi chú: Phần “Đúng – Sai” đếm theo Ý (một câu 4 ý tính 4 lệnh hỏi).",
+      "Ghi chú: Câu “Đúng – Sai” tính 1 câu và ăn trọn số điểm của phần; " +
+        "các ý a) b) c) d) chia điểm trong lòng câu theo bảng lũy tiến.",
       { italics: true, size: 18 },
     ),
     new d.Paragraph({ children: [], pageBreakBefore: true }),
@@ -618,7 +619,9 @@ export async function buildMatrixDocx(args: {
     children.push(P("QUY ĐỊNH ĐIỂM", { bold: true }));
     children.push(P(`Tổng điểm toàn bài: ${s.maxScore}`));
     for (const p of ordered) {
-      children.push(P(`${p.label}: ${p.pointsPerQuestion ?? 0} điểm/${groupOfPart(p) === "Tự luận" ? "câu" : "lệnh hỏi"}`));
+      // "điểm/câu" cho MỌI phần — kể cả Đúng–Sai. Ghi "điểm/lệnh hỏi" là mô
+      // tả sai chính con số bên cạnh, và đó là gốc của lỗi cộng 13 điểm.
+      children.push(P(`${p.label}: ${p.pointsPerQuestion ?? 0} điểm/câu`));
     }
     const dsLabel =
       s.ds === "graduated"

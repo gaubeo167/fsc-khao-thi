@@ -54,6 +54,7 @@ node scripts/test-campus-scope.mjs    # ô chọn Môn·Khối theo đúng cơ s
 node scripts/test-approval-queue.mjs  # câu đã lưu trữ KHÔNG nằm trong hàng đợi duyệt
 node scripts/test-moet-export.mjs     # số liệu đề + ma trận xuất Word (Đ/S đếm theo ý)
 node scripts/test-table-block.mjs     # bảng dữ liệu vs bảng xếp chỗ (1 hàng = phương án)
+node scripts/test-firestore-timestamps.mjs # Timestamp đọc về → chuỗi ISO (hết Invalid Date)
 node scripts/check-design-tokens.mjs   # bánh cóc thang chữ (xem dưới)
 ```
 
