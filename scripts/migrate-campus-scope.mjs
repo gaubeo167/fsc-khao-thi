@@ -16,22 +16,23 @@
  *
  * ── Suy ra chủ bằng cách nào ────────────────────────────────────────────
  *
- * Lần ngược từ CÂU HỎI. Câu hỏi có `campusId`, và trỏ tới mục lục
- * (`tocNodeId`) + khung (`competencyIds`, và ở cấp ý / phương án). Cơ sở nào
- * có câu hỏi dùng node nào thì cơ sở đó đã làm việc với node đó.
+ * `Subject.campusIds` LÀ CĂN CỨ CHUẨN. Mục lục và khung treo dưới một môn; môn
+ * thuộc cơ sở nào thì chúng thuộc cơ sở đó. Đo trên dữ liệu thật: 13/13 môn
+ * thuộc đúng MỘT cơ sở, và 51/51 node mục lục + 1030/1030 node khung đều có
+ * `subjectId` hợp lệ — nên cách này phủ 100%, không cần đoán, không mồ côi.
  *
- * Ba trường hợp:
+ * Bản đầu của script này suy chủ bằng cách lần ngược từ CÂU HỎI. Chạy thử ra
+ * 235 node phải "nhân bản vì nhiều cơ sở cùng dùng" — và đó là KẾT LUẬN SAI.
+ * Có 42/323 câu bị nộp nhầm sang môn của cơ sở khác (hậu quả của chính lỗi ô
+ * chọn môn không lọc campus). Lấy usage làm căn cứ tức là lấy dấu vết của lỗi
+ * làm bằng chứng, rồi nhân bản theo nó — đóng đinh cái lỗi vào dữ liệu.
  *
- *   1 cơ sở dùng   → gán thẳng cho cơ sở đó.
- *   NHIỀU cơ sở dùng → NHÂN BẢN: mỗi cơ sở một bản riêng, và câu hỏi của cơ sở
- *                    đó được trỏ sang bản của mình. Đây là ý "tạo sẵn cho các
- *                    đơn vị đã làm" — không cơ sở nào mất thứ mình đang dùng.
- *   KHÔNG cơ sở nào dùng → thừa kế chủ của node CHA. Còn mồ côi thật thì để
- *                    nguyên `null` và liệt kê ra cuối để người vận hành quyết.
+ * Nên: chủ lấy từ môn. Chỉ khi môn thuộc NHIỀU cơ sở mới nhân bản (dữ liệu
+ * hiện tại không có ca này, nhưng luật phải đúng cho mai sau), và câu hỏi của
+ * cơ sở nào thì trỏ sang bản của cơ sở đó.
  *
- * Node CHA phải đi theo con: gắn câu vào "Tuần 2" mà "Chương 1" thuộc cơ sở
- * khác thì cây gãy, nhánh không bao giờ duyệt tới được. Nên usage được đẩy
- * ngược lên toàn bộ tổ tiên trước khi chia chủ.
+ * Câu nộp nhầm môn được LIỆT KÊ RA chứ không tự sửa: chuyển câu sang môn khác
+ * là quyết định nghiệp vụ, không phải việc của một script gán chủ.
  *
  * ── Chạy ────────────────────────────────────────────────────────────────
  *
@@ -71,11 +72,13 @@ console.log(
   `\n${APPLY ? "▶ GHI THẬT" : "○ DRY-RUN (không ghi gì)"} · ${EMU ? "emulator" : "PRODUCTION"}\n`,
 );
 
-const [questions, tocNodes, competencies, campuses] = await Promise.all([
+const [questions, tocNodes, competencies, campuses, subs, users] = await Promise.all([
   load("questions"),
   load("toc_nodes"),
   load("competencies"),
   load("campuses"),
+  load("subjects"),
+  load("users"),
 ]);
 const campusName = new Map(campuses.map((c) => [c.id, c.name ?? c.id]));
 console.log(
@@ -92,50 +95,21 @@ function competencyIdsOf(q) {
   return ids;
 }
 
+const subById = new Map(subs.map((x) => [x.id, x]));
+
 /**
- * Chia chủ cho một bộ node có quan hệ cha–con.
+ * Chia chủ cho một bộ node treo dưới môn.
  *
- * Trả về kế hoạch: node nào gán cho cơ sở nào, node nào phải nhân bản, câu hỏi
- * nào phải trỏ lại. KHÔNG ghi gì — để in ra soát trước.
+ * Chủ lấy thẳng từ `Subject.campusIds` — xem chú thích đầu file về lý do KHÔNG
+ * lần ngược từ câu hỏi. Môn thuộc nhiều cơ sở thì nhân bản cho từng cơ sở.
  */
-function planOwnership({ nodes, usageByNode, label }) {
-  const byId = new Map(nodes.map((n) => [n.id, n]));
-
-  // Đẩy usage lên toàn bộ tổ tiên: cha phải thuộc cơ sở nào con thuộc, nếu
-  // không cây gãy và nhánh không duyệt tới được.
-  const expanded = new Map();
-  for (const [nodeId, campusSet] of usageByNode) {
-    let cur = byId.get(nodeId);
-    const guard = new Set();
-    while (cur && !guard.has(cur.id)) {
-      guard.add(cur.id);
-      const acc = expanded.get(cur.id) ?? new Set();
-      for (const c of campusSet) acc.add(c);
-      expanded.set(cur.id, acc);
-      cur = cur.parentId ? byId.get(cur.parentId) : null;
-    }
-  }
-
-  // Node không ai dùng thì thừa kế chủ của cha, lặp tới khi ổn định.
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const n of nodes) {
-      if (expanded.has(n.id) || !n.parentId) continue;
-      const parent = expanded.get(n.parentId);
-      if (parent && parent.size > 0) {
-        expanded.set(n.id, new Set(parent));
-        changed = true;
-      }
-    }
-  }
-
-  const assign = []; // { node, campusId }
-  const clone = []; // { node, campusIds: [...] }  (bản gốc giữ cho campusIds[0])
+function planOwnership({ nodes, label }) {
+  const assign = [];
+  const clone = [];
   const orphan = [];
   for (const n of nodes) {
     if (n.campusId) continue; // đã có chủ, không đụng
-    const owners = [...(expanded.get(n.id) ?? [])].sort();
+    const owners = [...(subById.get(n.subjectId)?.campusIds ?? [])].sort();
     if (owners.length === 0) orphan.push(n);
     else if (owners.length === 1) assign.push({ node: n, campusId: owners[0] });
     else clone.push({ node: n, campusIds: owners });
@@ -144,58 +118,83 @@ function planOwnership({ nodes, usageByNode, label }) {
   console.log(`── ${label} ──`);
   console.log(`   đã có chủ sẵn : ${nodes.filter((n) => n.campusId).length}`);
   console.log(`   gán 1 cơ sở    : ${assign.length}`);
-  console.log(`   phải nhân bản  : ${clone.length}  (nhiều cơ sở cùng dùng)`);
+  console.log(`   phải nhân bản  : ${clone.length}  (môn thuộc nhiều cơ sở)`);
   console.log(`   không suy được : ${orphan.length}`);
   for (const { node, campusIds } of clone.slice(0, 5)) {
     console.log(
-      `     · "${node.name ?? node.title ?? node.id}" dùng bởi ${campusIds
+      `     · "${node.name ?? node.title ?? node.id}" → ${campusIds
         .map((c) => campusName.get(c) ?? c)
         .join(", ")}`,
     );
   }
-  if (clone.length > 5) console.log(`     · …và ${clone.length - 5} node nữa`);
   if (orphan.length > 0) {
-    console.log(
-      `   ⚠ ${orphan.length} node không câu hỏi nào dùng và không suy được từ cha —`,
-    );
+    console.log(`   ⚠ ${orphan.length} node thuộc môn chưa gán cơ sở nào —`);
     console.log(`     để nguyên "chưa gán" (vẫn hiện ở mọi cơ sở). Ví dụ:`);
     for (const n of orphan.slice(0, 5)) {
-      console.log(`       ${n.id}  "${n.name ?? n.title ?? ""}"`);
+      console.log(`       ${n.id}  "${n.name ?? n.title ?? ""}"  (môn ${n.subjectId})`);
     }
   }
   console.log("");
   return { assign, clone, orphan };
 }
 
-// ── Mục lục ───────────────────────────────────────────────────────────────
-const tocUsage = new Map();
-for (const q of questions) {
-  if (!q.tocNodeId || !q.campusId) continue;
-  const s = tocUsage.get(q.tocNodeId) ?? new Set();
-  s.add(q.campusId);
-  tocUsage.set(q.tocNodeId, s);
-}
-const tocPlan = planOwnership({
-  nodes: tocNodes,
-  usageByNode: tocUsage,
-  label: "MỤC LỤC (toc_nodes)",
-});
-
-// ── Khung YCCĐ ────────────────────────────────────────────────────────────
-const compUsage = new Map();
-for (const q of questions) {
-  if (!q.campusId) continue;
-  for (const cid of competencyIdsOf(q)) {
-    const s = compUsage.get(cid) ?? new Set();
-    s.add(q.campusId);
-    compUsage.set(cid, s);
-  }
-}
+const tocPlan = planOwnership({ nodes: tocNodes, label: "MỤC LỤC (toc_nodes)" });
 const compPlan = planOwnership({
   nodes: competencies,
-  usageByNode: compUsage,
   label: "KHUNG YCCĐ (competencies)",
 });
+
+// ── Câu nộp nhầm môn: NÊU RA, không tự sửa ────────────────────────────────
+//
+// Đối chiếu bằng HAI căn cứ độc lập:
+//   · `q.campusId` — cơ sở đóng dấu lên câu lúc tạo;
+//   · cơ sở của NGƯỜI TẠO (`ownerId` → users) — căn cứ này không phụ thuộc vào
+//     phiên đăng nhập lúc đó, nên bắt được cả trường hợp `campusId` bị đóng dấu
+//     sai (vd superadmin đang mở cơ sở khác trên thanh trên).
+// Hai căn cứ lệch nhau cũng là một phát hiện đáng nêu.
+const campusOfUser = new Map(users.map((u) => [u.id, u.campusId ?? null]));
+const misfiled = [];
+const stampMismatch = [];
+for (const q of questions) {
+  const ownerCampus = q.ownerId ? campusOfUser.get(q.ownerId) ?? null : null;
+  if (ownerCampus && q.campusId && ownerCampus !== q.campusId) {
+    stampMismatch.push({ q, ownerCampus });
+  }
+  const sub = subById.get(q.subjectId);
+  if (!sub) continue;
+  const owners = sub.campusIds ?? [];
+  if (owners.length === 0) continue;
+  // Câu được coi là nhầm khi CẢ HAI căn cứ đều không nằm trong cơ sở của môn.
+  const actual = ownerCampus ?? q.campusId;
+  if (actual && !owners.includes(actual)) {
+    misfiled.push({ q, sub, owners, actual, ownerCampus });
+  }
+}
+if (stampMismatch.length > 0) {
+  console.log(
+    `── ⚠ ${stampMismatch.length} câu có campusId KHÁC cơ sở của người tạo ──`,
+  );
+  for (const { q, ownerCampus } of stampMismatch.slice(0, 5)) {
+    console.log(
+      `     ${q.id}  dấu=${campusName.get(q.campusId) ?? q.campusId}  ·  người tạo thuộc ${campusName.get(ownerCampus) ?? ownerCampus}`,
+    );
+  }
+  console.log("");
+}
+if (misfiled.length > 0) {
+  console.log(`── ⚠ ${misfiled.length}/${questions.length} CÂU NỘP NHẦM MÔN CỦA CƠ SỞ KHÁC ──`);
+  console.log(`   Hậu quả của ô chọn môn không lọc cơ sở (đã vá). Script này KHÔNG`);
+  console.log(`   tự chuyển — đổi môn của câu hỏi là quyết định nghiệp vụ.`);
+  const byPair = new Map();
+  for (const m of misfiled) {
+    const k = `${campusName.get(m.actual) ?? m.actual} → "${m.sub.name}" của ${m.owners
+      .map((c) => campusName.get(c) ?? c)
+      .join(",")}`;
+    byPair.set(k, (byPair.get(k) ?? 0) + 1);
+  }
+  for (const [k, n] of byPair) console.log(`     ${n} câu · ${k}`);
+  console.log("");
+}
 
 if (!APPLY) {
   console.log("Chưa ghi gì. Soát xong thì chạy lại kèm --apply.\n");
