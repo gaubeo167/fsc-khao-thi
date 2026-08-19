@@ -1041,6 +1041,10 @@ function QuestionEditor({
   }, [form, onPatch]);
 
   const type = form.watch("type") as QuestionType;
+  /** Mã của YCCĐ mà hệ thống đã khớp sang — để banner nói ra thay vì úp mở. */
+  const matchedCode = useCompetenciesStore(
+    (s) => (q.chuyenDeId ? s.competencyById(q.chuyenDeId)?.code : null) ?? null,
+  );
 
   return (
     <div className="space-y-4">
@@ -1146,10 +1150,27 @@ function QuestionEditor({
           </p>
         )}
         {q.chuyenDeMatch === "so-chi-bao" && (
+          /*
+           * Nói THỰC TẾ, đừng nói SUY ĐOÁN.
+           *
+           * Bản cũ viết "khung đánh mã chỉ báo này bằng chữ khác" — đó là một
+           * suy đoán trình bày như sự thật, và khi nó sai thì nó đẩy người
+           * dùng đi nhầm hướng. Có người mở khung ra thấy đúng mã E01 nằm sờ
+           * sờ, mà màn này vẫn khẳng định "khung dùng chữ khác".
+           *
+           * Sự thật chỉ có hai vế: khung KHÔNG có mã trong file, và hệ thống
+           * đã khớp sang MỘT mã khác cùng số chỉ báo. Nêu đúng hai vế đó, kèm
+           * mã đã khớp sang, thì người dùng tự thấy ngay "khung tôi CÓ E01 mà
+           * sao lại khớp sang D01?" — và đó chính là dấu hiệu khung nhập chưa
+           * đủ, tức nguyên nhân thật.
+           */
           <p className="mb-2 rounded-md border border-sky-300 bg-sky-50 px-2.5 py-1.5 text-meta text-sky-900">
-            File ghi <b>{q.rawCode}</b>; khung đánh mã chỉ báo này bằng chữ
-            khác nên hệ thống khớp theo số chỉ báo. Kiểm lại nội dung YCCĐ bên
-            dưới cho chắc.
+            File ghi <b>{q.rawCode}</b> nhưng khung của môn · khối này KHÔNG có
+            mã đó, nên hệ thống khớp sang{" "}
+            <b>{matchedCode ?? "một YCCĐ khác"}</b> vì cùng số chỉ báo.{" "}
+            <b>Nếu khung của bạn CÓ {q.rawCode}</b> thì khung chưa nhập đủ —
+            nhập lại khung rồi tải đề lên lần nữa. Còn không thì kiểm nội dung
+            YCCĐ bên dưới cho chắc.
           </p>
         )}
         <QuestionCompetencyField
