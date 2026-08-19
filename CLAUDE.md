@@ -62,13 +62,31 @@ mốc lên để cho qua.
 
 ## Lưu ý môi trường
 
-- `apps/web/.env.local` **không** chứa khoá Firebase, nên `npm run dev` chạy ở
-  chế độ seed/offline và không ghi gì vào Firestore production. QA đầy đủ trên
-  localhost là an toàn.
-- Đăng nhập seed: nhân viên dùng email, học sinh phải dùng id (`U-401`). Mật khẩu
-  chung `fpt2026`.
-- Phiên đăng nhập ở chế độ seed chỉ nằm trong bộ nhớ. Mỗi lần tải lại trang là
-  mất đăng nhập, nên phải điều hướng bằng cách bấm link trong app.
+- `apps/web/.env.local` trỏ vào **Firebase emulator**, KHÔNG phải production và
+  cũng không còn là chế độ seed/offline (khoá trong đó là khoá giả, project
+  `demo-fsc`). QA đầy đủ trên localhost là an toàn, và dữ liệu ghi ra là thật —
+  đọc lại được, kiểm tra được.
+
+  ```bash
+  npm run emu              # cửa sổ 1 — emulator + nạp dữ liệu mẫu
+  cd apps/web && npm run dev   # cửa sổ 2
+  ```
+
+  Xem dữ liệu: http://127.0.0.1:4000. Truy vấn thẳng cần header quyền admin —
+  không có nó thì mọi collection trả về rỗng và dễ tưởng là app không ghi:
+
+  ```bash
+  curl -H "Authorization: Bearer owner" \
+    "http://localhost:8080/v1/projects/demo-fsc/databases/(default)/documents/questions?pageSize=300"
+  ```
+
+  Muốn quay lại seed/offline thì để `NEXT_PUBLIC_FIREBASE_API_KEY` rỗng.
+- Đăng nhập emulator: nhân viên dùng email (`admin.caugiay@fpt.edu.vn`,
+  `gv.toan@fpt.edu.vn`), học sinh dùng id. Mật khẩu chung `fpt2026` — xem
+  `scripts/seed-emulator.mjs`.
+- Dữ liệu emulator sống qua lần tải lại trang, nhưng `npm run emu` chạy lại là
+  nạp về mẫu gốc. Mục lục (`toc_nodes`) KHÔNG nằm trong bộ mẫu — màn tải đề sẽ
+  không hiện ô "Chỗ cất trong mục lục" cho tới khi có node.
 - **Build khi dev server đang chạy: đổi thư mục kết xuất.** `next dev` và
   `next build` mặc định dùng chung `apps/web/.next`, nên build đè lên thư mục
   dev server đang phục vụ — nó vẫn sống nhưng trả 500 cho mọi trang và không
