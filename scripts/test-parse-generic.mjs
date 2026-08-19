@@ -612,5 +612,88 @@ const Uc = "⟦/U⟧";
   check("phương án 'Phần A.' vẫn được nhận", (r.questions[0]?.options ?? []).length === 4);
 }
 
+/* ── Tiêu đề phần bị TAB xé thành hai dòng ────────────────────────────── */
+// Đây là dạng thật ra từ đường nhập, không phải dạng giả định.
+//
+// `htmlToMarkedText` đổi MỌI ký tự tab thành xuống dòng (để tách phương án
+// "A. …\tB. …" ra hai dòng). File Word viết tiêu đề là "II.<tab>Câu hỏi trắc
+// nghiệm đúng sai", nên tới bộ đọc nó đã là hai dòng: "II." và "Câu hỏi trắc
+// nghiệm đúng sai".
+//
+// Bản vá trước chỉ nhận "II. " CÓ khoảng trắng sau dấu chấm nên trượt cả hai
+// dòng, và câu cuối phần I nuốt trọn tiêu đề phần II. Đo trên đề thật SHOC 10
+// qua ĐÚNG đường nhập: 3/21 câu dính, trong đó có câu "Tại sao trong công nghệ
+// tế bào thực vật…" người dùng chụp màn hình gửi lại.
+{
+  const de = [
+    "I.",
+    "Câu hỏi trắc nghiệm nhiều phương án lựa chọn.",
+    "Câu 1. [SI10.02.12.D01] Quá trình giảm phân xảy ra ở loại tế bào nào?",
+    "A. Sinh dục chín.\tB. Sinh dưỡng.",
+    "C. Hợp tử.\tD. Xôma.",
+    "Câu 2. [SI10.02.12.D02] Tại sao dùng mô phân sinh để nuôi cấy?",
+    "II.",
+    "Câu hỏi trắc nghiệm đúng sai",
+    "Câu 3. [SI10.02.12.D03] Mỗi ý sau đúng hay sai?",
+    "a) Mô phân sinh còn khả năng phân chia.",
+    "III.",
+    "Câu hỏi trắc nghiệm ngắn",
+    "Câu 4. [SI10.02.12.D04] Số nhiễm sắc thể ở kỳ sau là bao nhiêu?",
+  ].join("\n");
+  const r = parseGeneric(de);
+  check("tiêu đề hai dòng: vẫn ra đủ 4 câu", r.questions.length === 4, String(r.questions.length));
+  check(
+    "câu cuối phần I KHÔNG nuốt 'II.' và dòng chữ của nó",
+    !/II\.|Câu hỏi trắc nghiệm đúng sai/.test(r.questions[1]?.content ?? ""),
+    r.questions[1]?.content,
+  );
+  check(
+    "câu cuối phần II KHÔNG nuốt 'III.' và dòng chữ của nó",
+    !/III\.|Câu hỏi trắc nghiệm ngắn/.test(r.questions[2]?.content ?? ""),
+    r.questions[2]?.content,
+  );
+  check(
+    "dòng chữ tiêu đề KHÔNG tự thành một câu",
+    r.questions.every((q) => !/^Câu hỏi trắc nghiệm/.test(q.content.trim())),
+  );
+  check(
+    "đầu đề trước 'I.' bị cắt, câu 1 sạch",
+    r.questions[0]?.content.startsWith("Quá trình giảm phân"),
+    r.questions[0]?.content,
+  );
+}
+
+/* ── "II." rồi XUỐNG DÒNG là "Câu N" luôn ─────────────────────────────── */
+// Nuốt dòng sau tiêu đề là đúng, nhưng chỉ khi nó là CHỮ. Nếu ngay dưới tiêu
+// đề đã là mốc câu thì nuốt nhầm = mất hẳn một câu hỏi.
+{
+  const de = [
+    "I.",
+    "Câu 1. [SI10.02.12.D01] Câu đầu tiên của phần một?",
+    "A. Một.\tB. Hai.",
+    "II.",
+    "Câu 2. [SI10.02.12.D02] Câu đầu tiên của phần hai?",
+    "A. Ba.\tB. Bốn.",
+  ].join("\n");
+  const r = parseGeneric(de);
+  check("tiêu đề trần + mốc câu ngay sau: giữ đủ 2 câu", r.questions.length === 2, String(r.questions.length));
+  check(
+    "câu 2 vẫn là câu 2, không bị nuốt",
+    /Câu đầu tiên của phần hai/.test(r.questions[1]?.content ?? ""),
+    r.questions[1]?.content,
+  );
+}
+
+/* ── Nhãn phương án "A." đứng một mình KHÔNG phải tiêu đề phần ────────── */
+{
+  const de = [
+    "Câu 1. [SI10.02.12.D01] Chọn đáp án đúng?",
+    "A. Alpha.\tB. Beta.",
+    "C. Gamma.\tD. Delta.",
+  ].join("\n");
+  const r = parseGeneric(de);
+  check("chữ cái đơn không bị nhận nhầm là tiêu đề phần", (r.questions[0]?.options ?? []).length === 4);
+}
+
 console.log(`\n${pass} pass · ${fail} fail`);
 process.exit(fail === 0 ? 0 : 1);

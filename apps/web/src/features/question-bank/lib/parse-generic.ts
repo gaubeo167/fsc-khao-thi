@@ -286,9 +286,28 @@ export function readTags(line: string): {
   return { line: out, difficulty, typeTag };
 }
 
-/** Dòng tiêu đề phần đề thi — bỏ qua, không phải câu hỏi. */
+/**
+ * Dòng tiêu đề phần đề thi — bỏ qua, không phải câu hỏi.
+ *
+ * `(?:\s|$)` sau số La Mã là BẮT BUỘC, không phải cho đẹp. Đường nhập thật
+ * đổi mọi ký tự tab thành xuống dòng (`htmlToMarkedText`), nên "II.<tab>Câu
+ * hỏi trắc nghiệm đúng sai" trong file Word tới đây đã là HAI dòng: "II." rồi
+ * "Câu hỏi trắc nghiệm đúng sai". Bản cũ đòi có khoảng trắng SAU dấu chấm nên
+ * trượt dòng "II." trần — tiêu đề lọt vào nội dung câu hỏi.
+ */
 const SECTION_RE =
-  /^\s*(Section\s+[A-Z]\b|Ph[ầa]n\s+[IVX\d]|I{1,3}\.\s|Time allowed|Thí sinh trả lời)/i;
+  /^\s*(Section\s+[A-Z]\b|Ph[ầa]n\s+[IVX\d]|(?:IV|I{1,3})\.(?:\s|$)|Time allowed|Thí sinh trả lời)/i;
+
+/**
+ * Tiêu đề phần chỉ còn mỗi SỐ, chữ rơi xuống dòng kế tiếp.
+ *
+ * Cùng nguyên nhân tab→xuống dòng ở trên. Nhận ra dạng này để còn nuốt nốt
+ * dòng chữ đi kèm — nếu không thì "Câu hỏi trắc nghiệm đúng sai" vẫn trôi vào
+ * đề bài câu kế tiếp dù dòng "II." đã bị bỏ đúng.
+ *
+ * KHÔNG nhận chữ cái đơn ("A.", "B.") vì đó là nhãn phương án.
+ */
+const SECTION_NUMBER_ONLY_RE = /^\s*(?:PH[ẦA]N\s+|Ph[ầa]n\s+)?(?:IV|I{1,3})\s*[.:)]\s*$/;
 /**
  * "PHẦN B: PHẦN TỰ LUẬN" — tiêu đề phần đánh bằng CHỮ CÁI.
  *
@@ -513,6 +532,13 @@ export function parseGeneric(marked: string): GenericParseResult {
    * "câu hỏi", bốn trong đó không có đề bài.
    */
   let nextNumber = 1;
+  /**
+   * Vừa gặp tiêu đề phần chỉ có số ("II.") — dòng chữ của nó ở ngay sau.
+   *
+   * Xem `SECTION_NUMBER_ONLY_RE`: tab trong file Word đã thành xuống dòng nên
+   * một tiêu đề nằm trên hai dòng. Bỏ dòng số mà giữ dòng chữ thì vẫn dính.
+   */
+  let pendingSectionTitle = false;
 
   const step = (raw: string) => {
     const line = raw.trimEnd();
@@ -523,6 +549,16 @@ export function parseGeneric(marked: string): GenericParseResult {
     if (!line.trim()) {
       if (cur) cur.push("");
       return;
+    }
+    // Dòng chữ đi kèm tiêu đề phần vừa gặp. Bỏ — trừ khi chính nó đã là mốc
+    // mở câu mới (đề viết "II." rồi xuống dòng "Câu 5. …" liền).
+    if (pendingSectionTitle) {
+      pendingSectionTitle = false;
+      const laMoc =
+        (strategy === "cau-n" && CAU_N_RE.test(line)) ||
+        (strategy === "ma-de-inline" && CODE_AT_START_RE.test(line)) ||
+        (strategy === "so-thu-tu" && NUMBERED_RE.test(bare));
+      if (!laMoc) return;
     }
     let starts = false;
     if (strategy === "cau-n") starts = CAU_N_RE.test(line);
@@ -577,9 +613,10 @@ export function parseGeneric(marked: string): GenericParseResult {
     // hỏi trắc nghiệm đúng sai" và "Thí sinh trả lời từ câu 1 đến câu 4".
     // Kết quả: câu CUỐI của mỗi phần nuốt luôn tiêu đề và câu dẫn của phần kế
     // tiếp. Đo trên đề thật SHOC 10: 3/21 câu dính.
-    if (!starts && cur && isSectionHeading(bare)) {
+    if (!starts && isSectionHeading(bare)) {
       push(cur);
       cur = null;
+      pendingSectionTitle = SECTION_NUMBER_ONLY_RE.test(bare);
       return;
     }
     if (starts) {
