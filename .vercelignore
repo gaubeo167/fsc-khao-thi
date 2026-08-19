@@ -1,0 +1,20 @@
+# Vercel KHÔNG dùng .gitignore cho bước tải lên khi repo đã có .vercelignore,
+# và ngay cả khi không có thì thư mục build cục bộ vẫn lọt qua — một lần deploy
+# đã tải 552MB rồi chết vì "File size limit exceeded (100 MB)".
+#
+# Thủ phạm là `.next-build/` — thư mục kết xuất riêng dùng khi build lúc dev
+# server đang chạy (xem NEXT_DIST_DIR trong CLAUDE.md). Nó ~500MB và không có
+# việc gì phải đi lên Vercel: Vercel tự build từ mã nguồn.
+.next/
+.next-build/
+node_modules/
+.turbo/
+out/
+dist/
+
+# Sản phẩm QA cục bộ — ảnh chụp màn hình chiếm chỗ, không phục vụ bản deploy.
+.gstack/
+
+# Tài liệu / bản mock không thuộc bản chạy.
+*.docx
+fsc_mock_*.html
