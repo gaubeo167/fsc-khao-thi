@@ -25,6 +25,10 @@ import { useUserScope } from "@/features/auth/lib/use-scope";
 import { useAuthStore } from "@/features/auth/state/auth-store";
 import { CampusGateBanner } from "@/features/campus/components/campus-gate-banner";
 import { useCampusGate } from "@/features/campus/hooks/use-campus-gate";
+import {
+  gradesInCampus,
+  subjectsInCampus,
+} from "@/features/campus/lib/campus-scope";
 import { useCampusStore } from "@/features/campus/state/campus-store";
 import { useCampusesStore } from "@/features/campus/state/campuses-store";
 import { useGradesStore } from "@/features/grades/state/grades-store";
@@ -161,25 +165,16 @@ export default function QuestionBankPage() {
     () => (operatingCampus ? new Set(operatingCampus.gradeIds) : null),
     [operatingCampus],
   );
-  const scopedSubjects = useMemo(() => {
-    if (!operatingCampus) return subjects;
-    return subjects.filter((s) => {
-      const inCampus =
-        !s.campusIds ||
-        s.campusIds.length === 0 ||
-        s.campusIds.includes(operatingCampus.id);
-      if (!inCampus) return false;
-      return s.gradeIds.some((gid) =>
-        operatingCampus.gradeIds.includes(gid),
-      );
-    });
-  }, [subjects, operatingCampus]);
+  // Dùng luật chung `campus-scope.ts` chứ không chép lại điều kiện lọc —
+  // bản chép thiếu ở hộp "Tải đề lên" là chỗ đã sinh ra lỗi chọn nhầm môn của
+  // cơ sở khác.
+  const scopedSubjects = useMemo(
+    () => subjectsInCampus(subjects, operatingCampus),
+    [subjects, operatingCampus],
+  );
   const scopedGrades = useMemo(
-    () =>
-      scopedGradeIds
-        ? grades.filter((g) => scopedGradeIds.has(g.id))
-        : grades,
-    [grades, scopedGradeIds],
+    () => gradesInCampus(grades, operatingCampus),
+    [grades, operatingCampus],
   );
 
   const { canMutate } = useCampusGate();

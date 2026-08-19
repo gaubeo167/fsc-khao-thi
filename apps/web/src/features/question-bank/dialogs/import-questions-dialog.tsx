@@ -33,7 +33,13 @@ import { Controller, useForm } from "react-hook-form";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useAuthStore } from "@/features/auth/state/auth-store";
+import {
+  gradesInCampus,
+  operatingCampusId,
+  subjectsInCampus,
+} from "@/features/campus/lib/campus-scope";
 import { useCampusStore } from "@/features/campus/state/campus-store";
+import { useCampusesStore } from "@/features/campus/state/campuses-store";
 import { useCompetenciesStore } from "@/features/competencies/state/competencies-store";
 import { useGradesStore } from "@/features/grades/state/grades-store";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
@@ -135,11 +141,39 @@ export function ImportQuestionsDialog({
 }) {
   const session = useAuthStore((s) => s.session);
   const activeCampusId = useCampusStore((s) => s.activeCampusId);
-  const subjects = useSubjectsStore((s) => s.subjects);
+  const allSubjects = useSubjectsStore((s) => s.subjects);
   const tocNodes = useSubjectsStore((s) => s.tocNodes);
-  const grades = useGradesStore((s) => s.grades);
+  const allGrades = useGradesStore((s) => s.grades);
+  const campuses = useCampusesStore((s) => s.campuses);
   const competencies = useCompetenciesStore((s) => s.competencies);
   const createQuestion = useQuestionsStore((s) => s.create);
+
+  /**
+   * Ô chọn Môn/Khối phải theo ĐÚNG cơ sở đang thao tác.
+   *
+   * Trước đây hai ô này đọc thẳng store, không lọc — trong khi bộ lọc của
+   * chính trang Ngân hàng câu hỏi ngay bên ngoài thì có lọc. Hai cơ sở cùng
+   * có môn tên "Sinh học" là hai bản ghi khác nhau; danh sách không lọc hiện
+   * cả hai với cùng một cái tên, chọn nhầm thì khung YCCĐ dựng theo môn của
+   * cơ sở kia và đề trích dẫn mã CÓ THẬT vẫn báo "khung không có mã đó".
+   * Xem `campus-scope.ts`.
+   */
+  const operatingCampus = useMemo(() => {
+    const id = operatingCampusId(
+      session?.role,
+      session?.campusId,
+      activeCampusId,
+    );
+    return id ? campuses.find((c) => c.id === id) ?? null : null;
+  }, [session?.role, session?.campusId, activeCampusId, campuses]);
+  const subjects = useMemo(
+    () => subjectsInCampus(allSubjects, operatingCampus),
+    [allSubjects, operatingCampus],
+  );
+  const grades = useMemo(
+    () => gradesInCampus(allGrades, operatingCampus),
+    [allGrades, operatingCampus],
+  );
 
   const [subjectId, setSubjectId] = useState("");
   const [gradeId, setGradeId] = useState("");
@@ -240,6 +274,21 @@ export function ImportQuestionsDialog({
   useEffect(() => {
     setTocNodeId((cur) => keepTocSelection(tocOptions, cur) ?? "");
   }, [tocOptions]);
+
+  /**
+   * Môn/Khối đã chọn mà rơi khỏi phạm vi cơ sở thì BỎ.
+   *
+   * Cùng cái bẫy với chỗ cất mục lục: `<select>` không có option nào mang giá
+   * trị đó nên hiện dòng đầu "— Chọn môn —", người dùng thấy "chưa chọn" còn
+   * state vẫn giữ môn cũ — và cái được ghi vào câu hỏi không phải cái họ thấy.
+   * Đổi cơ sở (superadmin) hoặc dữ liệu môn đổi là chạm ngay vào đây.
+   */
+  useEffect(() => {
+    setSubjectId((cur) => (cur && !subjects.some((s) => s.id === cur) ? "" : cur));
+  }, [subjects]);
+  useEffect(() => {
+    setGradeId((cur) => (cur && !grades.some((g) => g.id === cur) ? "" : cur));
+  }, [grades]);
 
   /**
    * Những ô bắt buộc còn trống. Nêu TÊN từng ô chứ không chỉ chặn nút: người
