@@ -40,7 +40,10 @@ import {
 } from "@/features/campus/lib/campus-scope";
 import { useCampusStore } from "@/features/campus/state/campus-store";
 import { useCampusesStore } from "@/features/campus/state/campuses-store";
-import { useCompetenciesStore } from "@/features/competencies/state/competencies-store";
+import {
+  competencyInCampus,
+  useCompetenciesStore,
+} from "@/features/competencies/state/competencies-store";
 import { useGradesStore } from "@/features/grades/state/grades-store";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import { keepTocSelection, tocInScope } from "@/features/subjects/lib/toc-scope";
@@ -234,10 +237,14 @@ export function ImportQuestionsDialog({
     // `toc-scope.ts`). Khối chưa có khung thì banner ở màn kiểm tra nói rõ.
     const scope = leaves.filter(
       (c) =>
-        c.subjectId === subjectId && (c.gradeId === gradeId || c.gradeId == null),
+        c.subjectId === subjectId &&
+        (c.gradeId === gradeId || c.gradeId == null) &&
+        // Khung YCCĐ riêng theo cơ sở. Không lọc thì index dựng từ khung của
+        // cơ sở khác và đề trích dẫn mã CÓ THẬT vẫn báo "khung không có mã đó".
+        competencyInCampus(c, operatingCampus?.id ?? null),
     );
     return buildOutcomeIndex(scope);
-  }, [competencies, subjectId, gradeId]);
+  }, [competencies, subjectId, gradeId, operatingCampus]);
 
   /**
    * Mục lục của môn đang chọn. Chỉ lấy nhánh khớp khối (hoặc dùng chung cho
@@ -246,8 +253,11 @@ export function ImportQuestionsDialog({
   const tocOptions = useMemo(
     // Dùng luật chung `tocInScope` chứ không chép lại điều kiện lọc — bản chép
     // tay là cách luật này đã đi lệch ở năm file khác, xem `toc-scope.ts`.
-    () => tocInScope(tocNodes, subjectId, gradeId).sort((a, b) => a.order - b.order),
-    [tocNodes, subjectId, gradeId],
+    () =>
+      tocInScope(tocNodes, subjectId, gradeId, operatingCampus?.id ?? null).sort(
+        (a, b) => a.order - b.order,
+      ),
+    [tocNodes, subjectId, gradeId, operatingCampus],
   );
   /** Môn có mục lục thì BẮT chọn chỗ cất trước khi tải file. */
   const needToc = tocOptions.length > 0;

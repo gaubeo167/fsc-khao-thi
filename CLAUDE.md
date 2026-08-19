@@ -62,6 +62,22 @@ Mốc nằm ở `scripts/design-tokens-baseline.json`. Di cư xong một mảng 
 `node scripts/check-design-tokens.mjs --update` để hạ mốc. Đừng bao giờ nâng
 mốc lên để cho qua.
 
+## Di trú dữ liệu
+
+Mục lục (`toc_nodes`) và khung YCCĐ (`competencies`) mới có `campusId`. Dữ liệu
+cũ chưa có trường này và **vẫn hiện ở mọi cơ sở** cho tới khi được gán chủ —
+cố ý, để lên bản mới không làm mục lục đang dùng biến mất.
+
+```bash
+node scripts/migrate-campus-scope.mjs             # DRY-RUN, in báo cáo
+node scripts/migrate-campus-scope.mjs --apply     # ghi thật (cần serviceAccount.json)
+node scripts/migrate-campus-scope.mjs --emulator  # chạy trên emulator
+```
+
+Suy chủ bằng cách lần ngược từ câu hỏi (`campusId` + `tocNodeId`/`competencyIds`).
+Node nhiều cơ sở cùng dùng thì được NHÂN BẢN cho từng cơ sở và câu hỏi trỏ lại
+bản của mình. Node không suy được để nguyên "chưa gán" và liệt kê ở cuối.
+
 ## Lưu ý môi trường
 
 - `apps/web/.env.local` trỏ vào **Firebase emulator**, KHÔNG phải production và

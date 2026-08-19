@@ -27,18 +27,40 @@ export interface ScopedTocNode {
   parentId: string | null;
   subjectId: string;
   gradeId: string | null;
+  campusId?: string | null;
   order: number;
 }
 
-/** Node thuộc đúng môn + khối. Node `gradeId == null` là dùng chung mọi khối. */
+/**
+ * Node thuộc đúng CƠ SỞ + môn + khối.
+ *
+ * ── Cơ sở ───────────────────────────────────────────────────────────────
+ *
+ * Mỗi campus là một tập dữ liệu độc lập. Trước đây mục lục KHÔNG mang
+ * `campusId` và không chỗ nào lọc theo cơ sở, nên một cơ sở chưa từng tạo mục
+ * lục cho môn nào vẫn thấy nguyên mục lục của cơ sở khác — người dùng mở lên
+ * thấy "Chương 1 · Tuần 1 · Tuần 2" mà mình chưa hề tạo.
+ *
+ * `campusId == null` = CHƯA GÁN: dữ liệu có trước khi trường này tồn tại. Node
+ * chưa gán vẫn hiện ở mọi cơ sở, cố ý — lọc chặt ngay sẽ làm toàn bộ mục lục
+ * đang dùng biến mất khỏi mọi màn, nhìn y hệt mất sạch dữ liệu. Chạy
+ * `scripts/migrate-campus-scope.mjs` để gán chủ; gán xong thì cách ly trọn vẹn.
+ *
+ * `campusId` truyền vào là `null`/rỗng (chưa xác định được cơ sở đang thao
+ * tác) thì KHÔNG lọc theo cơ sở — thà hiện đủ còn hơn hiện rỗng.
+ */
 export function tocInScope<T extends ScopedTocNode>(
   nodes: T[],
   subjectId: string | null | undefined,
   gradeId: string | null | undefined,
+  campusId?: string | null,
 ): T[] {
   if (!subjectId) return [];
   return nodes.filter(
-    (n) => n.subjectId === subjectId && (n.gradeId == null || n.gradeId === gradeId),
+    (n) =>
+      n.subjectId === subjectId &&
+      (n.gradeId == null || n.gradeId === gradeId) &&
+      (!campusId || n.campusId == null || n.campusId === campusId),
   );
 }
 

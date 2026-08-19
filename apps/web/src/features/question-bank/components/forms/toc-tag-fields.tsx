@@ -7,6 +7,7 @@ import { Controller, type Control, type UseFormWatch } from "react-hook-form";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { useOperatingCampusId } from "@/features/campus/hooks/use-operating-campus";
 import { flattenToc, tocInScope } from "@/features/subjects/lib/toc-scope";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import {
@@ -28,15 +29,17 @@ export function TocTagFields({ control, watch }: Props) {
   const subjectId = watch("subjectId") as string;
   const gradeId = watch("gradeId") as string;
   const tocNodes = useSubjectsStore((s) => s.tocNodes);
+  /** Mục lục là dữ liệu RIÊNG của từng cơ sở — xem `toc-scope.ts`. */
+  const campusId = useOperatingCampusId();
 
   const { flattened, fallbackUsed } = useMemo(() => {
     // KHÔNG lùi về mục lục của khối khác. Xem `toc-scope.ts` — trước đây chỗ
     // này mượn mục lục khối 10 cho mọi khối tiếng Anh.
     return {
-      flattened: flattenToc(tocInScope(tocNodes, subjectId, gradeId)),
+      flattened: flattenToc(tocInScope(tocNodes, subjectId, gradeId, campusId)),
       fallbackUsed: false,
     };
-  }, [subjectId, gradeId, tocNodes]);
+  }, [subjectId, gradeId, tocNodes, campusId]);
 
   return (
     <div className="space-y-4">

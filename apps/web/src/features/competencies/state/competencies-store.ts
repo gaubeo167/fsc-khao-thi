@@ -3,6 +3,7 @@
 import type { Unsubscribe } from "firebase/firestore";
 import { create } from "zustand";
 
+import { currentCampusId } from "@/features/campus/lib/owning-campus";
 import { COLLECTIONS } from "@/lib/firestore-collections";
 import {
   patchDoc,
@@ -34,7 +35,12 @@ interface Actions {
     position: "before" | "after",
   ): void;
 
-  competenciesFor(subjectId: string, gradeId: string | null): Competency[];
+  /** `campusId` bỏ trống = không lọc theo cơ sở. Xem `competencyInCampus`. */
+  competenciesFor(
+    subjectId: string,
+    gradeId: string | null,
+    campusId?: string | null,
+  ): Competency[];
   competencyChildrenOf(
     parentId: string | null,
     subjectId: string,
@@ -53,6 +59,27 @@ function nextId(existing: { id: string }[], prefix: string): string {
   return `${prefix}${max + 1}`;
 }
 
+/**
+ * Node khung YCCĐ này có thuộc cơ sở đang thao tác không.
+ *
+ * Mỗi campus là một tập dữ liệu độc lập. Trước đây khung KHÔNG mang `campusId`
+ * và không chỗ nào lọc theo cơ sở, nên khung của cơ sở này lẫn sang cơ sở khác
+ * — và vì hai cơ sở có thể cùng có môn trùng tên, người dùng nhìn thấy một mã
+ * ở màn Khung YCCĐ nhưng màn nhập đề lại dựng index từ tập khác và báo "khung
+ * không có mã đó".
+ *
+ * `campusId` của node là `null` = CHƯA GÁN, vẫn hiện ở mọi cơ sở (xem chú
+ * thích trong `data/types.ts`). Tham số `campusId` rỗng = chưa xác định được
+ * cơ sở đang thao tác → không lọc.
+ */
+export function competencyInCampus(
+  node: { campusId?: string | null },
+  campusId: string | null | undefined,
+): boolean {
+  if (!campusId) return true;
+  return node.campusId == null || node.campusId === campusId;
+}
+
 export const useCompetenciesStore = create<State & Actions>()((set, get) => ({
   competencies: [],
   hydrated: false,
@@ -69,6 +96,10 @@ export const useCompetenciesStore = create<State & Actions>()((set, get) => ({
     const node: Competency = {
       ...input,
       id,
+      // Đóng dấu cơ sở sở hữu ở MỘT chỗ duy nhất. Bắt ~10 nơi gọi tự truyền
+      // thì chỉ cần một chỗ quên là node ra đời không chủ, mà node không chủ
+      // hiện ở mọi cơ sở — đúng cái rò rỉ đang đi bịt. Xem `owning-campus.ts`.
+      campusId: input.campusId ?? currentCampusId(),
       order: input.order ?? siblings.length,
       createdAt: now,
       updatedAt: now,
@@ -151,9 +182,12 @@ export const useCompetenciesStore = create<State & Actions>()((set, get) => ({
     }
   },
 
-  competenciesFor(subjectId, gradeId) {
+  competenciesFor(subjectId, gradeId, campusId) {
     return get().competencies.filter(
-      (n) => n.subjectId === subjectId && n.gradeId === gradeId,
+      (n) =>
+        n.subjectId === subjectId &&
+        n.gradeId === gradeId &&
+        competencyInCampus(n, campusId),
     );
   },
 

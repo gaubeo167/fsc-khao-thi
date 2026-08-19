@@ -16,6 +16,8 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { CompetencyImportNode } from "@/lib/toc/parse-competencies";
 
+import { useOperatingCampusId } from "@/features/campus/hooks/use-operating-campus";
+
 import { CompetencyImportDialog } from "../dialogs/competency-import-dialog";
 import {
   CompetencyNodeDialog,
@@ -27,7 +29,10 @@ import {
   type Competency,
   type CompetencyKind,
 } from "../data/types";
-import { useCompetenciesStore } from "../state/competencies-store";
+import {
+  competencyInCampus,
+  useCompetenciesStore,
+} from "../state/competencies-store";
 import { ConfirmActionDialog } from "@/features/admin/users/dialogs/confirm-action-dialog";
 import {
   clearCompetencyRefs,
@@ -62,13 +67,18 @@ export function CompetencyManager({
   const questions = useQuestionsStore((s) => s.questions);
   const updateQuestion = useQuestionsStore((s) => s.update);
   const [deleteTarget, setDeleteTarget] = useState<Competency | null>(null);
+  /** Khung YCCĐ là dữ liệu RIÊNG của từng cơ sở — xem `competencyInCampus`. */
+  const campusId = useOperatingCampusId();
 
   const scoped = useMemo(
     () =>
       competencies.filter(
-        (n) => n.subjectId === subjectId && n.gradeId === gradeId,
+        (n) =>
+          n.subjectId === subjectId &&
+          n.gradeId === gradeId &&
+          competencyInCampus(n, campusId),
       ),
-    [competencies, subjectId, gradeId],
+    [competencies, subjectId, gradeId, campusId],
   );
 
   const deleteChildCount = deleteTarget
@@ -83,7 +93,10 @@ export function CompetencyManager({
   const subjectCodes = useMemo(
     () =>
       competencies
-        .filter((n) => n.subjectId === subjectId && n.code)
+        .filter(
+          (n) =>
+            n.subjectId === subjectId && n.code && competencyInCampus(n, campusId),
+        )
         .map((n) => n.code as string),
     [competencies, subjectId],
   );

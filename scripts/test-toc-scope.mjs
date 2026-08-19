@@ -182,5 +182,41 @@ check("cây rỗng → danh sách rỗng", flattenToc([]).length === 0);
   );
 }
 
+/* ── Cách ly theo CƠ SỞ ───────────────────────────────────────────────── */
+// Mục lục ra đời không có `campusId` và không chỗ nào lọc theo cơ sở, nên một
+// cơ sở chưa từng tạo mục lục vẫn thấy nguyên mục lục của cơ sở khác — người
+// dùng mở lên thấy "Chương 1 · Tuần 1 · Tuần 2" mà mình chưa hề tạo.
+{
+  const cg = n("cg", { campusId: "campus-cg" });
+  const dn = n("dn", { campusId: "campus-dn3" });
+  const chuaGan = n("cu", {}); // dữ liệu cũ, chưa có campusId
+  const all = [cg, dn, chuaGan];
+
+  check(
+    "cơ sở chỉ thấy mục lục CỦA MÌNH",
+    tocInScope(all, "anh", "grade-10", "campus-dn3").map((x) => x.id).sort().join() ===
+      "cu,dn",
+    tocInScope(all, "anh", "grade-10", "campus-dn3").map((x) => x.id).join(),
+  );
+  check(
+    "KHÔNG thấy mục lục của cơ sở khác",
+    !tocInScope(all, "anh", "grade-10", "campus-dn3").some((x) => x.id === "cg"),
+  );
+  // Node chưa gán cố ý vẫn hiện: lọc chặt ngay là toàn bộ mục lục đang dùng
+  // biến mất khỏi mọi màn, nhìn y hệt mất sạch dữ liệu.
+  check(
+    "node CHƯA GÁN vẫn hiện ở mọi cơ sở (chờ script di trú)",
+    tocInScope(all, "anh", "grade-10", "campus-cg").some((x) => x.id === "cu"),
+  );
+  check(
+    "không truyền cơ sở → KHÔNG lọc theo cơ sở (thà hiện đủ còn hơn hiện rỗng)",
+    tocInScope(all, "anh", "grade-10").length === 3,
+  );
+  check(
+    "truyền null cũng không lọc",
+    tocInScope(all, "anh", "grade-10", null).length === 3,
+  );
+}
+
 console.log(`\n${pass} pass · ${fail} fail`);
 process.exit(fail === 0 ? 0 : 1);

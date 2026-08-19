@@ -3,6 +3,7 @@
 import type { Unsubscribe } from "firebase/firestore";
 import { create } from "zustand";
 
+import { currentCampusId } from "@/features/campus/lib/owning-campus";
 import { isFirebaseConfigured } from "@/lib/firebase";
 import { COLLECTIONS } from "@/lib/firestore-collections";
 import {
@@ -111,7 +112,15 @@ export const useSubjectsStore = create<State & Actions>()((set, get) => ({
         n.parentId === input.parentId,
     );
     const order = input.order ?? siblings.length;
-    const node: TocNode = { ...input, id, order };
+    const node: TocNode = {
+      ...input,
+      id,
+      order,
+      // Đóng dấu cơ sở sở hữu ở MỘT chỗ duy nhất. Bắt ~10 nơi gọi tự truyền
+      // thì chỉ cần một chỗ quên là node ra đời không chủ, mà node không chủ
+      // hiện ở mọi cơ sở — đúng cái rò rỉ đang đi bịt. Xem `owning-campus.ts`.
+      campusId: input.campusId ?? currentCampusId(),
+    };
     set({ tocNodes: [...get().tocNodes, node] });
     writeDoc(
       COLLECTIONS.tocNodes,

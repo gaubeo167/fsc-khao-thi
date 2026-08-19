@@ -3,11 +3,15 @@
 import { Check, ChevronsUpDown, Search, Target, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { useOperatingCampusId } from "@/features/campus/hooks/use-operating-campus";
 import { useGradesStore } from "@/features/grades/state/grades-store";
 import { cn } from "@/lib/utils";
 
 import { bloomMeta, type Competency } from "../data/types";
-import { useCompetenciesStore } from "../state/competencies-store";
+import {
+  competencyInCampus,
+  useCompetenciesStore,
+} from "../state/competencies-store";
 
 interface Props {
   subjectId: string | null | undefined;
@@ -35,6 +39,8 @@ export function CompetencyPicker({
   className,
 }: Props) {
   const competencies = useCompetenciesStore((s) => s.competencies);
+  /** Khung YCCĐ riêng theo cơ sở — ô chọn phải khớp với màn quản lý khung. */
+  const campusId = useOperatingCampusId();
   const grades = useGradesStore((s) => s.grades);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -57,7 +63,8 @@ export function CompetencyPicker({
       (n) =>
         n.kind === "outcome" &&
         n.subjectId === subjectId &&
-        (n.gradeId === gradeId || n.gradeId == null),
+        (n.gradeId === gradeId || n.gradeId == null) &&
+        competencyInCampus(n, campusId),
     );
     return {
       outcomes: scope
@@ -68,7 +75,7 @@ export function CompetencyPicker({
       fromOtherGrade: false,
       otherGradeIds: [] as string[],
     };
-  }, [competencies, subjectId, gradeId]);
+  }, [competencies, subjectId, gradeId, campusId]);
 
   /** Tên khối mà khung mượn về đang thuộc — nói tên ra thì người dùng lần
    *  được ngay, thay vì phải đi dò từng khối. */

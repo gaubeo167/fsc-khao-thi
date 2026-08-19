@@ -1,6 +1,16 @@
 export interface TocNode {
   id: string;
   subjectId: string;
+  /**
+   * Cơ sở sở hữu node này. Mỗi campus là một tập dữ liệu độc lập.
+   *
+   * `null` = CHƯA GÁN — dữ liệu có từ trước khi trường này tồn tại. Node chưa
+   * gán vẫn hiện ở mọi cơ sở (giữ nguyên hành vi cũ) để việc lên bản mới không
+   * làm biến mất mục lục/khung đang dùng. Chạy `scripts/migrate-campus-scope.mjs`
+   * để gán chủ cho chúng; gán xong thì việc cách ly mới trọn vẹn.
+   */
+  campusId?: string | null;
+
   /** Optional grade scope. null = applies to the whole subject across grades. */
   gradeId: string | null;
   parentId: string | null;
