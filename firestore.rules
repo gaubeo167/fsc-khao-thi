@@ -222,10 +222,19 @@ service cloud.firestore {
       // (and full answers only after submitting, via /review). Staff read
       // the bank for authoring/approval/reports.
       allow read: if isTeacherOrAbove();
+      // `draft` phải nằm trong danh sách: nút "Lưu bản nháp" ở màn tải đề tạo
+      // câu kho=campus + status=draft, nên luật cũ (chỉ nhận personal HOẶC
+      // pending) từ chối MỌI bản nháp vào kho chung. Client ghi lạc quan vào
+      // state rồi mới gửi Firestore, nên giao diện báo "Đã lưu N câu" và đóng
+      // hộp thoại trong khi Firestore đã PERMISSION_DENIED — tải lại trang là
+      // mất trắng. Bản nháp KHÔNG vào kho dùng chung (mọi màn đều lọc
+      // `status == "approved"` cho người khác), nên cho tạo là đúng ý đồ của
+      // luật: cái luật này chặn là chặn nhét câu ĐÃ DUYỆT vào kho chung.
       allow create: if isTeacherOrAbove() &&
         request.resource.data.ownerId == uid() &&
         (request.resource.data.kho == "personal" ||
-          request.resource.data.status == "pending");
+          request.resource.data.status == "pending" ||
+          request.resource.data.status == "draft");
       // Sửa / duyệt: admin trong cơ sở, hoặc TBM ĐÚNG môn · khối, hoặc chủ
       // sở hữu với câu chưa vào kho chung. Client có `canEditInPlace` cùng
       // luật, nhưng đó chỉ là gợi ý giao diện — đây mới là cổng thật.
@@ -413,10 +422,19 @@ service cloud.firestore {
     // approval), strict writes.
     match /learning_materials/{id} {
       allow read: if isSignedIn();
+      // `draft` phải nằm trong danh sách: nút "Lưu bản nháp" ở màn tải đề tạo
+      // câu kho=campus + status=draft, nên luật cũ (chỉ nhận personal HOẶC
+      // pending) từ chối MỌI bản nháp vào kho chung. Client ghi lạc quan vào
+      // state rồi mới gửi Firestore, nên giao diện báo "Đã lưu N câu" và đóng
+      // hộp thoại trong khi Firestore đã PERMISSION_DENIED — tải lại trang là
+      // mất trắng. Bản nháp KHÔNG vào kho dùng chung (mọi màn đều lọc
+      // `status == "approved"` cho người khác), nên cho tạo là đúng ý đồ của
+      // luật: cái luật này chặn là chặn nhét câu ĐÃ DUYỆT vào kho chung.
       allow create: if isTeacherOrAbove() &&
         request.resource.data.ownerId == uid() &&
         (request.resource.data.kho == "personal" ||
-          request.resource.data.status == "pending");
+          request.resource.data.status == "pending" ||
+          request.resource.data.status == "draft");
       allow update: if isSignedIn() && (
         (isApprover() && inSameCampus(resource.data.campusId)) ||
         (resource.data.ownerId == uid() &&
