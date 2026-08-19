@@ -23,10 +23,21 @@ import {
   optionLabel,
   roman,
   round2,
+  examTitleParts,
   splitIntoParts,
   stripAnswerArtifacts,
   subLetter,
 } from "./moet-export";
+
+/**
+ * Chỗ hệ thống KHÔNG có dữ liệu — in dấu chấm để đơn vị tự điền trong Word.
+ *
+ * Sở GD&ĐT và tổ chuyên môn khác nhau theo từng cơ sở và từng môn, hệ chưa
+ * lưu. Hai lối xử lý tồi: bỏ hẳn dòng (người dùng phải tự nhớ thêm vào, và
+ * quên thì file thiếu so với mẫu Sở), hoặc đoán bừa một giá trị (sai còn tệ
+ * hơn thiếu). Để dấu chấm là nói rõ "chỗ này của bạn" ngay trên giấy.
+ */
+const DIEN_TAY = "..................................................";
 
 /** Chữ đưa vào Word: cắt đáp án (`stripAnswerArtifacts`) rồi bỏ cú pháp nội bộ. */
 function plainText(s: string): string {
@@ -123,14 +134,25 @@ export async function buildExamDocx(args: {
   const m = args.meta;
   const lop = m.gradeName.replace(/\D/g, "") || m.gradeName;
   const body: InstanceType<typeof d.Paragraph>[] = [];
-  if (m.departmentOfEducation) {
-    body.push(ctr(m.departmentOfEducation.toUpperCase(), { bold: true }));
-  }
+  // Dòng Sở GD&ĐT luôn có mặt — mẫu SHOC 10 mở đầu bằng nó. Chưa có dữ liệu
+  // thì in dấu chấm chứ không bỏ dòng: bỏ đi là file thiếu so với mẫu Sở mà
+  // người tải về không biết mình còn thiếu gì.
+  body.push(
+    ctr(
+      m.departmentOfEducation
+        ? m.departmentOfEducation.toUpperCase()
+        : `SỞ GIÁO DỤC VÀ ĐÀO TẠO ${DIEN_TAY}`,
+      { bold: true },
+    ),
+  );
   body.push(
     ctr(m.schoolName.toUpperCase(), { bold: true }),
     ctr("ĐỀ CHÍNH THỨC", { bold: true }),
     blank(),
-    ctr(`${m.examTitle.toUpperCase()} NĂM HỌC ${m.schoolYear}`, { bold: true, size: 26 }),
+    ctr(`${examTitleParts(m.examTitle).full.toUpperCase()} NĂM HỌC ${m.schoolYear}`, {
+      bold: true,
+      size: 26,
+    }),
     ctr(`Môn: ${m.subjectName.toUpperCase()}, Lớp ${lop}`, { bold: true }),
     ctr(`Thời gian làm bài: ${m.durationMinutes} phút`, { italics: true }),
     ctr(`Mã đề ${m.code}`, { bold: true }),
@@ -324,9 +346,14 @@ export async function buildMatrixDocx(args: {
         children: [
           headerCell([
             { t: args.meta.schoolName.toUpperCase() },
-            ...(args.meta.departmentName
-              ? [{ t: args.meta.departmentName.toUpperCase(), bold: true, underline: true }]
-              : []),
+            // Tổ chuyên môn: mẫu có dòng này, hệ chưa lưu → để đơn vị tự điền.
+            {
+              t: args.meta.departmentName
+                ? `TỔ ${args.meta.departmentName.toUpperCase()}`
+                : `TỔ ${DIEN_TAY}`,
+              bold: true,
+              underline: true,
+            },
           ]),
           headerCell([
             { t: "CỘNG HOÀ XÃ HỘI CHỦ NGHĨA VIỆT NAM", bold: true },
@@ -464,7 +491,7 @@ export async function buildMatrixDocx(args: {
   const children: Array<InstanceType<typeof d.Paragraph> | InstanceType<typeof d.Table>> = [
     tieuNgu,
     new d.Paragraph({ children: [] }),
-    ctr(`MA TRẬN ĐỀ KIỂM TRA ${args.meta.examTitle.toUpperCase()}; NĂM HỌC ${args.meta.schoolYear}`, {
+    ctr(`MA TRẬN ĐỀ KIỂM TRA ${examTitleParts(args.meta.examTitle).ky.toUpperCase()}; NĂM HỌC ${args.meta.schoolYear}`, {
       bold: true,
       size: 26,
     }),
@@ -482,7 +509,7 @@ export async function buildMatrixDocx(args: {
       { italics: true, size: 18 },
     ),
     new d.Paragraph({ children: [], pageBreakBefore: true }),
-    ctr(`BẢN ĐẶC TẢ ĐỀ KIỂM TRA ${args.meta.examTitle.toUpperCase()}; NĂM HỌC ${args.meta.schoolYear}`, {
+    ctr(`BẢN ĐẶC TẢ ĐỀ KIỂM TRA ${examTitleParts(args.meta.examTitle).ky.toUpperCase()}; NĂM HỌC ${args.meta.schoolYear}`, {
       bold: true,
       size: 26,
     }),

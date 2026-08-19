@@ -416,6 +416,29 @@ export function stripAnswerArtifacts(s: string): string {
     .trim();
 }
 
+/**
+ * Chuẩn hoá tên kỳ lấy từ tên gói đề, cho hai tiêu đề khác nhau dùng chung.
+ *
+ * Giáo viên đặt tên gói kiểu nào cũng có: "KIỂM TRA GIỮA HỌC KÌ II", "Giữa kì
+ * I", "GK1". Nhưng hai file cần hai dạng khác nhau:
+ *
+ *   đề thi  : "KIỂM TRA GIỮA HỌC KÌ II NĂM HỌC …"   (cần có chữ KIỂM TRA)
+ *   ma trận : "MA TRẬN ĐỀ KIỂM TRA GIỮA KÌ I; …"    (đã có sẵn chữ KIỂM TRA)
+ *
+ * Ghép thẳng tên gói vào cả hai thì ma trận ra "MA TRẬN ĐỀ KIỂM TRA KIỂM TRA
+ * GIỮA HỌC KÌ II" — lặp chữ, và đó là thứ in ra giấy nộp Sở.
+ */
+export function examTitleParts(packageName: string): {
+  /** Phần kỳ, đã bỏ chữ "kiểm tra" ở đầu: "GIỮA HỌC KÌ II". */
+  ky: string;
+  /** Dạng đầy đủ cho đề thi: "KIỂM TRA GIỮA HỌC KÌ II". */
+  full: string;
+} {
+  const raw = String(packageName ?? "").trim();
+  const ky = raw.replace(/^\s*(?:đề\s+)?kiểm\s*tra\s+/i, "").trim() || raw;
+  return { ky, full: /^\s*kiểm\s*tra\b/i.test(raw) ? raw : `KIỂM TRA ${ky}` };
+}
+
 /** Nhãn A/B/C/D cho phương án trắc nghiệm. */
 export function optionLabel(i: number): string {
   return String.fromCharCode(65 + i);

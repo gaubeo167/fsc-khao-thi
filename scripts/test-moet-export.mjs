@@ -43,6 +43,7 @@ const {
   optionLabel,
   round2,
   stripAnswerArtifacts,
+  examTitleParts,
 } = await import(out);
 
 let pass = 0,
@@ -273,6 +274,28 @@ const q = (id, type, over = {}) => ({ id, type, content: `Nội dung ${id}`, ...
   );
   check("câu sạch thì giữ nguyên", dm("Nguyên phân xảy ra ở đâu?") === "Nguyên phân xảy ra ở đâu?");
   check("chuỗi rỗng / null không nổ", dm("") === "" && dm(null) === "");
+}
+
+/* ── 7. Tên kỳ: hai tiêu đề cần hai dạng khác nhau ─────────────────────── */
+// Ghép thẳng tên gói vào cả hai thì ma trận ra "MA TRẬN ĐỀ KIỂM TRA KIỂM TRA
+// GIỮA HỌC KÌ II" — lặp chữ, và đó là thứ in ra giấy nộp Sở.
+{
+  const t = examTitleParts("KIỂM TRA GIỮA HỌC KÌ II");
+  check("ma trận bỏ chữ 'KIỂM TRA' ở đầu", t.ky === "GIỮA HỌC KÌ II", t.ky);
+  check("đề thi giữ nguyên dạng đầy đủ", t.full === "KIỂM TRA GIỮA HỌC KÌ II", t.full);
+
+  const t2 = examTitleParts("Giữa kì I");
+  check("tên gói KHÔNG có chữ kiểm tra → ky giữ nguyên", t2.ky === "Giữa kì I");
+  check("…và đề thi tự thêm 'KIỂM TRA'", t2.full === "KIỂM TRA Giữa kì I", t2.full);
+
+  check("chữ thường vẫn nhận", examTitleParts("kiểm tra cuối kì").ky === "cuối kì");
+  check("dạng 'Đề kiểm tra …' cũng cắt", examTitleParts("Đề kiểm tra GK1").ky === "GK1");
+  check("tên rỗng không nổ", examTitleParts("").ky === "" && examTitleParts(null).ky === "");
+  check(
+    "tên chỉ có 'KIỂM TRA' thì không thành rỗng",
+    examTitleParts("KIỂM TRA").ky === "KIỂM TRA",
+    examTitleParts("KIỂM TRA").ky,
+  );
 }
 
 console.log(`\n${pass} qua, ${fail} trượt`);
