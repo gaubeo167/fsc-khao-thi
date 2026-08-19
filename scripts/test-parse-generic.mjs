@@ -527,5 +527,90 @@ const Uc = "⟦/U⟧";
   check("mỗi câu vẫn đủ 4 phương án", r.questions.every((q) => q.options.length === 4));
 }
 
+/* ── Tiêu đề PHẦN giữa đề KHÔNG được nuốt vào câu ─────────────────────── */
+// Đo trên đề thật `de-mau/1. SHOC 10 DE CHINH THUC_da gan ID.docx`: 3/21 câu
+// bị dính. Nguyên nhân: `SECTION_RE` chỉ được xét khi CHƯA có câu nào đang mở,
+// nên từ câu đầu tiên trở đi mọi dòng đều bị nhét vào nội dung — câu CUỐI của
+// mỗi phần nuốt luôn tiêu đề và câu dẫn của phần kế tiếp.
+//
+// In ra đề thì giữa câu hỏi và dòng "Trả lời:" mọc lên một tiêu đề phần, đọc
+// như thể phần tự luận bắt đầu từ giữa phần trắc nghiệm.
+{
+  const de = [
+    "I.\tCâu hỏi trắc nghiệm nhiều phương án lựa chọn.",
+    "Thí sinh trả lời từ câu 1 đến câu 1. Mỗi câu hỏi thí sinh chỉ chọn 1 phương án.",
+    "Câu 1. [SI10.02.15.D02] Tại sao dùng mô phân sinh để nuôi cấy?",
+    "A. Vì chứa nhiều nước.\tB. Vì quang hợp mạnh.",
+    "C. Vì nhiều diệp lục.\tD. Vì phân chia mạnh.",
+    "II.\tCâu hỏi trắc nghiệm đúng sai",
+    "Thí sinh trả lời từ câu 1 đến câu 1. Trong mỗi ý a), b), c), d) chọn đúng hoặc sai.",
+    "Câu 1. [SI10.02.12.F03] Các nhận định sau đúng hay sai?",
+    "a) Hình minh họa 1 chu kì tế bào.",
+    "b) Giai đoạn B nhân đôi DNA.",
+    "III.\tCâu hỏi trắc nghiệm ngắn",
+    "Thí sinh trả lời từ câu 1 đến câu 1.",
+    "Câu 1. [SI10.02.15.S01] Có bao nhiêu thành tựu của công nghệ tế bào động vật?",
+    "<Key=1>",
+    "PHẦN B: PHẦN TỰ LUẬN (3 điểm)",
+    "Câu 1. [SI10.02.15.E01] Hãy nêu những khó khăn khi dùng tế bào gốc.",
+  ].join("\n");
+  const r = parseGeneric(de);
+  const noiDung = r.questions.map((q) => String(q.content ?? "").replace(/\s+/g, " "));
+
+  check("đọc đủ 4 câu", r.questions.length === 4, String(r.questions.length));
+  check(
+    "câu cuối phần I KHÔNG nuốt tiêu đề phần II",
+    !/Câu hỏi trắc nghiệm đúng sai/i.test(noiDung[0] ?? ""),
+    noiDung[0],
+  );
+  check(
+    "…và không nuốt cả câu dẫn 'Thí sinh trả lời…'",
+    !/Thí sinh trả lời/i.test(noiDung.join(" ")),
+    noiDung.find((c) => /Thí sinh trả lời/i.test(c)),
+  );
+  check(
+    "câu cuối phần II KHÔNG nuốt tiêu đề phần III",
+    !/Câu hỏi trắc nghiệm ngắn/i.test(noiDung[1] ?? ""),
+    noiDung[1],
+  );
+  // "PHẦN B" đánh bằng CHỮ CÁI — `SECTION_RE` cũ chỉ nhận số La Mã/chữ số.
+  check(
+    "câu cuối phần III KHÔNG nuốt 'PHẦN B: PHẦN TỰ LUẬN'",
+    !/PHẦN\s+B/i.test(noiDung[2] ?? ""),
+    noiDung[2],
+  );
+  // Cắt đúng chỗ chứ không cắt cụt: nội dung và đáp án phải còn nguyên.
+  check("nội dung câu vẫn đủ, không bị cắt cụt", noiDung.every((c) => c.trim().length > 20), JSON.stringify(noiDung));
+  check("câu trắc nghiệm giữ đủ 4 phương án", (r.questions[0]?.options ?? []).length === 4);
+  check("câu Đúng–Sai giữ đủ 2 ý", (r.questions[1]?.subQuestions ?? []).length === 2);
+  check(
+    "câu trả lời ngắn giữ đáp án <Key=1>",
+    JSON.stringify(r.questions[2]?.acceptedAnswers ?? []).includes("1"),
+    JSON.stringify(r.questions[2]?.acceptedAnswers),
+  );
+}
+
+/* ── KHÔNG cắt nhầm câu hỏi có chữ "Phần" ─────────────────────────────── */
+// Nới lỏng luật trên là đổi một lỗi thừa lấy một lỗi thiếu — mất hẳn câu hỏi
+// còn tệ hơn dính thêm một dòng.
+{
+  const de = [
+    "Câu 1. [SI10.02.12.D01] Phần nào của sơ đồ mô tả kì trung gian?",
+    "A. Phần A.\tB. Phần B.",
+    "C. Phần C.\tD. Phần D.",
+    "Câu 2. [SI10.02.12.D02] Tính phần trăm số tế bào con còn lại?",
+    "A. 25%.\tB. 50%.",
+    "C. 75%.\tD. 100%.",
+  ].join("\n");
+  const r = parseGeneric(de);
+  check("câu hỏi mở đầu bằng 'Phần nào…' KHÔNG bị bỏ", r.questions.length === 2, String(r.questions.length));
+  check(
+    "nội dung giữ nguyên chữ 'Phần'",
+    /Phần nào của sơ đồ/.test(r.questions[0]?.content ?? ""),
+    r.questions[0]?.content,
+  );
+  check("phương án 'Phần A.' vẫn được nhận", (r.questions[0]?.options ?? []).length === 4);
+}
+
 console.log(`\n${pass} pass · ${fail} fail`);
 process.exit(fail === 0 ? 0 : 1);

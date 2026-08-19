@@ -289,6 +289,22 @@ export function readTags(line: string): {
 /** Dòng tiêu đề phần đề thi — bỏ qua, không phải câu hỏi. */
 const SECTION_RE =
   /^\s*(Section\s+[A-Z]\b|Ph[ầa]n\s+[IVX\d]|I{1,3}\.\s|Time allowed|Thí sinh trả lời)/i;
+/**
+ * "PHẦN B: PHẦN TỰ LUẬN" — tiêu đề phần đánh bằng CHỮ CÁI.
+ *
+ * `SECTION_RE` chỉ nhận "Phần" + số La Mã hoặc chữ số, nên "PHẦN B" lọt lưới
+ * và bị nuốt vào nội dung câu cuối của phần trước.
+ *
+ * Cố ý PHÂN BIỆT HOA THƯỜNG và đòi dấu câu ngay sau chữ cái: "Phần này của sơ
+ * đồ mô tả gì?" là câu hỏi thật, không được coi là tiêu đề. Nới lỏng ở đây thì
+ * đổi một lỗi thừa lấy một lỗi thiếu — mất hẳn câu hỏi còn tệ hơn.
+ */
+const SECTION_LETTER_RE = /^\s*PH[ẦA]N\s+[A-ZĐ]\s*[:.)]/;
+
+/** Dòng này là tiêu đề phần / câu dẫn của phần, không phải nội dung câu hỏi. */
+function isSectionHeading(bare: string): boolean {
+  return SECTION_RE.test(bare) || SECTION_LETTER_RE.test(bare);
+}
 
 /**
  * Tìm các phương án trong MỘT dòng. Trả mảng rỗng nếu dòng không phải dòng
@@ -550,9 +566,21 @@ export function parseGeneric(marked: string): GenericParseResult {
         cur = [...stem, line];
         sawSolution = false;
         return;
-      } else if (!cur && !SECTION_RE.test(bare) && !isFrontMatter(bare)) {
+      } else if (!cur && !isSectionHeading(bare) && !isFrontMatter(bare)) {
         starts = true;
       }
+    }
+    // Tiêu đề phần gặp GIỮA đề: đóng câu đang mở rồi BỎ dòng.
+    //
+    // Trước đây `SECTION_RE` chỉ được xét khi chưa có câu nào đang mở, nên từ
+    // câu đầu tiên trở đi mọi dòng đều bị nhét vào nội dung — kể cả "II. Câu
+    // hỏi trắc nghiệm đúng sai" và "Thí sinh trả lời từ câu 1 đến câu 4".
+    // Kết quả: câu CUỐI của mỗi phần nuốt luôn tiêu đề và câu dẫn của phần kế
+    // tiếp. Đo trên đề thật SHOC 10: 3/21 câu dính.
+    if (!starts && cur && isSectionHeading(bare)) {
+      push(cur);
+      cur = null;
+      return;
     }
     if (starts) {
       push(cur);
