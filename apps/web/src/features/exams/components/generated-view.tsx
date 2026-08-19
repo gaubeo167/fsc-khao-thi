@@ -6,7 +6,7 @@
  * y hệt nhau. Trước đây mỗi bên tự vẽ một kiểu.
  */
 
-import { Eye, PlayCircle, Sparkles, Trash2 } from "lucide-react";
+import { Eye, FileDown, PlayCircle, Sparkles, Table2, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -49,6 +49,8 @@ export function GeneratedView({
   onTrial,
   onDelete,
   onGenerateMore,
+  onDownloadExam,
+  onDownloadMatrix,
   emptyHint,
   generateMoreLabel = "Sinh thêm",
 }: {
@@ -61,6 +63,10 @@ export function GeneratedView({
   onTrial(g: GeneratedExam): void;
   onDelete(g: GeneratedExam): void;
   onGenerateMore(p: ExamPackage): void;
+  /** Tải ĐỀ THI của một mã đề ra Word theo mẫu Bộ. */
+  onDownloadExam?(g: GeneratedExam): void;
+  /** Tải MA TRẬN + BẢN ĐẶC TẢ của cả gói ra Word theo mẫu Bộ. */
+  onDownloadMatrix?(p: ExamPackage): void;
   /** Câu gợi ý khi rỗng — hai luồng sinh đề ở chỗ khác nhau. */
   emptyHint: string;
   /** Nhãn nút sinh thêm (YCCĐ mở wizard thay vì sinh tại chỗ). */
@@ -126,6 +132,17 @@ export function GeneratedView({
                 <span className="rounded-full bg-primary-soft px-2.5 py-1 text-[11px] font-semibold tabular-nums text-primary-text">
                   {exams.length} đề
                 </span>
+                {pkg && onDownloadMatrix && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onDownloadMatrix(pkg)}
+                    title="Tải ma trận + bản đặc tả (.docx) theo mẫu Bộ GD&ĐT"
+                  >
+                    <Table2 className="h-3.5 w-3.5" />
+                    Ma trận (Word)
+                  </Button>
+                )}
                 {pkg && (
                   <Button size="sm" onClick={() => onGenerateMore(pkg)}>
                     <Sparkles className="h-3.5 w-3.5" />
@@ -176,6 +193,15 @@ export function GeneratedView({
                     >
                       <Eye className="h-3.5 w-3.5" strokeWidth={1.75} />
                     </IconButton>
+                    {onDownloadExam && (
+                      <IconButton
+                        size="sm"
+                        title="Tải đề (.docx) theo mẫu Bộ GD&ĐT — không kèm đáp án"
+                        onClick={() => onDownloadExam(g)}
+                      >
+                        <FileDown className="h-3.5 w-3.5" strokeWidth={1.75} />
+                      </IconButton>
+                    )}
                     <IconButton
                       size="sm"
                       variant="destructive"

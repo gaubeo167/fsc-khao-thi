@@ -52,6 +52,7 @@ node scripts/test-bulk-select.mjs      # tích chọn hàng loạt chỉ chạm 
 node scripts/test-question-delete.mjs  # xoá cứng: soát đủ 6 nguồn tham chiếu + chuỗi phiên bản
 node scripts/test-campus-scope.mjs    # ô chọn Môn·Khối theo đúng cơ sở đang thao tác
 node scripts/test-approval-queue.mjs  # câu đã lưu trữ KHÔNG nằm trong hàng đợi duyệt
+node scripts/test-moet-export.mjs     # số liệu đề + ma trận xuất Word (Đ/S đếm theo ý)
 node scripts/check-design-tokens.mjs   # bánh cóc thang chữ (xem dưới)
 ```
 

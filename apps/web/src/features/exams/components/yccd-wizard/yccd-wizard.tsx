@@ -2432,7 +2432,11 @@ function StepSave({
               → Duyệt đề
             </Link>
             <Link
-              href="/admin/exam-blueprints?tab=generated"
+              // Kho đề của YCCĐ nằm ở /admin/yccd-exam, KHÔNG phải
+              // /admin/exam-blueprints — trang kia là kho của luồng "Tạo đề
+              // theo khung đề", một luồng khác. Link cũ đưa người dùng sang
+              // danh sách đề không có đề họ vừa sinh.
+              href="/admin/yccd-exam?tab=generated"
               className="rounded-md border bg-card px-3 py-1.5 text-[12.5px] font-semibold text-primary hover:bg-surface-2"
             >
               → Xem “Đề đã sinh”

@@ -14,8 +14,13 @@ import {
   X,
 } from "lucide-react";
 import dynamic from "next/dynamic";
+import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 
+import { toast } from "sonner";
+import { useCompetenciesStore } from "@/features/competencies/state/competencies-store";
+import { useQuestionsStore } from "@/features/question-bank/state/questions-store";
+import { useCampusesStore } from "@/features/campus/state/campuses-store";
 import { useAuthStore } from "@/features/auth/state/auth-store";
 import { useCampusStore } from "@/features/campus/state/campus-store";
 import { useGradesStore } from "@/features/grades/state/grades-store";
@@ -122,10 +127,24 @@ export function YccdExamManager() {
   const shifts = useShiftsStore((s) => s.shifts);
   const subjects = useSubjectsStore((s) => s.subjects);
   const grades = useGradesStore((s) => s.grades);
+  const competencies = useCompetenciesStore((s) => s.competencies);
+  const questions = useQuestionsStore((s) => s.questions);
+  const campuses = useCampusesStore((s) => s.campuses);
 
   const [query, setQuery] = useState("");
   const [showArchived, setShowArchived] = useState(false);
-  const [tab, setTab] = useState<"packages" | "generated">("packages");
+  /**
+   * Tab mở sẵn đọc từ URL (`?tab=generated`).
+   *
+   * Bước cuối của trợ lý tạo đề có nút "→ Xem Đề đã sinh"; nút đó phải mở
+   * đúng kho đề của YCCĐ. Không đọc query ở đây thì link nào cũng rơi về tab
+   * "Đề YCCĐ" và người dùng phải tự bấm tiếp một lần nữa để tới chỗ họ vừa
+   * được hứa.
+   */
+  const searchParams = useSearchParams();
+  const [tab, setTab] = useState<"packages" | "generated">(
+    searchParams.get("tab") === "generated" ? "generated" : "packages",
+  );
   const [trialing, setTrialing] = useState<GeneratedExam | null>(null);
   const [viewing, setViewing] = useState<GeneratedExam | null>(null);
   const removeGenerated = useGeneratedStore((s) => s.remove);
@@ -232,6 +251,72 @@ export function YccdExamManager() {
 
   const canManage = !!session && session.role !== "student";
 
+  /** Tên hiển thị của một node khung YCCĐ — ma trận in tên Bài/Chương, không in id. */
+  const nameOfCompetency = (id: string) =>
+    competencies.find((c) => c.id === id)?.title ?? id;
+  const competencyById = (id: string) => competencies.find((c) => c.id === id);
+
+  /** Bối cảnh in đầu file — lấy theo gói đề, không đoán. */
+  function metaOf(pkg: ExamPackage | undefined, duration: number) {
+    const bp = pkg ? blueprints.find((b) => b.id === pkg.blueprintId) : undefined;
+    return {
+      schoolName: campuses.find((c) => c.id === session?.campusId)?.name ?? "FPT Schools",
+      examName: pkg?.name ?? "Đề kiểm tra",
+      subjectName: subjects.find((x) => x.id === bp?.subjectId)?.name ?? "—",
+      gradeName: grades.find((x) => x.id === bp?.gradeId)?.name ?? "—",
+      durationMinutes: duration,
+    };
+  }
+
+  /** ĐỀ THI ra Word. `docx` nạp động trong `buildExamDocx`. */
+  async function downloadExam(g: GeneratedExam) {
+    const pkg = packages.find((p) => p.id === g.packageId);
+    const matrix = pkg?.yccdMatrix;
+    if (!matrix) {
+      toast.error("Gói đề này chưa có ma trận YCCĐ nên chưa xuất được đề theo mẫu Bộ.");
+      return;
+    }
+    try {
+      const { buildExamDocx, downloadBlob } = await import("../../lib/moet-docx");
+      const blob = await buildExamDocx({
+        meta: { ...metaOf(pkg, g.duration), code: g.name },
+        questionIds: g.questionIds,
+        questionById: new Map(questions.map((q) => [q.id, q])),
+        matrix,
+      });
+      downloadBlob(blob, `${g.name.replace(/\s+/g, "-")}.docx`);
+    } catch (e) {
+      toast.error(e instanceof Error ? `Không tạo được file: ${e.message}` : "Không tạo được file.");
+    }
+  }
+
+  /** MA TRẬN + BẢN ĐẶC TẢ ra Word. */
+  async function downloadMatrix(pkg: ExamPackage) {
+    const matrix = pkg.yccdMatrix;
+    if (!matrix) {
+      toast.error("Gói đề này chưa có ma trận YCCĐ.");
+      return;
+    }
+    // Bản đặc tả cần một mã đề mẫu để lấy "YCCĐ ra câu nào". Chưa sinh mã đề
+    // nào thì vẫn xuất được ma trận, chỉ là cột "Câu trong đề" trống.
+    const sample = generated.find((g) => g.packageId === pkg.id);
+    try {
+      const { buildMatrixDocx, downloadBlob } = await import("../../lib/moet-docx");
+      const blob = await buildMatrixDocx({
+        meta: metaOf(pkg, sample?.duration ?? pkg.duration ?? 0),
+        matrix,
+        scoring: pkg.scoringPolicy ?? null,
+        nameOfCompetency,
+        competencyById,
+        sampleQuestionIds: sample?.questionIds ?? [],
+        questionById: new Map(questions.map((q) => [q.id, q])),
+      });
+      downloadBlob(blob, `Ma-tran-${pkg.name.replace(/\s+/g, "-")}.docx`);
+    } catch (e) {
+      toast.error(e instanceof Error ? `Không tạo được file: ${e.message}` : "Không tạo được file.");
+    }
+  }
+
   if (tab === "generated") {
     return (
       <div className="space-y-4">
@@ -248,6 +333,8 @@ export function YccdExamManager() {
             if (confirm(`Xoá mã đề "${g.name}"?`)) removeGenerated(g.id);
           }}
           onGenerateMore={(p) => setMode({ view: "edit", pkg: p })}
+          onDownloadExam={downloadExam}
+          onDownloadMatrix={downloadMatrix}
           generateMoreLabel="Sinh thêm"
           emptyHint="Mở một đề YCCĐ → bước ⑤ để sinh mã đề."
         />
