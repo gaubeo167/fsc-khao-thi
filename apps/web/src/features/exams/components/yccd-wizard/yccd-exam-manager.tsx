@@ -300,8 +300,18 @@ export function YccdExamManager() {
     }
     try {
       const { buildExamDocx, downloadBlob } = await import("../../lib/moet-docx");
+      const m0 = metaOf(pkg, g.duration);
       const blob = await buildExamDocx({
-        meta: { ...metaOf(pkg, g.duration), code: g.name },
+        meta: {
+          schoolName: m0.schoolName,
+          examTitle: pkg?.name ?? "KIỂM TRA",
+          schoolYear: schoolYearLabel(),
+          subjectName: m0.subjectName,
+          gradeName: m0.gradeName,
+          durationMinutes: g.duration,
+          // Mã đề lấy phần số trong tên ("Đề 001" → "001"); không có thì dùng tên.
+          code: (g.name.match(/\d+/) || [g.name])[0],
+        },
         questionIds: g.questionIds,
         questionById: new Map(questions.map((q) => [q.id, q])),
         matrix,

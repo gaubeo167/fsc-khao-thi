@@ -394,6 +394,28 @@ export function roman(n: number): string {
   return out || "I";
 }
 
+/**
+ * Cắt mọi thứ KHÔNG được phát cho học sinh khỏi nội dung câu.
+ *
+ * Đề mẫu SHOC 10 là bản soạn nên còn dính ba thứ:
+ *   [SI10.02.15.D01]  mã YCCĐ gắn kèm mỗi câu
+ *   <KEY=3>           đáp án câu trả lời ngắn
+ *   Lời giải: …       lời giải câu tự luận
+ *
+ * Cắt ở TẦNG DỮ LIỆU chứ không trông vào người soạn nhớ xoá — quên một lần là
+ * lộ đáp án cả phòng thi. Đây là lý do hàm này nằm ở module thuần có test,
+ * không nằm lẫn trong chỗ dựng file.
+ */
+export function stripAnswerArtifacts(s: string): string {
+  return String(s ?? "")
+    .replace(/\[[A-Za-z]+\d+(?:\.[A-Za-z0-9]+)+\]/g, "")
+    .replace(/<\s*KEY\s*=[^>]*>/gi, "")
+    .replace(/&lt;\s*KEY\s*=[^&]*&gt;/gi, "")
+    .replace(/\bLời giải\s*:[\s\S]*$/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /** Nhãn A/B/C/D cho phương án trắc nghiệm. */
 export function optionLabel(i: number): string {
   return String.fromCharCode(65 + i);

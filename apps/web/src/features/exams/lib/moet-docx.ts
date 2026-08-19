@@ -12,7 +12,7 @@
 import type { BloomLevel } from "@/features/competencies/data/types";
 import type { Question } from "@/features/question-bank/data/seed-questions";
 
-import type { ScoringPolicy, YccdMatrix } from "../data/types";
+import type { ScoringPolicy, YccdMatrix, YccdPart } from "../data/types";
 
 import {
   BLOOM_LABEL,
@@ -24,22 +24,13 @@ import {
   roman,
   round2,
   splitIntoParts,
-  unitsOf,
+  stripAnswerArtifacts,
+  subLetter,
 } from "./moet-export";
 
-export interface ExamDocMeta {
-  schoolName: string;
-  examName: string;
-  subjectName: string;
-  gradeName: string;
-  durationMinutes: number;
-  /** Mã đề in ở góc, vd "Đề 001". */
-  code: string;
-}
-
-/** Bỏ cú pháp nội bộ để chữ trong Word đọc được như người soạn nhìn thấy. */
+/** Chữ đưa vào Word: cắt đáp án (`stripAnswerArtifacts`) rồi bỏ cú pháp nội bộ. */
 function plainText(s: string): string {
-  return String(s ?? "")
+  return stripAnswerArtifacts(s)
     .replace(/\$\$([\s\S]*?)\$\$/g, "$1")
     .replace(/\$([^$\n]+)\$/g, "$1")
     .replace(/\*\*([^*]+)\*\*/g, "$1")
@@ -51,11 +42,61 @@ function plainText(s: string): string {
     .trim();
 }
 
+export interface ExamDocMeta {
+  /** "SỞ GIÁO DỤC VÀ ĐÀO TẠO THÀNH PHỐ ĐÀ NẴNG" — bỏ trống thì không in. */
+  departmentOfEducation?: string;
+  schoolName: string;
+  /** "KIỂM TRA GIỮA HỌC KÌ II" — lấy từ tên gói đề. */
+  examTitle: string;
+  schoolYear: string;
+  subjectName: string;
+  gradeName: string;
+  durationMinutes: number;
+  /** Mã đề in ở góc, vd "0401". */
+  code: string;
+}
+
 /**
- * ĐỀ THI — bố cục Phần I / II / III theo cấu hình phần của gói đề.
+ * Câu dẫn của từng phần, viết theo đúng chữ trong đề mẫu SHOC 10.
  *
- * Không in đáp án. Đề phát cho học sinh mà kèm đáp án là hỏng cả kỳ thi, nên
- * đây là mặc định và không có tuỳ chọn nào bật nó lên ở đây.
+ * Mỗi dạng có một câu dẫn riêng và học sinh đã quen đọc đúng câu đó. Viết lại
+ * cho "gọn hơn" là bắt cả phòng thi đọc một thứ lạ trong lúc tính giờ.
+ */
+function huongDan(part: YccdPart, soCau: number): string | null {
+  const t = part.questionTypes ?? [];
+  if (t.includes("multi-tf")) {
+    return `Thí sinh trả lời từ câu 1 đến câu ${soCau}. Trong mỗi ý a), b), c), d) ở mỗi câu thí sinh chọn đúng hoặc sai.`;
+  }
+  if (t.includes("short-answer")) {
+    return `Thí sinh trả lời từ câu 1 đến câu ${soCau}.`;
+  }
+  if (t.includes("mcq-single") || t.includes("mcq-multi")) {
+    return `Thí sinh trả lời từ câu 1 đến câu ${soCau}. Mỗi câu hỏi thí sinh chỉ chọn 1 phương án.`;
+  }
+  return null;
+}
+
+/**
+ * ĐỀ THI — dựng theo ĐÚNG đề mẫu `de-mau/1. SHOC 10 DE CHINH THUC_da gan ID.docx`,
+ * nhưng KHÔNG kèm đáp án.
+ *
+ * Bố cục lấy từ file mẫu, không phải tôi tự nghĩ:
+ *   · tiêu ngữ: Sở GD&ĐT · tên trường · "ĐỀ CHÍNH THỨC"
+ *   · "KIỂM TRA <kỳ> NĂM HỌC <năm>" · "Môn: X, Lớp Y" · "Mã đề NNNN"
+ *   · dòng Họ tên / Lớp / Phòng
+ *   · phần trắc nghiệm đánh "I." "II." "III." kèm câu dẫn riêng từng dạng
+ *   · tự luận tách riêng thành "PHẦN B: PHẦN TỰ LUẬN (N điểm)"
+ *
+ * ── Ba thứ trong file mẫu PHẢI bị bỏ ────────────────────────────────────
+ *
+ * File mẫu là bản soạn ("đã gắn ID"), không phải bản phát cho học sinh:
+ *   · `[SI10.02.15.D01]` — mã YCCĐ gắn kèm mỗi câu
+ *   · `<KEY=3>`          — đáp án câu trả lời ngắn
+ *   · `Lời giải:` …      — lời giải câu tự luận
+ *
+ * Cả ba đều bị cắt ở đây. Phát đề kèm bất kỳ thứ nào trong đó là hỏng cả kỳ
+ * thi, nên chúng bị chặn ngay tại chỗ dựng file chứ không dựa vào người soạn
+ * nhớ xoá.
  */
 export async function buildExamDocx(args: {
   meta: ExamDocMeta;
@@ -72,66 +113,77 @@ export async function buildExamDocx(args: {
 
   const P = (text: string, o: Record<string, unknown> = {}) =>
     new d.Paragraph({ children: [new d.TextRun({ text, ...o })] });
-  const center = (text: string, o: Record<string, unknown> = {}) =>
+  const ctr = (text: string, o: Record<string, unknown> = {}) =>
     new d.Paragraph({
       alignment: d.AlignmentType.CENTER,
       children: [new d.TextRun({ text, ...o })],
     });
+  const blank = () => new d.Paragraph({ children: [] });
 
-  const body: InstanceType<typeof d.Paragraph>[] = [
-    center(args.meta.schoolName.toUpperCase(), { bold: true }),
-    center("ĐỀ KIỂM TRA", { bold: true, size: 28 }),
-    center(`${args.meta.subjectName} — ${args.meta.gradeName}`, { bold: true }),
-    center(`Thời gian làm bài: ${args.meta.durationMinutes} phút`, { italics: true }),
-    center(`Mã đề: ${args.meta.code}`, { bold: true }),
-    new d.Paragraph({ children: [] }),
-    P("Họ và tên thí sinh: ......................................................  Số báo danh: ....................."),
-    new d.Paragraph({ children: [] }),
-  ];
+  const m = args.meta;
+  const lop = m.gradeName.replace(/\D/g, "") || m.gradeName;
+  const body: InstanceType<typeof d.Paragraph>[] = [];
+  if (m.departmentOfEducation) {
+    body.push(ctr(m.departmentOfEducation.toUpperCase(), { bold: true }));
+  }
+  body.push(
+    ctr(m.schoolName.toUpperCase(), { bold: true }),
+    ctr("ĐỀ CHÍNH THỨC", { bold: true }),
+    blank(),
+    ctr(`${m.examTitle.toUpperCase()} NĂM HỌC ${m.schoolYear}`, { bold: true, size: 26 }),
+    ctr(`Môn: ${m.subjectName.toUpperCase()}, Lớp ${lop}`, { bold: true }),
+    ctr(`Thời gian làm bài: ${m.durationMinutes} phút`, { italics: true }),
+    ctr(`Mã đề ${m.code}`, { bold: true }),
+    blank(),
+    P(
+      "Họ và tên thí sinh:................................................................ Số báo danh:...................",
+    ),
+    P(
+      "Lớp:.................................................................................................. Phòng:...........",
+    ),
+    blank(),
+  );
 
-  blocks.forEach((block, bi) => {
-    if (block.items.length === 0) return;
-    const donVi = block.items.reduce((s, it) => s + unitsOf(it.question), 0);
-    body.push(
-      P(
-        `PHẦN ${roman(bi + 1)}. ${block.part.label.toUpperCase()} ` +
-          `(${block.items.length} câu — ${round2(block.points)} điểm)`,
-        { bold: true },
-      ),
-    );
-    if (block.part.questionTypes.includes("multi-tf")) {
-      body.push(
-        P(
-          `Thí sinh trả lời từ câu 1 đến câu ${block.items.length}. ` +
-            `Trong mỗi ý a), b), c), d) chọn đúng hoặc sai. (${donVi} ý)`,
-          { italics: true },
-        ),
-      );
-    }
-    body.push(new d.Paragraph({ children: [] }));
+  // Trắc nghiệm đánh I./II./III.; tự luận tách sang PHẦN B như đề mẫu.
+  const tn = blocks.filter((b) => groupOfPart(b.part) === "TNKQ" && b.items.length > 0);
+  const tl = blocks.filter((b) => groupOfPart(b.part) === "Tự luận" && b.items.length > 0);
 
+  const renderItems = (block: (typeof blocks)[number]) => {
     for (const it of block.items) {
       const q = it.question;
-      body.push(P(`Câu ${it.indexInPart}. ${plainText(q.content)}`, { bold: false }));
+      body.push(P(`Câu ${it.indexInPart}. ${plainText(q.content)}`));
       if (q.type === "mcq-single" || q.type === "mcq-multi") {
         (q.options ?? []).forEach((o, i) =>
-          body.push(P(`   ${optionLabel(i)}. ${plainText(o.content)}`)),
+          body.push(P(`${optionLabel(i)}. ${plainText(o.content)}`)),
         );
       } else if (q.type === "multi-tf") {
         (q.subQuestions ?? []).forEach((sq, i) =>
-          body.push(P(`   ${String.fromCharCode(97 + i)}) ${plainText(sq.statement)}`)),
+          body.push(P(`${subLetter(i)}) ${plainText(sq.statement)}`)),
         );
       } else if (q.type === "short-answer") {
-        body.push(P("   Trả lời: ......................................................"));
+        body.push(P("Trả lời: ................................"));
       } else {
-        body.push(P("   ......................................................"));
+        body.push(P("................................................................"));
+        body.push(P("................................................................"));
       }
-      body.push(new d.Paragraph({ children: [] }));
+      body.push(blank());
     }
+  };
+
+  tn.forEach((block, i) => {
+    body.push(P(`${roman(i + 1)}.${block.part.label}`, { bold: true }));
+    const hd = huongDan(block.part, block.items.length);
+    if (hd) body.push(P(hd, { italics: true }));
+    renderItems(block);
   });
 
+  if (tl.length > 0) {
+    const diem = round2(tl.reduce((s, b) => s + b.points, 0));
+    body.push(P(`PHẦN B: PHẦN TỰ LUẬN (${diem} điểm)`, { bold: true }));
+    tl.forEach((block) => renderItems(block));
+  }
+
   if (leftover.length > 0) {
-    // Không im lặng bỏ câu. Đề in thiếu là thứ phải thấy TRƯỚC khi phát đề.
     body.push(
       P(
         `⚠ ${leftover.length} câu không thuộc phần nào trong cấu hình đề — kiểm lại cấu hình phần ở bước ④.`,
@@ -139,7 +191,7 @@ export async function buildExamDocx(args: {
       ),
     );
   }
-  body.push(center("--- HẾT ---", { bold: true }));
+  body.push(ctr("--- HẾT ---", { bold: true }));
 
   const doc = new d.Document({ sections: [{ children: body }] });
   return d.Packer.toBlob(doc);

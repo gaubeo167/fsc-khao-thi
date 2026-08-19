@@ -42,6 +42,7 @@ const {
   roman,
   optionLabel,
   round2,
+  stripAnswerArtifacts,
 } = await import(out);
 
 let pass = 0,
@@ -229,6 +230,49 @@ const q = (id, type, over = {}) => ({ id, type, content: `Nội dung ${id}`, ...
   check("số La Mã", [1, 2, 3, 4, 5, 9].map(roman).join() === "I,II,III,IV,V,IX");
   check("nhãn phương án A/B/C/D", [0, 1, 2, 3].map(optionLabel).join() === "A,B,C,D");
   check("làm tròn 2 chữ số", round2(0.1 + 0.2) === 0.3 && round2(1 / 3) === 0.33);
+}
+
+/* ── 6. Cắt đáp án khỏi đề — lấy chuỗi THẬT từ de-mau/SHOC 10 ─────────── */
+// Đề mẫu là bản soạn ("đã gắn ID") nên còn dính mã YCCĐ, <KEY=…> và Lời giải.
+// Lọt bất kỳ thứ nào ra bản phát cho học sinh là hỏng cả kỳ thi.
+{
+  const dm = (t) => stripAnswerArtifacts(t);
+
+  check(
+    "cắt mã YCCĐ đứng đầu câu",
+    dm("[SI10.02.15.D01] Thành tựu nào sau đây là kết quả của công nghệ tế bào động vật?") ===
+      "Thành tựu nào sau đây là kết quả của công nghệ tế bào động vật?",
+    dm("[SI10.02.15.D01] Thành tựu nào sau đây là kết quả của công nghệ tế bào động vật?"),
+  );
+  check(
+    "cắt mã có chữ F (Đúng–Sai)",
+    dm("[SI10.02.9.F02] Khi sinh vật bị kích thích") === "Khi sinh vật bị kích thích",
+  );
+  check(
+    "cắt mã có chữ S (trả lời ngắn)",
+    dm("[SI10.02.12.S05] Một nhóm tế bào ban đầu") === "Một nhóm tế bào ban đầu",
+  );
+  check("cắt <KEY=3>", dm("Hỏi ban đầu có bao nhiêu tế bào? <KEY=3>") === "Hỏi ban đầu có bao nhiêu tế bào?");
+  check("cắt KEY dạng đã escape", dm("Câu hỏi &lt;KEY=16&gt;") === "Câu hỏi");
+  check(
+    "cắt Lời giải và MỌI thứ phía sau",
+    dm("Trình bày quá trình. Lời giải: Nguyên nhân gây ung thư: - Sống ô nhiễm.") ===
+      "Trình bày quá trình.",
+    dm("Trình bày quá trình. Lời giải: Nguyên nhân gây ung thư: - Sống ô nhiễm."),
+  );
+  check(
+    "cắt được cả ba thứ trong một câu",
+    dm("[SI10.02.12.E02] Nội dung câu. <KEY=2> Lời giải: đáp án đây") === "Nội dung câu.",
+    dm("[SI10.02.12.E02] Nội dung câu. <KEY=2> Lời giải: đáp án đây"),
+  );
+  // Không được cắt nhầm chữ bình thường có dấu ngoặc vuông.
+  check(
+    "KHÔNG cắt nhầm ngoặc vuông thường",
+    dm("Cho biết [hình 1] mô tả gì?") === "Cho biết [hình 1] mô tả gì?",
+    dm("Cho biết [hình 1] mô tả gì?"),
+  );
+  check("câu sạch thì giữ nguyên", dm("Nguyên phân xảy ra ở đâu?") === "Nguyên phân xảy ra ở đâu?");
+  check("chuỗi rỗng / null không nổ", dm("") === "" && dm(null) === "");
 }
 
 console.log(`\n${pass} qua, ${fail} trượt`);
