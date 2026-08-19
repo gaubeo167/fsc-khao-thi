@@ -13,6 +13,14 @@ import { cn } from "@/lib/utils";
 import { MATH_ANY_SRC, mathAnyRe } from "@/lib/math-delimiters";
 
 import { buildAudioMarker, parseAudioMarker } from "../lib/audio-marker";
+import {
+  EDITOR_TD_CLASS,
+  EDITOR_TH_CLASS,
+  isTableRowLine,
+  pipeFromRows,
+  splitTableBlocks,
+  tableHtml,
+} from "../lib/table-block";
 
 interface Props {
   value: string;
@@ -343,8 +351,23 @@ export function WysiwygEditor({
     const cleanSource = sourceWithMarker.replace(POS, "");
     const insertAt = offset ?? cleanSource.length;
 
+    // Chèn vào GIỮA MỘT Ô BẢNG thì thẻ phải nằm gọn trong một dòng.
+    //
+    // Thẻ ảnh · video · audio tự bọc mình bằng dòng trống ("\n\n![…]\n\n")
+    // để đứng riêng một khối. Bên trong hàng bảng thì đúng những dòng trống
+    // đó xé hàng làm đôi và cả cái bảng vỡ ngay khi chèn.
+    const dauDong = cleanSource.lastIndexOf("\n", Math.max(0, insertAt - 1)) + 1;
+    const cuoiDong = cleanSource.indexOf("\n", insertAt);
+    const dongHienTai = cleanSource.slice(
+      dauDong,
+      cuoiDong < 0 ? cleanSource.length : cuoiDong,
+    );
+    const doanChen = isTableRowLine(dongHienTai)
+      ? snippet.replace(/\s*\n+\s*/g, " ").trim()
+      : snippet;
+
     const withCaret =
-      cleanSource.slice(0, insertAt) + snippet + POS + cleanSource.slice(insertAt);
+      cleanSource.slice(0, insertAt) + doanChen + POS + cleanSource.slice(insertAt);
     el.innerHTML = parseToHtml(withCaret);
     el.querySelectorAll<HTMLElement>('[data-image="1"]').forEach(attachImageResize);
 
@@ -1001,9 +1024,78 @@ export function WysiwygEditor({
    * Image/video/audio chips: require double-click to edit — single-click is
    * reserved for dragging the chip without surprise dialog pops.
    */
+  /**
+   * Ô bảng đang đặt con trỏ, `null` nếu con trỏ ở chỗ khác.
+   *
+   * Dùng để biết thêm/xoá hàng cột NÀO. Không có con trỏ trong bảng thì các
+   * hàm gọi tự lùi về hàng/cột cuối — vẫn làm được việc chứ không đứng im mà
+   * người dùng không hiểu vì sao.
+   */
+  function cellOfCaret(table: HTMLElement): HTMLTableCellElement | null {
+    const sel = window.getSelection();
+    const node = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).startContainer : null;
+    if (!node) return null;
+    const el = node.nodeType === Node.ELEMENT_NODE ? (node as HTMLElement) : node.parentElement;
+    const cell = el?.closest<HTMLTableCellElement>("td, th") ?? null;
+    return cell && table.contains(cell) ? cell : null;
+  }
+
+  /** Thêm / bớt hàng cột của bảng đang thao tác. */
+  function tableAction(table: HTMLElement, act: string) {
+    const rows = Array.from(table.querySelectorAll("tr"));
+    if (rows.length === 0) return;
+    const cell = cellOfCaret(table);
+    const rowIdx = cell ? rows.indexOf(cell.parentElement as HTMLTableRowElement) : -1;
+    const colIdx = cell ? Array.from(cell.parentElement?.children ?? []).indexOf(cell) : -1;
+    const cols = Math.max(...rows.map((r) => r.children.length));
+
+    if (act === "add-row") {
+      const tr = document.createElement("tr");
+      for (let i = 0; i < cols; i += 1) {
+        const td = document.createElement("td");
+        td.className = EDITOR_TD_CLASS;
+        td.appendChild(document.createElement("br"));
+        tr.appendChild(td);
+      }
+      const sau = rowIdx >= 0 ? rows[rowIdx] : rows[rows.length - 1];
+      sau?.parentElement?.insertBefore(tr, sau.nextSibling);
+    } else if (act === "del-row") {
+      // Bảng còn đúng một hàng thì xoá nốt là mất cả bảng — chặn lại.
+      if (rows.length <= 1) return;
+      (rowIdx >= 0 ? rows[rowIdx] : rows[rows.length - 1])?.remove();
+    } else if (act === "add-col") {
+      rows.forEach((r, ri) => {
+        const td = document.createElement("td");
+        td.className = ri === 0 ? EDITOR_TH_CLASS : EDITOR_TD_CLASS;
+        td.appendChild(document.createElement("br"));
+        const sau = colIdx >= 0 ? r.children[colIdx] : r.children[r.children.length - 1];
+        if (sau) r.insertBefore(td, sau.nextSibling);
+        else r.appendChild(td);
+      });
+    } else if (act === "del-col") {
+      if (cols <= 1) return;
+      rows.forEach((r) => {
+        const i = colIdx >= 0 ? colIdx : r.children.length - 1;
+        r.children[i]?.remove();
+      });
+    }
+    emit();
+  }
+
   function onClick(e: React.MouseEvent<HTMLDivElement>) {
     const target = e.target as HTMLElement;
     if (target.closest("[data-resize-handle='1']")) return;
+
+    const tblBtn = target.closest<HTMLElement>("[data-table-act]");
+    if (tblBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      const table = tblBtn
+        .closest<HTMLElement>("[data-table-wrap='1']")
+        ?.querySelector<HTMLElement>("[data-table='1']");
+      if (table) tableAction(table, tblBtn.getAttribute("data-table-act") ?? "");
+      return;
+    }
 
     // Image delete button — remove the chip + serialize
     const del = target.closest<HTMLElement>("[data-image-delete='1']");
@@ -1274,7 +1366,38 @@ function escapeHtml(s: string): string {
  *   • `[video:url | label]`   → video chip
  *   • `[audio:url | label]`   → audio chip
  */
+/** Thanh nút thêm/bớt hàng cột, chỉ hiện khi rê chuột vào bảng. */
+function tableToolbarHtml(): string {
+  const btn = (act: string, label: string, title: string) =>
+    `<button type="button" contenteditable="false" data-table-act="${act}" title="${escapeAttr(title)}" class="rounded border border-border bg-surface-1 px-1.5 py-0.5 text-meta hover:bg-surface-2">${escapeHtml(label)}</button>`;
+  return (
+    `<span data-table-ui="1" contenteditable="false" class="absolute right-1 top-1 z-10 hidden gap-1 rounded-md border border-border bg-surface-1/95 p-1 shadow-sm group-hover/tbl:flex">` +
+    btn("add-row", "+ hàng", "Thêm một hàng ở cuối bảng") +
+    btn("del-row", "− hàng", "Xoá hàng đang đặt con trỏ (không có thì xoá hàng cuối)") +
+    btn("add-col", "+ cột", "Thêm một cột ở cuối bảng") +
+    btn("del-col", "− cột", "Xoá cột đang đặt con trỏ (không có thì xoá cột cuối)") +
+    `</span>`
+  );
+}
+
+/**
+ * Chuỗi nguồn → HTML của ô soạn thảo.
+ *
+ * Cắt bảng RA TRƯỚC rồi mới tới các thẻ (công thức · ảnh · ô trống…), vì bảng
+ * là khối nhiều dòng còn thẻ thì nằm trong dòng. Nội dung từng ô lại đi qua
+ * đúng bộ dựng thẻ đó, nên công thức trong ô vẫn thành thẻ bấm sửa được.
+ */
 function parseToHtml(value: string): string {
+  return splitTableBlocks(value)
+    .map((seg) =>
+      seg.kind === "table"
+        ? tableHtml(seg.rows, chipsToHtml, tableToolbarHtml())
+        : chipsToHtml(seg.body),
+    )
+    .join("");
+}
+
+function chipsToHtml(value: string): string {
   // Single regex captures all chip patterns in source order
   const regex =
     new RegExp(
@@ -1466,6 +1589,15 @@ function serialize(root: HTMLElement): string {
     }
     if (node.nodeType !== Node.ELEMENT_NODE) return "";
     const el = node as HTMLElement;
+    // Thanh nút của bảng KHÔNG phải nội dung. Bỏ sót chỗ này thì chữ trên nút
+    // ("+ hàng", "− cột") trôi thẳng vào đề bài câu hỏi.
+    if (el.dataset.tableUi === "1") return "";
+    if (el.tagName === "TABLE") {
+      const pipe = pipeFromRows(Array.from(el.querySelectorAll("tr")), (c) =>
+        walk(c as unknown as Node),
+      );
+      return pipe ? `\n\n${pipe}\n\n` : "";
+    }
     if (el.dataset.math === "1") {
       const tex = el.getAttribute("data-tex") ?? "";
       const display = el.getAttribute("data-display") === "true";

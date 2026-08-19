@@ -41,6 +41,8 @@ const {
   isTableRowLine,
   hasDataTable,
   tableToPlainLines,
+  pipeFromRows,
+  tableHtml,
 } = await import(out);
 
 let pass = 0,
@@ -252,6 +254,112 @@ check("nội dung có bảng", hasDataTable("| a | b |\n| --- | --- |\n| c | d |
     );
     check("…và bảng vẫn đủ 2 hàng", blocks[1]?.kind === "table" && blocks[1].rows.length === 2);
   }
+}
+
+/* ── 9. Ô SOẠN THẢO: chiều LƯU (DOM → chuỗi) ──────────────────────────── */
+// Đây là chiều nguy hiểm. Ô soạn thảo lưu lại sau MỖI LẦN GÕ, nên đọc sai
+// bảng một cái là mỗi phím bấm đều ghi hỏng nội dung câu hỏi thêm một ít.
+//
+// Vật giả thay cho DOM: chỉ cần `tagName` và `children`.
+const TR = (...tds) => ({ children: tds.map((t) => ({ tagName: "TD", _t: t })) });
+const doc = (c) => c._t ?? "";
+{
+  const rows = [TR("Giai đoạn", "Điểm"), TR("Phát triển", "0,25")];
+  const pipe = pipeFromRows(rows, doc);
+  check(
+    "hai hàng → đúng ba dòng (có hàng ngăn cách)",
+    pipe.split("\n").length === 3,
+    JSON.stringify(pipe),
+  );
+  check("đọc lại ra đúng bảng cũ", splitTableBlocks(pipe)[0]?.rows.length === 2);
+}
+{
+  // Ô có xuống dòng: contentEditable hay chèn <br>, `walk` trả về "\n".
+  const rows = [TR("a", "b"), { children: [{ tagName: "TD", _t: "dòng một\ndòng hai" }, { tagName: "TD", _t: "x" }] }];
+  const b = splitTableBlocks(pipeFromRows(rows, doc))[0];
+  check("xuống dòng TRONG ô không xé hàng làm đôi", b?.rows.length === 2, String(b?.rows.length));
+  check("…hai dòng gộp lại trong một ô", b?.rows[1][0] === "dòng một dòng hai", b?.rows[1][0]);
+}
+{
+  // Thẻ KHÔNG phải ô (thanh nút, chú thích) phải bị bỏ qua.
+  const rows = [
+    { children: [{ tagName: "TD", _t: "a" }, { tagName: "SPAN", _t: "+ hàng" }, { tagName: "TD", _t: "b" }] },
+    TR("c", "d"),
+  ];
+  const b = splitTableBlocks(pipeFromRows(rows, doc))[0];
+  check("thẻ không phải ô bị bỏ qua", b?.rows[0].join("·") === "a·b", b?.rows[0].join("·"));
+}
+{
+  const rows = [TR("Ô có | gạch đứng", "x"), TR("y", "z")];
+  const b = splitTableBlocks(pipeFromRows(rows, doc))[0];
+  check("ô người soạn gõ '|' vẫn về nguyên vẹn", b?.rows[0][0] === "Ô có | gạch đứng", b?.rows[0][0]);
+  check("…và không thành ba cột", b?.rows[0].length === 2, String(b?.rows[0].length));
+}
+check("bảng rỗng → chuỗi rỗng, không ghi bảng cụt", pipeFromRows([], doc) === "");
+check("hàng không có ô nào → chuỗi rỗng", pipeFromRows([{ children: [] }], doc) === "");
+
+/* ── 10. Ô SOẠN THẢO: vòng tròn chuỗi → HTML → chuỗi ───────────────────── */
+// Gõ một chữ rồi lưu mà bảng biến dạng thì hỏng dần theo từng phím.
+{
+  const nguon = [
+    "Hoàn thành bảng:",
+    "",
+    "| Giai đoạn | Mô tả | Điểm |",
+    "| --- | --- | --- |",
+    "| Phát triển | Từ 1 tế bào mầm | 0,25 |",
+    "| Kết quả | 4 tinh trùng | 0,25 |",
+  ].join("\n");
+  const blocks = splitTableBlocks(nguon);
+  const bang = blocks.find((b) => b.kind === "table");
+  // Dựng HTML rồi đọc ngược bằng chính vật giả ở trên.
+  const html = tableHtml(bang.rows, (c) => c, '<span data-table-ui="1">+ hàng</span>');
+  check("HTML có mốc bảng", html.includes('data-table="1"'));
+  check("HTML có thanh nút", html.includes('data-table-ui="1"'));
+  check("ô KHÔNG bị khoá gõ", !/(<td[^>]*contenteditable="false")/.test(html), html.slice(0, 120));
+  check("hàng đầu là tiêu đề (đậm)", html.includes("font-semibold"));
+  check("cuộn ngang riêng cho bảng rộng", html.includes("overflow-x-auto"));
+
+  const rowsLai = bang.rows.map((r) => TR(...r));
+  const lai = pipeFromRows(rowsLai, doc);
+  check("chuỗi → bảng → chuỗi KHÍT", lai === toPipeTable(bang.rows), JSON.stringify(lai));
+  const lai2 = pipeFromRows(splitTableBlocks(lai)[0].rows.map((r) => TR(...r)), doc);
+  check("vòng thứ hai vẫn khít (không trôi dần)", lai2 === lai);
+}
+{
+  // Ô rỗng phải giữ chỗ, không thì các cột sau dồn lên nhau.
+  const html = tableHtml([["a", ""], ["", "d"]], (c) => c);
+  check("ô rỗng vẫn dựng ra ô", (html.match(/<td/g) ?? []).length === 4, String((html.match(/<td/g) ?? []).length));
+  check("ô rỗng có <br> để gõ vào được", html.includes("<br>"));
+}
+
+/* ── 11. Chèn thẻ khi con trỏ đang ở TRONG ô bảng ─────────────────────── */
+// Thẻ ảnh · video · audio tự bọc mình bằng dòng trống để đứng riêng một khối.
+// Bên trong hàng bảng thì đúng những dòng trống đó xé hàng làm đôi — bảng vỡ
+// ngay lúc chèn. Bản vá nhận ra dòng đang đứng là hàng bảng thì ép thẻ về một
+// dòng; ca này khoá cả hai phía để không ai "dọn" nhầm.
+{
+  const anh = "\n\n![](data:image/png;base64,AAA)\n\n";
+  const epMotDong = (sn) => sn.replace(/\s*\n+\s*/g, " ").trim();
+
+  const hang = "| Phát triển | Từ 1 tế bào mầm | 0,25 |";
+  check("dòng đang đứng ĐƯỢC nhận là hàng bảng", isTableRowLine(hang) === true);
+
+  const vo = hang.slice(0, 14) + anh + hang.slice(14);
+  check("nếu KHÔNG ép: bảng vỡ thành nhiều dòng", vo.split("\n").length > 1);
+
+  const lanh = hang.slice(0, 14) + epMotDong(anh) + hang.slice(14);
+  check("ép rồi: vẫn đúng một dòng", lanh.split("\n").length === 1);
+  check("…và vẫn là hàng bảng hợp lệ", isTableRowLine(lanh) === true, lanh.slice(0, 60));
+  const b = splitTableBlocks(`| a | b | c |\n| --- | --- | --- |\n${lanh}`)[0];
+  check("…đọc lại vẫn đủ 3 cột", b?.rows[1]?.length === 3, String(b?.rows[1]?.length));
+  check(
+    "…và ảnh còn nguyên trong đúng ô người soạn đặt con trỏ",
+    /^!\[\]\(data:image[^)]*\) Từ 1 tế bào mầm$/.test(b?.rows[1]?.[1] ?? ""),
+    b?.rows[1]?.[1],
+  );
+
+  // Ngoài bảng thì KHÔNG được ép — ảnh phải đứng riêng khối như cũ.
+  check("dòng thường không phải hàng bảng", isTableRowLine("Câu hỏi bình thường.") === false);
 }
 
 console.log(`\n${pass} qua, ${fail} trượt`);

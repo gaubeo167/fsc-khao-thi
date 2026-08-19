@@ -196,3 +196,88 @@ export function hasDataTable(source: string): boolean {
 export function tableToPlainLines(rows: readonly (readonly string[])[]): string[] {
   return rows.map((r) => r.map((c) => c.trim()).filter(Boolean).join(" · "));
 }
+
+/* ────────────────────────────────────────────────────────────────────────
+ * Cầu nối với ô soạn thảo
+ *
+ * Ô soạn thảo là contentEditable: chuỗi → HTML để hiện, HTML → chuỗi để lưu.
+ * Hai hàm dưới giữ phần LOGIC của chiều đó ở đây, tách khỏi DOM, để test
+ * được mà không cần dựng cả trình duyệt.
+ *
+ * Chiều lưu là chiều nguy hiểm: đọc sai một cái thì MỖI LẦN GÕ một chữ trong
+ * ô đều ghi lại nội dung câu hỏi sai đi.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/** Đủ để nhận ra ô và duyệt con — hợp với cả DOM thật lẫn vật giả trong test. */
+export interface CellLike {
+  tagName: string;
+}
+export interface RowLike {
+  children: ArrayLike<CellLike>;
+}
+
+/**
+ * Các hàng trong DOM → đoạn văn bản kiểu gạch đứng.
+ *
+ * `readCell` do chỗ gọi đưa vào vì ô soạn thảo phải đọc được cả thẻ công thức
+ * bên trong ô, không chỉ chữ trần.
+ *
+ * Trả "" khi bảng rỗng — chỗ gọi bỏ hẳn đi thay vì ghi ra một bảng không ô.
+ */
+export function pipeFromRows(
+  rows: ArrayLike<RowLike>,
+  readCell: (cell: CellLike) => string,
+): string {
+  const out: string[][] = [];
+  for (let i = 0; i < rows.length; i += 1) {
+    const r = rows[i];
+    if (!r) continue;
+    const cells: string[] = [];
+    for (let j = 0; j < r.children.length; j += 1) {
+      const c = r.children[j];
+      if (!c) continue;
+      const tag = c.tagName.toUpperCase();
+      if (tag !== "TD" && tag !== "TH") continue;
+      // Một ô là MỘT dòng trong cú pháp gạch đứng. Xuống dòng trong ô phải
+      // gộp lại, không thì lúc đọc ngược hàng vỡ làm đôi.
+      cells.push(readCell(c).replace(/\s+/g, " ").trim());
+    }
+    if (cells.length > 0) out.push(cells);
+  }
+  return out.length > 0 ? toPipeTable(out) : "";
+}
+
+/** Lớp CSS của ô bảng trong ô soạn thảo — thân và tiêu đề. */
+export const EDITOR_TD_CLASS = "border border-border px-2 py-1 align-top min-w-[4rem]";
+export const EDITOR_TH_CLASS = `${EDITOR_TD_CLASS} bg-muted/50 font-semibold`;
+
+/**
+ * Bảng → HTML gõ được của ô soạn thảo.
+ *
+ * `renderCell` do chỗ gọi đưa vào để nội dung ô đi qua đúng bộ dựng thẻ —
+ * công thức trong ô vẫn thành thẻ bấm sửa được.
+ *
+ * Ô KHÔNG khoá `contenteditable`: người soạn phải gõ thẳng vào ô được. Chỉ
+ * thanh nút mới khoá, và nó mang `data-table-ui` để lúc lưu bị bỏ qua.
+ */
+export function tableHtml(
+  rows: readonly (readonly string[])[],
+  renderCell: (cell: string) => string,
+  toolbarHtml = "",
+): string {
+  const body = rows
+    .map((r, ri) => {
+      const cls = ri === 0 ? EDITOR_TH_CLASS : EDITOR_TD_CLASS;
+      const cells = r
+        .map((c) => `<td class="${cls}">${renderCell(c) || "<br>"}</td>`)
+        .join("");
+      return `<tr>${cells}</tr>`;
+    })
+    .join("");
+  return (
+    `<div data-table-wrap="1" class="fsc-table-wrap group/tbl relative my-2 overflow-x-auto">` +
+    toolbarHtml +
+    `<table data-table="1" class="w-full border-collapse border border-border text-left">` +
+    `<tbody>${body}</tbody></table></div>`
+  );
+}
