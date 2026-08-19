@@ -162,5 +162,66 @@ check(
   matchOutcome("SI10.02.12.E03", fromDoc)?.code === "SI10.02.12.E03",
 );
 
+/* ── 9. Bộ đọc khung phải đọc được ĐÚNG những gì splitCode đọc được ────── */
+// Lệch giữa hai đầu là lỗi im lặng tệ nhất của luồng này: khung MẤT lá, còn đề
+// vẫn trích dẫn mã đó. `matchOutcome` không tìm ra mã đầy đủ nên tụt xuống
+// đường "cùng số chỉ báo, khác chữ" và gắn câu vào MỘT LÁ KHÁC — giao diện báo
+// "khớp theo số chỉ báo" y như bình thường. Không màn nào phát hiện hộ.
+const khungLine = (code, desc) =>
+  ["[SI10.02]: 2. Sinh học tế bào", "2.15. Công nghệ tế bào", `[${code}] ${desc}`].join("\n");
+const leafOf = (code, desc = "a. Nội dung") => {
+  const r = parseFrameworkText(khungLine(code, desc));
+  return r.tree[0]?.children?.[0]?.children?.[0] ?? null;
+};
+
+check("chỉ báo HAI chữ không bị bỏ im", leafOf("SI10.02.15.EE1")?.code === "SI10.02.15.EE1");
+check(
+  "chỉ báo có đuôi độ khó `.a` đọc được, và đuôi bị cắt khỏi mã",
+  leafOf("SI10.02.15.E01.a")?.code === "SI10.02.15.E01",
+);
+check("chỉ báo một chữ vẫn nguyên như cũ", leafOf("SI10.02.15.E01")?.code === "SI10.02.15.E01");
+
+// Cùng một mã thì hai đầu phải cùng đọc ra, hoặc cùng từ chối.
+for (const code of ["SI10.02.15.E01", "SI10.02.15.EE1", "SI10.02.15.E01.a"]) {
+  check(
+    `khung và splitCode cùng đọc được ${code}`,
+    leafOf(code) !== null && splitCode(code) !== null,
+  );
+}
+
+// Mã đọc không ra thì phải NÊU RA, không rơi im lặng.
+const bad = parseFrameworkText(khungLine("SI10.02.15.01", "d. Không có chữ"));
+check("mã đọc không ra thì báo lên `skipped`", bad.skipped.length === 1, JSON.stringify(bad.skipped));
+check("mã đọc không ra thì KHÔNG đếm vào chỉ báo", bad.counts.indicators === 0);
+check(
+  "khung đọc được bình thường thì `skipped` rỗng",
+  parseFrameworkText(khungLine("SI10.02.15.E01", "a. Ổn")).skipped.length === 0,
+);
+
+// Ca thật đứng sau báo lỗi của người dùng: khung ghi cả D01 lẫn E01, nhưng E01
+// viết kèm đuôi độ khó. Trước bản vá E01 rơi mất, nên đề ghi E01 khớp NHẦM
+// sang D01 mà vẫn hiện "khớp theo số chỉ báo".
+const khungHaiLa = parseFrameworkText(
+  [
+    "[SI10.02]: 2. Sinh học tế bào",
+    "2.15. Công nghệ tế bào",
+    "[SI10.02.15.D01] a. Nêu được thành tựu",
+    "[SI10.02.15.E01.a] b. Vận dụng giải thích",
+  ].join("\n"),
+);
+const laHaiLa = khungHaiLa.tree[0].children[0].children;
+check("khung giữ đủ hai lá D01 và E01", laHaiLa.length === 2, `được ${laHaiLa.length}`);
+const idxHaiLa = buildOutcomeIndex(
+  laHaiLa.map((l, i) => ({ id: `h${i}`, code: l.code, title: l.name, bloomLevel: i + 1 })),
+);
+check(
+  "đề ghi E01 khớp ĐÚNG lá E01, không lệch sang D01",
+  matchOutcome("SI10.02.15.E01", idxHaiLa)?.code === "SI10.02.15.E01",
+);
+check(
+  "khớp bằng mã đầy đủ chứ không phải đoán theo số chỉ báo",
+  matchOutcome("SI10.02.15.E01", idxHaiLa)?.via === "ma-day-du",
+);
+
 console.log(`\n${pass} qua, ${fail} trượt`);
 process.exit(fail === 0 ? 0 : 1);

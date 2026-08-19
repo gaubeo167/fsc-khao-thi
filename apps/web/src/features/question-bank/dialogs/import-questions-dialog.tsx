@@ -37,6 +37,7 @@ import { useCampusStore } from "@/features/campus/state/campus-store";
 import { useCompetenciesStore } from "@/features/competencies/state/competencies-store";
 import { useGradesStore } from "@/features/grades/state/grades-store";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
+import { keepTocSelection, tocInScope } from "@/features/subjects/lib/toc-scope";
 import { authHeaders } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
@@ -209,18 +210,36 @@ export function ImportQuestionsDialog({
    * mọi khối), sắp theo thứ tự người soạn đặt.
    */
   const tocOptions = useMemo(
-    () =>
-      tocNodes
-        .filter(
-          (n) =>
-            n.subjectId === subjectId &&
-            (n.gradeId == null || n.gradeId === gradeId),
-        )
-        .sort((a, b) => a.order - b.order),
+    // Dùng luật chung `tocInScope` chứ không chép lại điều kiện lọc — bản chép
+    // tay là cách luật này đã đi lệch ở năm file khác, xem `toc-scope.ts`.
+    () => tocInScope(tocNodes, subjectId, gradeId).sort((a, b) => a.order - b.order),
     [tocNodes, subjectId, gradeId],
   );
   /** Môn có mục lục thì BẮT chọn chỗ cất trước khi tải file. */
   const needToc = tocOptions.length > 0;
+
+  /**
+   * Đổi Môn/Khối thì BỎ chỗ cất đã chọn của môn cũ.
+   *
+   * `tocNodeId` sống độc lập với hai ô kia, nên trước đây chọn môn A → chọn
+   * chỗ cất X → đổi sang môn B thì X vẫn nằm nguyên trong state. Hai đường
+   * hỏng, cả hai đều lặng lẽ:
+   *
+   *   1. `<select>` không có <option> nào mang giá trị X nên trình duyệt hiện
+   *      dòng đầu "— Chọn chỗ cất —". Người dùng NHÌN thấy "chưa chọn", còn
+   *      state thì vẫn giữ X — cái được ghi vào câu hỏi không phải cái họ
+   *      thấy trên màn hình.
+   *   2. `missingScope` thấy `tocNodeId` có giá trị nên không đòi chọn lại,
+   *      và cả đề được cất vào một nhánh mục lục THUỘC MÔN KHÁC.
+   *
+   * Đây đúng cái luật mà `toc-scope.ts` đặt ra cho mục lục: không mượn nhánh
+   * của môn/khối khác. Lọc theo `tocOptions` (chứ không chỉ nghe `subjectId`)
+   * thì bắt được cả trường hợp môn mới KHÔNG có mục lục — lúc đó ô select
+   * không render, nhưng giá trị cũ vẫn phải bị bỏ.
+   */
+  useEffect(() => {
+    setTocNodeId((cur) => keepTocSelection(tocOptions, cur) ?? "");
+  }, [tocOptions]);
 
   /**
    * Những ô bắt buộc còn trống. Nêu TÊN từng ô chứ không chỉ chặn nút: người

@@ -48,6 +48,7 @@ node scripts/test-my-shifts-order.mjs # lịch thi HS: việc cần làm lên tr
 node scripts/test-edit-permission.mjs # ai được sửa trực tiếp câu đã dùng trong đề
 node scripts/test-refresh-frozen.mjs  # đẩy câu đã sửa vào đề đang đóng băng
 node scripts/test-user-update-plan.mjs # sửa hồ sơ ≠ đổi mật khẩu (hai kho khác nhau)
+node scripts/test-bulk-select.mjs      # tích chọn hàng loạt chỉ chạm dòng đang thấy
 node scripts/check-design-tokens.mjs   # bánh cóc thang chữ (xem dưới)
 ```
 

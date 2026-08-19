@@ -42,6 +42,27 @@ export function tocInScope<T extends ScopedTocNode>(
   );
 }
 
+/**
+ * Chỗ cất đang chọn có còn hợp lệ sau khi đổi Môn/Khối không.
+ *
+ * Ô chọn mục lục và ô chọn Môn/Khối là ba state rời nhau, nên đổi môn KHÔNG tự
+ * bỏ chỗ cất đã chọn của môn cũ. Hỏng theo cách khó thấy nhất: `<select>` không
+ * có <option> nào mang giá trị đó nên trình duyệt hiện dòng đầu "— Chọn —",
+ * người dùng nhìn thấy "chưa chọn" trong khi state vẫn giữ node của môn cũ, và
+ * cái được GHI không phải cái họ THẤY.
+ *
+ * Trả `null` nghĩa là "bỏ lựa chọn đi, bắt chọn lại". Cùng luật với
+ * `tocInScope`: thà để trống và đòi chọn lại còn hơn cất câu hỏi vào nhánh
+ * mục lục của môn khác.
+ */
+export function keepTocSelection<T extends ScopedTocNode>(
+  scoped: T[],
+  selectedId: string | null | undefined,
+): string | null {
+  if (!selectedId) return null;
+  return scoped.some((n) => n.id === selectedId) ? selectedId : null;
+}
+
 export interface FlatTocOption {
   id: string;
   label: string;

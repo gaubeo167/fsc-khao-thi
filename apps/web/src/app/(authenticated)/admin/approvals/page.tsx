@@ -12,7 +12,7 @@ import {
   XCircle,
 } from "lucide-react";
 import dynamic from "next/dynamic";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,7 +32,9 @@ import { useGradesStore } from "@/features/grades/state/grades-store";
 import { MaterialCard } from "@/features/learning-materials/components/material-card";
 import type { LearningMaterial } from "@/features/learning-materials/data/types";
 import { useMaterialsStore } from "@/features/learning-materials/state/materials-store";
+import { BulkActionBar } from "@/features/question-bank/components/bulk-action-bar";
 import { QuestionCard } from "@/features/question-bank/components/question-card";
+import { useBulkSelect } from "@/features/question-bank/hooks/use-bulk-select";
 import {
   QUESTION_TYPES,
   type QuestionType,
@@ -48,6 +50,9 @@ import { cn } from "@/lib/utils";
 
 type Mode = "pending" | "approved" | "rejected";
 type Kind = "questions" | "packages" | "materials";
+
+/** Id của một câu — xem chú thích cùng tên ở trang Ngân hàng câu hỏi. */
+const questionId = (q: Question) => q.id;
 
 const MaterialViewerDialog = dynamic(
   () =>
@@ -110,8 +115,31 @@ export default function ApprovalsPage() {
     });
   }, [scoped, mode, typeFilter, subjectFilter, gradeFilter, search]);
 
+  /**
+   * Tích chọn để duyệt hàng loạt. Cắt theo `filtered` nên đổi tab/bộ lọc là
+   * tập đã tích co lại theo — không bao giờ duyệt một câu đang bị ẩn.
+   */
+  const bulk = useBulkSelect(filtered, questionId);
+  const toggleSelect = useCallback((q: Question) => bulk.toggle(q.id), [bulk.toggle]);
+  /** Xác nhận duyệt hàng loạt — `null` là chưa mở. */
+  const [bulkApproving, setBulkApproving] = useState<Question[] | null>(null);
+
   function approve(q: Question) {
     setStatus(q.id, "approved", session?.userId);
+  }
+
+  /**
+   * Duyệt hàng loạt.
+   *
+   * Gọi `setStatus` từng câu chứ không ghi tắt: mỗi lần duyệt phải để lại một
+   * `AuditEvent` riêng mang tên người duyệt. Duyệt 40 câu bằng một vết audit
+   * gộp thì sau này không lần được ai chịu trách nhiệm cho câu nào — mà đó
+   * chính là lý do bước duyệt tồn tại.
+   */
+  function performBulkApprove(rows: Question[]) {
+    for (const q of rows) setStatus(q.id, "approved", session?.userId);
+    bulk.clear();
+    setBulkApproving(null);
   }
   function openReject(q: Question) {
     setRejectTarget(q);
@@ -308,12 +336,37 @@ export default function ApprovalsPage() {
           </p>
         </div>
       ) : (
-        <div className="mt-4 grid grid-cols-1 gap-3">
+        <div className="mt-4">
+          {/* Duyệt nhanh đồng loạt. Chỉ ở tab "Chờ duyệt" và chỉ với người có
+              quyền — hai tab kia là lịch sử, thao tác hàng loạt ở đó không có
+              nghĩa gì ngoài rủi ro bấm nhầm. */}
+          {mode === "pending" && canApprove && (
+            <BulkActionBar
+              allSelected={bulk.allSelected}
+              someSelected={bulk.someSelected}
+              count={bulk.count}
+              visibleCount={filtered.length}
+              onToggleAll={bulk.toggleAll}
+              onClear={bulk.clear}
+            >
+              {bulk.count > 0 && (
+                <Button size="sm" onClick={() => setBulkApproving(bulk.rowsSelected)}>
+                  <ThumbsUp className="h-3.5 w-3.5" />
+                  Duyệt {bulk.count} câu
+                </Button>
+              )}
+            </BulkActionBar>
+          )}
+          <div className="grid grid-cols-1 gap-3">
           {filtered.map((q, idx) => (
             <div key={q.id} className="space-y-2">
               <QuestionCard
                 question={q}
                 index={idx}
+                selected={bulk.isSelected(q.id)}
+                onToggleSelect={
+                  mode === "pending" && canApprove ? toggleSelect : undefined
+                }
                 onView={() => setViewing(q)}
                 onEdit={() => setViewing(q)}
                 onDelete={() => setViewing(q)}
@@ -360,11 +413,20 @@ export default function ApprovalsPage() {
               )}
             </div>
           ))}
+          </div>
         </div>
       )}
 
       </>
       )}
+
+      <BulkApproveDialog
+        rows={bulkApproving}
+        onCancel={() => setBulkApproving(null)}
+        onConfirm={() => {
+          if (bulkApproving) performBulkApprove(bulkApproving);
+        }}
+      />
 
       <ViewQuestionDialog question={viewing} onClose={() => setViewing(null)} />
 
@@ -1044,6 +1106,71 @@ function PackageRejectDialog({
           >
             <ThumbsDown className="h-4 w-4" />
             Xác nhận từ chối
+          </Button>
+        </footer>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * Xác nhận trước khi duyệt hàng loạt.
+ *
+ * Duyệt là đưa câu vào kho dùng chung của cả trường, nên bước xác nhận phải
+ * LIỆT KÊ mã chứ không chỉ đếm: người duyệt 40 câu một lượt cần một cơ hội
+ * nhìn thấy mình có lỡ tích nhầm câu của môn khác hay không. Huỷ duyệt được
+ * ở tab "Đã duyệt", nhưng chỉ khi biết là mình đã duyệt nhầm.
+ */
+function BulkApproveDialog({
+  rows,
+  onCancel,
+  onConfirm,
+}: {
+  rows: Question[] | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const n = rows?.length ?? 0;
+  return (
+    <Dialog open={Boolean(rows)} onOpenChange={(o) => !o && onCancel()}>
+      <DialogContent
+        srTitle="Duyệt hàng loạt câu hỏi"
+        srDescription="Xác nhận duyệt tất cả câu hỏi đang được tích chọn."
+        className="max-w-md p-0"
+      >
+        <header className="flex items-start gap-3 border-b px-6 py-4 pr-12">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200">
+            <ThumbsUp className="h-5 w-5" strokeWidth={1.85} aria-hidden />
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-section-title">Duyệt {n} câu hỏi?</h2>
+            <p className="text-meta mt-0.5">
+              Câu đã duyệt vào kho chung của trường và bốc được vào đề thi.
+            </p>
+          </div>
+        </header>
+
+        <div className="px-6 py-5">
+          <p className="text-small text-foreground/80">
+            Mỗi câu được ghi một vết duyệt riêng mang tên bạn. Duyệt nhầm thì
+            huỷ được ở tab &quot;Đã duyệt&quot;.
+          </p>
+          <p className="text-meta mt-2 font-mono text-muted-foreground">
+            {(rows ?? [])
+              .slice(0, 12)
+              .map((q) => q.id)
+              .join(", ")}
+            {n > 12 ? ` … và ${n - 12} câu nữa` : ""}
+          </p>
+        </div>
+
+        <footer className="flex items-center justify-between border-t bg-[var(--color-surface-2)] px-6 py-3.5">
+          <Button type="button" variant="outline" onClick={onCancel}>
+            Huỷ
+          </Button>
+          <Button onClick={onConfirm}>
+            <ThumbsUp className="h-4 w-4" />
+            Duyệt {n} câu
           </Button>
         </footer>
       </DialogContent>

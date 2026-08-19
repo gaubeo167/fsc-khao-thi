@@ -24,6 +24,16 @@ export interface FrameworkNode {
 export interface FrameworkParseResult {
   tree: FrameworkNode[];
   counts: { chapters: number; topics: number; indicators: number };
+  /**
+   * Dòng trông như mã chỉ báo nhưng bộ đọc không hiểu — nêu ra để màn nhập
+   * khung nói được "N dòng bị bỏ", thay vì lặng lẽ thiếu lá.
+   *
+   * Thiếu một lá ở đây KHÔNG dừng lại ở "khung thiếu": đề trích dẫn đúng mã
+   * đó sẽ tụt xuống đường khớp theo số chỉ báo và gắn vào lá KHÁC, mà giao
+   * diện vẫn báo khớp bình thường. Im lặng ở bước nhập khung là nguồn của
+   * một câu hỏi gắn sai chuẩn đầu ra ở tận cuối luồng.
+   */
+  skipped: string[];
 }
 
 // SI10.01.1.D01  → prefix=SI10 chapter=01 topic=1 chữ=D indicator=01
@@ -32,7 +42,24 @@ export interface FrameworkParseResult {
 // toàn `D`, nhưng khung môn khác dùng chữ khác thì trước đây regex trượt và
 // những chỉ báo đó bị BỎ IM LẶNG — khung nhập vào thiếu lá, đề trích dẫn mã
 // đó thành ra "không khớp YCCĐ" mà không ai lần ra vì sao.
-const INDICATOR_RE = /\[([A-Za-z]+\d+)\.(\d+)\.(\d+)\.([A-Za-z])(\d+)\]/;
+//
+// Bộ này phải đọc được ĐÚNG những gì `match-competency.ts::splitCode` đọc
+// được, nếu không thì hai đầu lệch nhau và lệch về phía tệ nhất: khung MẤT lá,
+// còn đề vẫn trích dẫn mã đó. Lúc ấy `matchOutcome` không tìm ra mã đầy đủ nên
+// tụt xuống đường "cùng số chỉ báo, khác chữ" và gắn câu vào MỘT LÁ KHÁC —
+// giao diện báo "khớp theo số chỉ báo" như bình thường, không ai biết là sai.
+// Hai chỗ từng lệch:
+//
+//   [SI10.02.15.EE1]    chỉ báo hai chữ   → trước đây rơi mất
+//   [SI10.02.15.E01.a]  có đuôi độ khó    → trước đây rơi mất
+//
+// `splitCode` nhận cả hai (đuôi độ khó có test riêng), nên ở đây cũng phải
+// nhận. Mã nào vẫn không đọc được thì đi vào `skipped` để báo lên màn nhập,
+// KHÔNG rơi im lặng nữa.
+const INDICATOR_RE =
+  /\[([A-Za-z]+\d+)\.(\d+)\.(\d+)\.([A-Za-z]+)(\d+)(?:\.[A-Za-z])?\]/;
+/** Dòng có dấu [...] trông như mã chỉ báo (≥ 4 đoạn) nhưng không đọc được. */
+const CODE_LIKE_RE = /\[[A-Za-z0-9]+(?:\.[A-Za-z0-9]+){3,}\]/;
 // [SI10.01]: 1. Phần mở đầu
 const CHAPTER_COLON_RE = /^\[([A-Za-z]+\d+\.\d+)\]\s*:\s*(.+)$/;
 // bare chapter code on its own line: [SI10.01]
@@ -96,11 +123,16 @@ export function parseFrameworkText(raw: string): FrameworkParseResult {
   const chapterByCode = new Map<string, FrameworkNode>();
   const topicByCode = new Map<string, FrameworkNode>();
   const seenIndicator = new Set<string>();
+  const skipped: string[] = [];
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
     const m = INDICATOR_RE.exec(line);
-    if (!m) continue;
+    if (!m) {
+      // Trông như mã chỉ báo mà đọc không ra: ghi lại để báo lên, đừng bỏ im.
+      if (CODE_LIKE_RE.test(line)) skipped.push(line);
+      continue;
+    }
 
     const prefix = m[1]!; // SI10
     const ch = m[2]!; // 01
@@ -161,5 +193,6 @@ export function parseFrameworkText(raw: string): FrameworkParseResult {
       topics: topicByCode.size,
       indicators: seenIndicator.size,
     },
+    skipped,
   };
 }

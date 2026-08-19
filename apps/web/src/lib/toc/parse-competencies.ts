@@ -142,7 +142,9 @@ export function frameworkTreeToCompetencies(
 export function parseFrameworkToCompetencies(raw: string): {
   tree: CompetencyImportNode[];
   counts: { chapters: number; topics: number; indicators: number };
+  /** Dòng có mã nhưng đọc không ra — người nhập khung phải thấy. */
+  skipped: string[];
 } {
-  const { tree, counts } = parseFrameworkText(raw);
-  return { tree: frameworkTreeToCompetencies(tree, 0), counts };
+  const { tree, counts, skipped } = parseFrameworkText(raw);
+  return { tree: frameworkTreeToCompetencies(tree, 0), counts, skipped };
 }

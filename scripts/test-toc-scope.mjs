@@ -35,7 +35,7 @@ execFileSync(
   ],
   { cwd: "apps/web", stdio: "pipe" },
 );
-const { tocInScope, flattenToc, tocSubtreeIds } = await import(out);
+const { tocInScope, flattenToc, tocSubtreeIds, keepTocSelection } = await import(out);
 
 let pass = 0,
   fail = 0;
@@ -138,6 +138,48 @@ check("cây rỗng → danh sách rỗng", flattenToc([]).length === 0);
   check("lấy cả cháu chắt", [...ids].sort().join() === "c1,c1.1,c1.1.1", [...ids].join());
   check("không lấy nhánh khác", !ids.has("c2"));
   check("lá thì chỉ có chính nó", tocSubtreeIds(nodes, "c2").size === 1);
+}
+
+/* ── Đổi Môn/Khối thì BỎ chỗ cất của môn cũ ───────────────────────────── */
+// Ba ô state rời nhau, nên đổi môn không tự bỏ chỗ cất. Hỏng im lặng: <select>
+// không có option nào mang giá trị cũ nên hiện "— Chọn —", người dùng thấy
+// "chưa chọn" mà state vẫn giữ node của môn cũ → cả đề bị cất sang môn khác.
+{
+  const anh10 = [
+    n("anh-c1", { subjectId: "anh", gradeId: "grade-10" }),
+    n("anh-c2", { subjectId: "anh", gradeId: "grade-10" }),
+  ];
+  const toan10 = [n("toan-c1", { subjectId: "toan", gradeId: "grade-10" })];
+
+  check(
+    "chỗ cất còn trong phạm vi thì GIỮ nguyên",
+    keepTocSelection(anh10, "anh-c2") === "anh-c2",
+  );
+  check(
+    "đổi sang môn khác → chỗ cất cũ bị BỎ",
+    keepTocSelection(toan10, "anh-c2") === null,
+  );
+  check(
+    "môn mới KHÔNG có mục lục → vẫn bỏ, không giữ lại giá trị cũ",
+    keepTocSelection([], "anh-c2") === null,
+  );
+  check("chưa chọn gì → null", keepTocSelection(anh10, null) === null);
+  check("chuỗi rỗng → null", keepTocSelection(anh10, "") === null);
+  check(
+    "node đã bị xoá khỏi kho → bỏ",
+    keepTocSelection(anh10, "node-da-xoa") === null,
+  );
+
+  // Đi qua đúng đường của màn nhập đề: lọc theo môn/khối rồi mới soát lựa chọn.
+  const all = [...anh10, ...toan10];
+  check(
+    "đổi khối trong cùng môn cũng bỏ chỗ cất",
+    keepTocSelection(tocInScope(all, "anh", "grade-11"), "anh-c1") === null,
+  );
+  check(
+    "giữ nguyên môn + khối thì không bỏ oan",
+    keepTocSelection(tocInScope(all, "anh", "grade-10"), "anh-c1") === "anh-c1",
+  );
 }
 
 console.log(`\n${pass} pass · ${fail} fail`);

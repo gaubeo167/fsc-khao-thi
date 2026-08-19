@@ -54,6 +54,8 @@ type State =
       kind: "result";
       tree: CompetencyImportNode[];
       counts: Counts;
+      /** Dòng có mã mà bộ đọc không hiểu — phải hiện, không được bỏ im. */
+      skipped: string[];
       fileName: string;
     }
   | { kind: "error"; message: string };
@@ -122,6 +124,7 @@ export function CompetencyImportDialog({
         kind: "result",
         tree,
         counts: data.counts as Counts,
+        skipped: (data.skipped as string[] | undefined) ?? [],
         fileName: file.name,
       });
     } catch (err) {
@@ -272,7 +275,42 @@ export function CompetencyImportDialog({
                     {dupCount} mã đã có (bỏ qua)
                   </span>
                 )}
+                {result.skipped.length > 0 && (
+                  <span className="rounded-md bg-rose-100 px-2 py-0.5 font-semibold text-rose-700">
+                    {result.skipped.length} dòng không đọc được mã
+                  </span>
+                )}
               </div>
+              {/* Thiếu một lá ở đây không dừng ở "khung thiếu": đề trích dẫn
+                  đúng mã đó sẽ tụt xuống đường khớp theo số chỉ báo và gắn câu
+                  vào lá KHÁC, mà màn nhập đề vẫn báo "đã khớp". Nên nêu tận
+                  dòng, không chỉ đếm. */}
+              {result.skipped.length > 0 && (
+                <div className="mb-3 rounded-lg border-2 border-rose-300 bg-rose-50 px-4 py-3">
+                  <p className="inline-flex items-center gap-1.5 text-small font-semibold text-rose-900">
+                    <TriangleAlert className="h-4 w-4" strokeWidth={2} />
+                    {result.skipped.length} dòng có mã nhưng đọc không ra — những
+                    YCCĐ này sẽ KHÔNG vào khung
+                  </p>
+                  <ul className="mt-1.5 space-y-1">
+                    {result.skipped.slice(0, 8).map((line) => (
+                      <li key={line} className="text-meta font-mono text-rose-800">
+                        {line.length > 90 ? `${line.slice(0, 90)}…` : line}
+                      </li>
+                    ))}
+                  </ul>
+                  {result.skipped.length > 8 && (
+                    <p className="text-meta mt-1 text-rose-800">
+                      …và {result.skipped.length - 8} dòng nữa.
+                    </p>
+                  )}
+                  <p className="text-meta mt-1.5 text-rose-800">
+                    Mã chỉ báo cần dạng <b>[SI10.02.15.E01]</b> — mã môn, chương,
+                    chủ điểm, rồi chữ + số chỉ báo. Đề trích dẫn mã bị bỏ ở đây
+                    sẽ khớp nhầm sang YCCĐ khác mà không có cảnh báo nào.
+                  </p>
+                </div>
+              )}
               {scopeWarnings.length > 0 && (
                 <div className="mb-3 rounded-lg border-2 border-rose-300 bg-rose-50 px-4 py-3">
                   <p className="inline-flex items-center gap-1.5 text-small font-semibold text-rose-900">

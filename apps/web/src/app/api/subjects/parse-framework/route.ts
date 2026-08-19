@@ -69,7 +69,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const { tree, counts } = parseFrameworkText(text);
+  const { tree, counts, skipped } = parseFrameworkText(text);
   if (counts.chapters === 0) {
     return NextResponse.json(
       {
@@ -81,5 +81,8 @@ export async function POST(req: Request) {
     );
   }
 
-  return NextResponse.json({ tree, counts });
+  // `skipped` đi cùng kết quả: dòng có mã mà bộ đọc không hiểu phải HIỆN RA ở
+  // màn nhập. Bỏ im một lá khiến đề trích dẫn mã đó khớp nhầm sang lá khác mà
+  // giao diện vẫn báo "đã khớp" — xem chú thích trong `parse-framework.ts`.
+  return NextResponse.json({ tree, counts, skipped });
 }

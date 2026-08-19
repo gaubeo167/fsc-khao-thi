@@ -6,12 +6,14 @@ import {
   Clock,
   FileText,
   Plus,
+  RotateCcw,
   ShieldCheck,
+  Trash2,
   User,
   Users as UsersIcon,
 } from "lucide-react";
 import dynamic from "next/dynamic";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -31,7 +33,9 @@ import {
   type QuestionType,
 } from "@/features/question-bank/data/question-types";
 import type { Question } from "@/features/question-bank/data/seed-questions";
+import { BulkActionBar } from "@/features/question-bank/components/bulk-action-bar";
 import { QuestionCard } from "@/features/question-bank/components/question-card";
+import { useBulkSelect } from "@/features/question-bank/hooks/use-bulk-select";
 
 // Dialogs are heavy (math editor, mammoth, KaTeX, etc.) — code-splitting
 // them keeps the question-bank route's initial JS small, which is the
@@ -83,6 +87,15 @@ import { PageHeader } from "@/features/shell/components/page-header";
 import { cn } from "@/lib/utils";
 
 type KhoView = "campus" | "personal";
+
+/**
+ * Lấy id của một câu — truyền vào `useBulkSelect`.
+ *
+ * Đặt ở phạm vi module CHỨ KHÔNG viết inline `(q) => q.id`: hook nhận nó vào
+ * deps của `useMemo`, hàm mới mỗi lần render sẽ dựng lại danh sách id liên
+ * tục và effect cắt tỉa tự kích lại chính nó.
+ */
+const questionId = (q: Question) => q.id;
 
 export default function QuestionBankPage() {
   const session = useAuthStore((s) => s.session);
@@ -256,6 +269,31 @@ export default function QuestionBankPage() {
     });
   }, [scoped, typeFilter, statusFilter, subjectFilter, gradeFilter, difficultyFilter, search]);
 
+  /**
+   * Tích chọn hàng loạt. `filtered` là danh sách ĐANG HIỂN THỊ, nên đổi bộ
+   * lọc là tập đã tích tự co lại theo — thao tác hàng loạt không bao giờ
+   * chạm tới câu ngoài màn hình. Luật ở `lib/bulk-select.ts`.
+   */
+  const bulk = useBulkSelect(filtered, questionId);
+  /** Xác nhận lưu trữ hàng loạt — `null` là chưa mở. */
+  const [bulkArchiving, setBulkArchiving] = useState<Question[] | null>(null);
+  // `QuestionCard` được memo hoá, nên callback phải ổn định — hàm mới mỗi lần
+  // render làm cả danh sách vẽ lại, đúng thứ trang này đã đi tối ưu để tránh.
+  const toggleSelect = useCallback(
+    (q: Question) => bulk.toggle(q.id),
+    [bulk.toggle],
+  );
+  // Đang bật "Hiển thị đã lưu trữ" thì một tập chọn có thể lẫn cả câu sống lẫn
+  // câu đã lưu trữ. Hai hành động ngược nhau nên tách sẵn, mỗi nút một tập.
+  const selectedLive = useMemo(
+    () => bulk.rowsSelected.filter((q) => !q.archivedAt),
+    [bulk.rowsSelected],
+  );
+  const selectedArchived = useMemo(
+    () => bulk.rowsSelected.filter((q) => q.archivedAt),
+    [bulk.rowsSelected],
+  );
+
   const kpis = useMemo(() => {
     return {
       total: scoped.length,
@@ -380,6 +418,32 @@ export default function QuestionBankPage() {
     setEditing(clone);
     setEditReason(null);
     setEditorOpen(true);
+  }
+
+  /**
+   * Lưu trữ hàng loạt.
+   *
+   * Đi qua `archiveQuestion` từng câu chứ không viết đường ghi riêng: mỗi lần
+   * lưu trữ phải để lại một vết audit riêng, và xoá cứng thì bị cấm (bản chụp
+   * đề + audit + thống kê còn trỏ vào câu hỏi). Một nút bấm nhanh không phải
+   * lý do để đi vòng qua luật đó.
+   */
+  function performBulkArchive(rows: Question[]) {
+    if (!session) return;
+    for (const q of rows) {
+      archiveQuestion(q.id, session.userId, "Lưu trữ hàng loạt từ ngân hàng câu hỏi");
+    }
+    bulk.clear();
+    setBulkArchiving(null);
+    toast.success(`Đã lưu trữ ${rows.length} câu hỏi.`);
+  }
+
+  /** Khôi phục hàng loạt — đối xứng với lưu trữ, dùng khi đang xem kho lưu trữ. */
+  function performBulkRestore(rows: Question[]) {
+    if (!session) return;
+    for (const q of rows) restoreQuestion(q.id, session.userId);
+    bulk.clear();
+    toast.success(`Đã khôi phục ${rows.length} câu hỏi.`);
   }
 
   function performCopy(q: Question) {
@@ -600,23 +664,64 @@ export default function QuestionBankPage() {
           </p>
         </div>
       ) : (
-        <ul className="space-y-3">
-          {filtered.map((q) => (
-            <li key={q.id}>
-              <QuestionCard
-                question={q}
-                onView={setViewing}
-                onEdit={openEdit}
-                onDuplicate={setCopying}
-                onDelete={setDeleting}
-                onRestore={(target) => {
-                  if (!session) return;
-                  restoreQuestion(target.id, session.userId);
-                }}
-              />
-            </li>
-          ))}
-        </ul>
+        <>
+          <BulkActionBar
+            allSelected={bulk.allSelected}
+            someSelected={bulk.someSelected}
+            count={bulk.count}
+            visibleCount={filtered.length}
+            onToggleAll={bulk.toggleAll}
+            onClear={bulk.clear}
+          >
+            {/* Tách theo trạng thái lưu trữ: một tập chọn lẫn cả hai loại thì
+                mỗi nút chỉ làm phần việc của mình, thay vì báo lỗi bắt người
+                dùng đi bỏ tích lại từng câu. */}
+            {selectedLive.length > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setBulkArchiving(selectedLive)}
+                disabled={!canMutate}
+                title={!canMutate ? "Bạn không có quyền lưu trữ câu hỏi" : undefined}
+                className="border-destructive/30 text-destructive hover:bg-destructive/5"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Lưu trữ {selectedLive.length} câu
+              </Button>
+            )}
+            {selectedArchived.length > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => performBulkRestore(selectedArchived)}
+                disabled={!canMutate}
+                title={!canMutate ? "Bạn không có quyền khôi phục câu hỏi" : undefined}
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Khôi phục {selectedArchived.length} câu
+              </Button>
+            )}
+          </BulkActionBar>
+          <ul className="space-y-3">
+            {filtered.map((q) => (
+              <li key={q.id}>
+                <QuestionCard
+                  question={q}
+                  selected={bulk.isSelected(q.id)}
+                  onToggleSelect={toggleSelect}
+                  onView={setViewing}
+                  onEdit={openEdit}
+                  onDuplicate={setCopying}
+                  onDelete={setDeleting}
+                  onRestore={(target) => {
+                    if (!session) return;
+                    restoreQuestion(target.id, session.userId);
+                  }}
+                />
+              </li>
+            ))}
+          </ul>
+        </>
       )}
 
       <p className="text-meta mt-3">
@@ -675,6 +780,42 @@ export default function QuestionBankPage() {
       />
       </>
       )}
+
+      <ConfirmActionDialog
+        open={Boolean(bulkArchiving)}
+        onOpenChange={(o) => !o && setBulkArchiving(null)}
+        variant="destructive"
+        title={`Lưu trữ ${bulkArchiving?.length ?? 0} câu hỏi?`}
+        description={
+          bulkArchiving ? (
+            <>
+              <span className="font-semibold tabular-nums">
+                {bulkArchiving.length}
+              </span>{" "}
+              câu sẽ được chuyển vào kho lưu trữ. Câu đã đóng băng trong đề thi
+              không bị ảnh hưởng — đề HS đã làm vẫn giữ nguyên nội dung gốc. Có
+              thể khôi phục từ mục &quot;Hiển thị đã lưu trữ&quot;.
+              {/* Liệt kê mã ra: với thao tác hàng loạt, một con số không đủ để
+                  người dùng phát hiện mình lỡ tích nhầm. */}
+              <span className="text-meta mt-2 block font-mono text-muted-foreground">
+                {bulkArchiving
+                  .slice(0, 12)
+                  .map((q) => q.id)
+                  .join(", ")}
+                {bulkArchiving.length > 12
+                  ? ` … và ${bulkArchiving.length - 12} câu nữa`
+                  : ""}
+              </span>
+            </>
+          ) : (
+            ""
+          )
+        }
+        confirmLabel={`Lưu trữ ${bulkArchiving?.length ?? 0} câu`}
+        onConfirm={() => {
+          if (bulkArchiving) performBulkArchive(bulkArchiving);
+        }}
+      />
 
       <CopyQuestionDialog
         question={copying}

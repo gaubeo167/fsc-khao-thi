@@ -29,6 +29,12 @@ interface Props {
    *  archived questions. Phase C/E governance: archived rows are
    *  immutable in place; only un-archive is allowed. */
   onRestore?: (q: Question) => void;
+  /**
+   * Bật ô tích chọn hàng loạt. Chỉ hiện khi có `onToggleSelect` — màn nào
+   * không làm thao tác hàng loạt thì thẻ giữ nguyên hình dạng cũ.
+   */
+  selected?: boolean;
+  onToggleSelect?: (q: Question) => void;
 }
 
 const DIFFICULTY_LABEL: Record<Question["difficulty"], string> = {
@@ -51,6 +57,8 @@ function QuestionCardImpl({
   onDuplicate,
   onDelete,
   onRestore,
+  selected = false,
+  onToggleSelect,
 }: Props) {
   const subjects = useSubjectsStore((s) => s.subjects);
   const grades = useGradesStore((s) => s.grades);
@@ -83,10 +91,23 @@ function QuestionCardImpl({
         "group overflow-hidden rounded-xl border border-border bg-surface transition-all",
         "shadow-[0_1px_2px_rgba(15,23,42,0.04)]",
         "hover:border-[var(--color-border-hover)] hover:shadow-[0_4px_14px_-4px_rgba(15,23,42,0.08)] hover:-translate-y-px",
+        // Thẻ đang tích phải nhận ra được khi lướt qua cả danh sách dài, và
+        // KHÔNG chỉ bằng màu — ô tích ở đầu thẻ mới là dấu hiệu chính.
+        selected && "border-primary/50 bg-primary/5 ring-1 ring-primary/25",
       )}
     >
       {/* Header */}
       <header className="flex items-center gap-2 border-b bg-[var(--color-surface-2)] px-4 py-2.5">
+        {onToggleSelect && (
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={() => onToggleSelect(question)}
+            className="h-4 w-4 shrink-0 cursor-pointer accent-[var(--color-primary)]"
+            aria-label={`Chọn câu ${question.id}`}
+            title="Chọn câu này"
+          />
+        )}
         <span className="rounded-md bg-foreground/8 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-foreground/75">
           {DIFFICULTY_LABEL[question.difficulty]}
         </span>
