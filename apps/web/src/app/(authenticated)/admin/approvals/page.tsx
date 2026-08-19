@@ -33,6 +33,7 @@ import { MaterialCard } from "@/features/learning-materials/components/material-
 import type { LearningMaterial } from "@/features/learning-materials/data/types";
 import { useMaterialsStore } from "@/features/learning-materials/state/materials-store";
 import { BulkActionBar } from "@/features/question-bank/components/bulk-action-bar";
+import { inApprovalQueue } from "@/features/question-bank/lib/approval-queue";
 import { QuestionCard } from "@/features/question-bank/components/question-card";
 import { useBulkSelect } from "@/features/question-bank/hooks/use-bulk-select";
 import {
@@ -84,6 +85,10 @@ export default function ApprovalsPage() {
   const scoped = useMemo(() => {
     if (!session) return [];
     return questions.filter((q) => {
+      // Lưu trữ là xoá mềm — thứ đã xoá không chờ duyệt. Luật chung ở
+      // `approval-queue.ts`; ba tab của trang này từng viết ba bộ lọc riêng và
+      // chỉ tab Học liệu nhớ điều kiện này.
+      if (!inApprovalQueue(q)) return false;
       if (q.kho !== "campus") return false;
       if (session.role === "superadmin") {
         return activeCampusId ? q.campusId === activeCampusId : true;
@@ -489,6 +494,7 @@ function PackageApprovalsSection({ canApprove }: { canApprove: boolean }) {
     const campusScope =
       session.role === "superadmin" ? activeCampusId : session.campusId ?? null;
     return packages.filter((p) => {
+      if (!inApprovalQueue(p)) return false;
       const bp = blueprints.find((b) => b.id === p.blueprintId);
       if (!bp) return false;
       if (campusScope) return bp.campusId === campusScope;
@@ -767,7 +773,7 @@ function MaterialApprovalsSection({
   const scoped = useMemo(() => {
     if (!session) return [];
     return allMaterials.filter((m) => {
-      if (m.archivedAt) return false;
+      if (!inApprovalQueue(m)) return false;
       if (m.kho !== "campus") return false;
       if (session.role === "superadmin") {
         return activeCampusId ? m.campusId === activeCampusId : true;
