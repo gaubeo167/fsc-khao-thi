@@ -24,6 +24,7 @@
  */
 
 import type { ShortAnswerKey } from "@/lib/exam/short-answer-match";
+import { isDataTable, toPipeTable } from "./table-block";
 
 export const U_OPEN = "\u27E6U\u27E7"; // ⟦U⟧
 export const U_CLOSE = "\u27E6/U\u27E7"; // ⟦/U⟧
@@ -310,6 +311,44 @@ function finalizeQuestion(q: ParsedBankQuestion): void {
  * survives) into the marked text `parseExamBank` expects: underline →
  * ⟦U⟧…⟦/U⟧, one line per paragraph / cell / option, `<Key=…>` preserved.
  */
+/**
+ * Làm sạch phần HTML bên trong MỘT ô bảng thành chữ một dòng.
+ *
+ * Ô phải tự dọn tại chỗ chứ không chờ các phép thay thế chung: `</p>` ở đó
+ * thành xuống dòng, mà xuống dòng giữa ô thì hàng bảng vỡ làm đôi.
+ *
+ * Thực thể HTML (`&lt;Key=3&gt;`) được GIỮ NGUYÊN để bước giải mã chung ở
+ * cuối `htmlToMarkedText` xử lý — đúng như mọi chữ khác.
+ */
+function cellText(html: string): string {
+  return html
+    .replace(/<\/p>|<br\s*\/?>|<\/li>|<\/h[1-6]>/gi, " ")
+    .replace(/<[^>]+>/g, "")
+    .replace(/\t/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Đổi mọi bảng DỮ LIỆU trong HTML sang cú pháp gạch đứng; bảng xếp chỗ để
+ * nguyên cho phần sau bẻ phẳng.
+ *
+ * Xem `table-block.ts` để biết vì sao ranh giới là ≥2 hàng và ≥2 cột.
+ */
+function replaceDataTables(html: string): string {
+  return html.replace(/<table\b[^>]*>[\s\S]*?<\/table>/gi, (tbl) => {
+    const rows = (tbl.match(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi) ?? []).map((tr) =>
+      (tr.match(/<t[dh]\b[^>]*>[\s\S]*?<\/t[dh]>/gi) ?? []).map((td) =>
+        cellText(td.replace(/^<t[dh]\b[^>]*>/i, "").replace(/<\/t[dh]>$/i, "")),
+      ),
+    );
+    if (!isDataTable(rows)) return tbl;
+    // Dòng trống hai đầu: bảng phải đứng thành khối riêng, không dính vào
+    // câu chữ ngay trên/dưới nó.
+    return `\n\n${toPipeTable(rows)}\n\n`;
+  });
+}
+
 export function htmlToMarkedText(html: string): string {
   let out = html;
 
@@ -322,6 +361,13 @@ export function htmlToMarkedText(html: string): string {
     /<img\b[^>]*?src="([^"]+)"[^>]*?\/?>/gi,
     (_m, src) => `\n![](${src})\n`,
   );
+
+  // Bảng DỮ LIỆU → cú pháp gạch đứng, TRƯỚC khi mọi thẻ khác bị bẻ phẳng.
+  //
+  // Phải đứng trước vì các phép thay thế bên dưới đổi `</p>` và tab thành
+  // xuống dòng — chạy sau thì mỗi ô đã thành một dòng riêng, không còn dựng
+  // lại được hàng. Bảng XẾP CHỖ (1 hàng) đi tiếp xuống dưới như cũ.
+  out = replaceDataTables(out);
 
   // Tabs split 2-per-line options into separate lines.
   out = out.replace(/\t/g, "\n");

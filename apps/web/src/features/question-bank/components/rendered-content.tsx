@@ -4,6 +4,7 @@ import React, { useMemo } from "react";
 
 import { Math } from "./math";
 import { parseAudioMarker, type AudioMarker } from "../lib/audio-marker";
+import { splitTableBlocks } from "../lib/table-block";
 import { mathAnyRe } from "@/lib/math-delimiters";
 import { classifyMediaUrl } from "./media-utils";
 import { cn } from "@/lib/utils";
@@ -114,7 +115,7 @@ export function RenderedContent({
   const sanitized = hideUnderlineMarks
     ? content.replace(/\[u:([^\]\n]+)\]/g, "$1")
     : content;
-  const blocks = useMemo(() => parse(sanitized), [sanitized]);
+  const segments = useMemo(() => splitTableBlocks(sanitized), [sanitized]);
   const Wrapper = inline ? "span" : "div";
   // Đếm lại từ 0 mỗi lần render, theo đúng thứ tự đọc của nội dung — nên số
   // thứ tự của một bài audio không đổi giữa các lần render.
@@ -129,7 +130,80 @@ export function RenderedContent({
         className,
       )}
     >
-      {blocks.map((b, i) => {
+      {segments.map((seg, si) =>
+        seg.kind === "table" ? (
+          <DataTable key={`tb-${si}`} rows={seg.rows} />
+        ) : (
+          <React.Fragment key={`tx-${si}`}>
+            {renderMathBlocks(seg.body, seg.start, audioCtx, onClickFormula)}
+          </React.Fragment>
+        ),
+      )}
+    </Wrapper>
+  );
+}
+
+/**
+ * Bảng dữ liệu.
+ *
+ * Hàng đầu là tiêu đề cột — đề Word luôn viết vậy, và đọc bảng không có
+ * tiêu đề thì không biết cột nào là gì.
+ *
+ * `overflow-x-auto` là bắt buộc: bảng lời giải bốn cột chữ dài không vừa bề
+ * ngang điện thoại, không cho cuộn riêng thì nó đẩy giãn cả trang.
+ */
+function DataTable({ rows }: { rows: readonly (readonly string[])[] }) {
+  const [head, ...body] = rows;
+  return (
+    <div className="my-2 overflow-x-auto">
+      <table className="w-full border-collapse border border-border text-left">
+        {head ? (
+          <thead>
+            <tr>
+              {head.map((c, i) => (
+                <th
+                  key={i}
+                  className="border border-border bg-muted/50 px-2 py-1 align-top font-semibold"
+                >
+                  <RenderedContent inline content={c} />
+                </th>
+              ))}
+            </tr>
+          </thead>
+        ) : null}
+        <tbody>
+          {body.map((r, ri) => (
+            <tr key={ri}>
+              {r.map((c, ci) => (
+                <td key={ci} className="border border-border px-2 py-1 align-top">
+                  <RenderedContent inline content={c} />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/**
+ * Một mảng VĂN BẢN: tách công thức rồi dựng.
+ *
+ * `offset` là vị trí của mảng này trong chuỗi gốc. Ô soạn thảo định vị công
+ * thức bằng khoảng ký tự để sửa tại chỗ, nên mốc phải cộng lại về gốc — không
+ * thì bấm vào công thức nằm sau một cái bảng sẽ ghi đè nhầm sang đầu bài.
+ *
+ * Công thức nằm TRONG ô bảng cố ý KHÔNG bấm sửa được: ô đã bị tách khỏi chuỗi
+ * gốc nên không còn khoảng ký tự nào đúng để trả về.
+ */
+function renderMathBlocks(
+  body: string,
+  offset: number,
+  audioCtx: AudioCtx,
+  onClickFormula?: Props["onClickFormula"],
+): React.ReactNode {
+  return parse(body).map((b, i) => {
         if (b.kind === "text") {
           // Strip basic markdown bold/italic visually + preserve line breaks
           const parts = b.body.split(/(\n)/);
@@ -154,8 +228,8 @@ export function RenderedContent({
               onClickFormula
                 ? () =>
                     onClickFormula({
-                      start: b.start,
-                      end: b.end,
+                      start: offset + b.start,
+                      end: offset + b.end,
                       tex: b.body,
                       display: b.display,
                     })
@@ -163,9 +237,7 @@ export function RenderedContent({
             }
           />
         );
-      })}
-    </Wrapper>
-  );
+  });
 }
 
 /**

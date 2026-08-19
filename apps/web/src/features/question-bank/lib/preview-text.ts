@@ -17,6 +17,7 @@
  */
 
 import { mathInlineRe } from "@/lib/math-delimiters";
+import { splitTableBlocks, tableToPlainLines } from "./table-block";
 
 /** Mốc → ký hiệu thay thế. Thứ tự có ý nghĩa: ảnh/video/audio trước, vì
  *  phần trong ngoặc của chúng có thể chứa dấu ngoặc vuông. */
@@ -37,7 +38,12 @@ const RULES: Array<[RegExp, string | ((m: RegExpMatchArray) => string)]> = [
 ];
 
 export function previewText(content: string): string {
-  let out = content ?? "";
+  // Bảng trước tiên: cú pháp gạch đứng đổ thẳng ra dòng xem trước thì người
+  // soạn đọc được `| --- | --- |` thay vì nội dung. Bẻ thành chữ, ô ngăn bằng
+  // " · " để còn thấy ranh giới cột.
+  let out = splitTableBlocks(content ?? "")
+    .map((b) => (b.kind === "table" ? `▦ ${tableToPlainLines(b.rows).join(" · ")}` : b.body))
+    .join("\n");
   for (const [re, rep] of RULES) {
     out = out.replace(re, rep as string);
   }

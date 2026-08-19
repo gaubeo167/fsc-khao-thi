@@ -11,6 +11,7 @@
 
 import type { BloomLevel } from "@/features/competencies/data/types";
 import type { Question } from "@/features/question-bank/data/seed-questions";
+import { splitTableBlocks } from "@/features/question-bank/lib/table-block";
 
 import type { ScoringPolicy, YccdMatrix, YccdPart } from "../data/types";
 
@@ -135,7 +136,9 @@ export async function buildExamDocx(args: {
 
   const m = args.meta;
   const lop = m.gradeName.replace(/\D/g, "") || m.gradeName;
-  const body: InstanceType<typeof d.Paragraph>[] = [];
+  // Đề có thể chứa BẢNG (bảng dữ liệu trong đề bài), nên khối thân bài
+  // không còn thuần đoạn văn.
+  const body: Array<InstanceType<typeof d.Paragraph> | InstanceType<typeof d.Table>> = [];
   // Dòng Sở GD&ĐT luôn có mặt — mẫu SHOC 10 mở đầu bằng nó. Chưa có dữ liệu
   // thì in dấu chấm chứ không bỏ dòng: bỏ đi là file thiếu so với mẫu Sở mà
   // người tải về không biết mình còn thiếu gì.
@@ -172,10 +175,69 @@ export async function buildExamDocx(args: {
   const tn = blocks.filter((b) => groupOfPart(b.part) === "TNKQ" && b.items.length > 0);
   const tl = blocks.filter((b) => groupOfPart(b.part) === "Tự luận" && b.items.length > 0);
 
+  /**
+   * Viền mảnh cho bảng trong đề bài — giống bảng của mẫu Sở.
+   */
+  const tblBorder = {
+    top: { style: d.BorderStyle.SINGLE, size: 1 },
+    bottom: { style: d.BorderStyle.SINGLE, size: 1 },
+    left: { style: d.BorderStyle.SINGLE, size: 1 },
+    right: { style: d.BorderStyle.SINGLE, size: 1 },
+  };
+
+  /**
+   * Một chuỗi nội dung → các khối Word, dựng BẢNG thật khi gặp bảng.
+   *
+   * Không có nhánh này thì bảng trong đề bài in ra thành `| --- | --- |` —
+   * học sinh nhận đề thấy cú pháp nội bộ thay vì cái bảng.
+   *
+   * `prefix` ("Câu 3. ") ghép vào mảng chữ ĐẦU TIÊN. Đẩy nó thành đoạn riêng
+   * thì số câu đứng trơ một dòng, cách hẳn đề bài.
+   */
+  const contentBlocks = (raw: string, prefix = "") => {
+    const segs = splitTableBlocks(raw);
+    let daGhepPrefix = false;
+    const outBlocks: Array<InstanceType<typeof d.Paragraph> | InstanceType<typeof d.Table>> = [];
+    for (const seg of segs) {
+      if (seg.kind === "table") {
+        outBlocks.push(
+          new d.Table({
+            width: { size: 100, type: d.WidthType.PERCENTAGE },
+            rows: seg.rows.map(
+              (r, ri) =>
+                new d.TableRow({
+                  children: r.map(
+                    (c) =>
+                      new d.TableCell({
+                        borders: tblBorder,
+                        children: [
+                          new d.Paragraph({
+                            children: [
+                              new d.TextRun({ text: plainText(c), bold: ri === 0 }),
+                            ],
+                          }),
+                        ],
+                      }),
+                  ),
+                }),
+            ),
+          }),
+        );
+        continue;
+      }
+      const t = plainText(seg.body);
+      if (!t && daGhepPrefix) continue;
+      outBlocks.push(P(daGhepPrefix ? t : `${prefix}${t}`));
+      daGhepPrefix = true;
+    }
+    if (outBlocks.length === 0) outBlocks.push(P(prefix.trim()));
+    return outBlocks;
+  };
+
   const renderItems = (block: (typeof blocks)[number]) => {
     for (const it of block.items) {
       const q = it.question;
-      body.push(P(`Câu ${it.indexInPart}. ${plainText(q.content)}`));
+      body.push(...contentBlocks(q.content, `Câu ${it.indexInPart}. `));
       if (q.type === "mcq-single" || q.type === "mcq-multi") {
         (q.options ?? []).forEach((o, i) =>
           body.push(P(`${optionLabel(i)}. ${plainText(o.content)}`)),
