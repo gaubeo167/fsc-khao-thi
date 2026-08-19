@@ -36,6 +36,7 @@ import type { Question } from "@/features/question-bank/data/seed-questions";
 import { BulkActionBar } from "@/features/question-bank/components/bulk-action-bar";
 import { QuestionCard } from "@/features/question-bank/components/question-card";
 import { useBulkSelect } from "@/features/question-bank/hooks/use-bulk-select";
+import { useDeletability } from "@/features/question-bank/hooks/use-deletability";
 
 // Dialogs are heavy (math editor, mammoth, KaTeX, etc.) — code-splitting
 // them keeps the question-bank route's initial JS small, which is the
@@ -65,6 +66,13 @@ const InUseEditDialog = dynamic(
   () =>
     import("@/features/question-bank/dialogs/in-use-edit-dialog").then(
       (m) => m.InUseEditDialog,
+    ),
+  { ssr: false, loading: () => null },
+);
+const DeleteQuestionDialog = dynamic(
+  () =>
+    import("@/features/question-bank/dialogs/delete-question-dialog").then(
+      (m) => m.DeleteQuestionDialog,
     ),
   { ssr: false, loading: () => null },
 );
@@ -108,6 +116,7 @@ export default function QuestionBankPage() {
   const allQuestionsRaw = useQuestionsStore((s) => s.questions);
   const archiveQuestion = useQuestionsStore((s) => s.archive);
   const restoreQuestion = useQuestionsStore((s) => s.restore);
+  const destroyQuestion = useQuestionsStore((s) => s.destroy);
   const cloneQuestionVersion = useQuestionsStore((s) => s.cloneAsNewVersion);
   const createQuestion = useQuestionsStore((s) => s.create);
   const examForms = useExamFormsStore((s) => s.forms);
@@ -277,6 +286,14 @@ export default function QuestionBankPage() {
   const bulk = useBulkSelect(filtered, questionId);
   /** Xác nhận lưu trữ hàng loạt — `null` là chưa mở. */
   const [bulkArchiving, setBulkArchiving] = useState<Question[] | null>(null);
+  /** Xác nhận XOÁ CỨNG hàng loạt — `null` là chưa mở. */
+  const [bulkDestroying, setBulkDestroying] = useState<Question[] | null>(null);
+  /**
+   * Soát xoá cứng. Đọc sáu store tham chiếu + cờ tải xong của chúng; luật ở
+   * `lib/question-delete.ts`. Dùng CHUNG cho cả nút lẻ và thao tác hàng loạt
+   * — hai đường soát khác nhau là hai đường lệch nhau.
+   */
+  const deletability = useDeletability();
   // `QuestionCard` được memo hoá, nên callback phải ổn định — hàm mới mỗi lần
   // render làm cả danh sách vẽ lại, đúng thứ trang này đã đi tối ưu để tránh.
   const toggleSelect = useCallback(
@@ -292,6 +309,17 @@ export default function QuestionBankPage() {
   const selectedArchived = useMemo(
     () => bulk.rowsSelected.filter((q) => q.archivedAt),
     [bulk.rowsSelected],
+  );
+  /**
+   * Trong những câu đang chọn, câu nào xoá cứng được.
+   *
+   * Một câu vướng KHÔNG chặn cả tập: chọn 30 câu mà 2 câu đã vào đề thì xoá
+   * 28 câu sạch, rồi nói rõ 2 câu kia vướng ở đâu. Chặn cả 30 là bắt người
+   * dùng ngồi bỏ tích từng câu để mò ra thủ phạm.
+   */
+  const destroySplit = useMemo(
+    () => deletability.split(bulk.rowsSelected),
+    [deletability, bulk.rowsSelected],
   );
 
   const kpis = useMemo(() => {
@@ -436,6 +464,32 @@ export default function QuestionBankPage() {
     bulk.clear();
     setBulkArchiving(null);
     toast.success(`Đã lưu trữ ${rows.length} câu hỏi.`);
+  }
+
+  /**
+   * Xoá CỨNG hàng loạt.
+   *
+   * Soát LẠI ngay trước khi xoá thay vì tin vào `destroySplit` đã tính lúc mở
+   * hộp thoại: giữa lúc mở và lúc bấm, một listener Firestore có thể vừa đẩy
+   * về một BTVN mới có chứa đúng câu đó. Soát lại là rẻ, còn xoá nhầm thì
+   * không có đường lùi.
+   */
+  function performBulkDestroy(rows: Question[]) {
+    const { deletable, blocked } = deletability.split(rows);
+    for (const q of deletable) {
+      destroyQuestion(q.id, "Xoá vĩnh viễn hàng loạt từ ngân hàng câu hỏi");
+    }
+    bulk.clear();
+    setBulkDestroying(null);
+    if (deletable.length > 0) {
+      toast.success(`Đã xoá vĩnh viễn ${deletable.length} câu hỏi.`);
+    }
+    if (blocked.length > 0) {
+      toast.warning(
+        `${blocked.length} câu vừa có tham chiếu mới nên không xoá — đã bỏ qua.`,
+        { duration: 8000 },
+      );
+    }
   }
 
   /** Khôi phục hàng loạt — đối xứng với lưu trữ, dùng khi đang xem kho lưu trữ. */
@@ -689,6 +743,24 @@ export default function QuestionBankPage() {
                 Lưu trữ {selectedLive.length} câu
               </Button>
             )}
+            {/* Chỉ hiện khi THỰC SỰ có câu xoá cứng được. Hiện một nút mờ
+                kèm "0 câu" thì vừa vô dụng vừa gợi ý sai là có thể xoá. */}
+            {destroySplit.deletable.length > 0 && (
+              <Button
+                size="sm"
+                onClick={() => setBulkDestroying(destroySplit.deletable)}
+                disabled={!canMutate}
+                title={
+                  !canMutate
+                    ? "Bạn không có quyền xoá câu hỏi"
+                    : "Xoá vĩnh viễn — không khôi phục được"
+                }
+                className="bg-destructive text-white hover:bg-destructive/90"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Xoá vĩnh viễn {destroySplit.deletable.length} câu
+              </Button>
+            )}
             {selectedArchived.length > 0 && (
               <Button
                 size="sm"
@@ -750,32 +822,31 @@ export default function QuestionBankPage() {
       <ImportQuestionsDialog open={importOpen} onOpenChange={setImportOpen} />
       <ViewQuestionDialog question={viewing} onClose={() => setViewing(null)} />
 
-      <ConfirmActionDialog
-        open={Boolean(deleting)}
-        onOpenChange={(o) => !o && setDeleting(null)}
-        variant="destructive"
-        title="Lưu trữ câu hỏi?"
-        description={
-          deleting ? (
-            <>
-              Mã <span className="font-mono">{deleting.id}</span> sẽ được
-              chuyển vào kho lưu trữ. Câu hỏi đã được đóng băng trong các
-              đề thi sẽ không bị ảnh hưởng — đề HS đã làm bài vẫn giữ
-              nguyên nội dung gốc. Có thể khôi phục từ tab "Hiển thị đã
-              lưu trữ".
-            </>
-          ) : (
-            ""
-          )
-        }
-        confirmLabel="Lưu trữ"
-        onConfirm={() => {
+      {/* Xoá một câu: hộp thoại nêu CẢ HAI lối ra và nói rõ cái nào đang mở.
+          Bản cũ chỉ có "Lưu trữ", không giải thích — nên câu chưa dùng ở đâu
+          vẫn không xoá hẳn được và kho tích rác sau mỗi lần nhập nhầm file. */}
+      <DeleteQuestionDialog
+        question={deleting}
+        verdict={deleting ? deletability.verdictFor(deleting.id) : null}
+        onCancel={() => setDeleting(null)}
+        onArchive={() => {
           if (!deleting || !session) return;
-          archiveQuestion(
-            deleting.id,
-            session.userId,
-            "Admin lưu trữ câu hỏi",
-          );
+          archiveQuestion(deleting.id, session.userId, "Admin lưu trữ câu hỏi");
+          setDeleting(null);
+        }}
+        onDestroy={() => {
+          if (!deleting) return;
+          // Soát lại ngay trước khi xoá — xem chú thích ở performBulkDestroy.
+          if (!deletability.verdictFor(deleting.id).deletable) {
+            toast.error(
+              "Câu này vừa có tham chiếu mới nên không xoá vĩnh viễn được nữa.",
+            );
+            setDeleting(null);
+            return;
+          }
+          destroyQuestion(deleting.id, "Xoá vĩnh viễn từ ngân hàng câu hỏi");
+          toast.success(`Đã xoá vĩnh viễn ${deleting.id}.`);
+          setDeleting(null);
         }}
       />
       </>
@@ -814,6 +885,41 @@ export default function QuestionBankPage() {
         confirmLabel={`Lưu trữ ${bulkArchiving?.length ?? 0} câu`}
         onConfirm={() => {
           if (bulkArchiving) performBulkArchive(bulkArchiving);
+        }}
+      />
+
+      {/* Xoá cứng hàng loạt. Dùng lại ConfirmActionDialog vì tập này đã được
+          soát sạch — mọi câu trong đó đều xoá được; cái cần là một lần dừng
+          lại cuối cùng, không phải giải thích thêm về từng câu. */}
+      <ConfirmActionDialog
+        open={Boolean(bulkDestroying)}
+        onOpenChange={(o) => !o && setBulkDestroying(null)}
+        variant="destructive"
+        title={`Xoá vĩnh viễn ${bulkDestroying?.length ?? 0} câu hỏi?`}
+        description={
+          bulkDestroying ? (
+            <>
+              <b>Không khôi phục được.</b> Những câu này chưa vào đề, chưa vào
+              bài tập, chưa ai làm và không nằm trong chuỗi phiên bản nào — nên
+              xoá đi không để lại tham chiếu hỏng. Cần giữ lại thì bấm Huỷ rồi
+              dùng <b>Lưu trữ</b>.
+              <span className="text-meta mt-2 block font-mono text-muted-foreground">
+                {bulkDestroying
+                  .slice(0, 12)
+                  .map((q) => q.id)
+                  .join(", ")}
+                {bulkDestroying.length > 12
+                  ? ` … và ${bulkDestroying.length - 12} câu nữa`
+                  : ""}
+              </span>
+            </>
+          ) : (
+            ""
+          )
+        }
+        confirmLabel={`Xoá vĩnh viễn ${bulkDestroying?.length ?? 0} câu`}
+        onConfirm={() => {
+          if (bulkDestroying) performBulkDestroy(bulkDestroying);
         }}
       />
 

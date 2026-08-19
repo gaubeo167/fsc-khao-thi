@@ -49,6 +49,7 @@ node scripts/test-edit-permission.mjs # ai được sửa trực tiếp câu đ�
 node scripts/test-refresh-frozen.mjs  # đẩy câu đã sửa vào đề đang đóng băng
 node scripts/test-user-update-plan.mjs # sửa hồ sơ ≠ đổi mật khẩu (hai kho khác nhau)
 node scripts/test-bulk-select.mjs      # tích chọn hàng loạt chỉ chạm dòng đang thấy
+node scripts/test-question-delete.mjs  # xoá cứng: soát đủ 6 nguồn tham chiếu + chuỗi phiên bản
 node scripts/check-design-tokens.mjs   # bánh cóc thang chữ (xem dưới)
 ```
 

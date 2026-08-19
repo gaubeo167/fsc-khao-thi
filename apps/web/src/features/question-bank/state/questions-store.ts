@@ -16,6 +16,7 @@ import { COLLECTIONS } from "@/lib/firestore-collections";
 import { nextVersionFields, rootId, versionOf } from "@/lib/version";
 import {
   patchDoc,
+  removeDoc,
   sanitizeForFirestore,
   subscribeCollection,
   writeDoc,
@@ -49,6 +50,24 @@ interface Actions {
   restore(id: string, actorUid: string): void;
   /** Legacy alias — routes to archive(). */
   remove(id: string): void;
+  /**
+   * XOÁ CỨNG — mất hẳn, không khôi phục được.
+   *
+   * Chỉ gọi sau khi `canHardDelete()` trong `lib/question-delete.ts` trả
+   * `deletable: true`. Store KHÔNG tự soát lại: phép soát cần sáu store khác
+   * (đề thi · khung đề · mã đề · BTVN · lượt thi · bài tập đã làm) và kéo
+   * chúng vào đây là buộc chặt store câu hỏi vào gần như toàn hệ. Người gọi
+   * soát, store thi hành.
+   *
+   * Ghi `AuditEvent` TRƯỚC khi xoá, kèm bản chụp câu hỏi — sau lệnh này bản
+   * ghi audit là dấu vết duy nhất còn lại rằng câu đó từng tồn tại.
+   *
+   * KHÔNG nhận `actorUid` như `archive`/`restore`: hai hàm kia cần nó để ghi
+   * `archivedBy` vào chính tài liệu, còn ở đây tài liệu biến mất. Người thao
+   * tác do `recordAudit` lấy từ phiên đăng nhập — kèm cả vai trò và tên, thứ
+   * mà một `uid` truyền tay không mang theo được.
+   */
+  destroy(id: string, reason?: string): void;
   /**
    * Clone the row as a new version in the same chain. The new row:
    *   - Gets a fresh id and `version = parent.version + 1`.
@@ -220,6 +239,26 @@ export const useQuestionsStore = create<State & Actions>()((set, get) => ({
 
   remove(id) {
     get().archive(id, "system", "Legacy remove() call");
+  },
+
+  destroy(id, reason) {
+    const before = get().questions.find((q) => q.id === id);
+    if (!before) return;
+    // Audit TRƯỚC khi xoá. Ghi sau thì nếu lệnh xoá thành công mà lệnh ghi
+    // hỏng, câu hỏi biến mất và không còn gì nói nó từng tồn tại.
+    recordAudit({
+      entityType: "question",
+      entityId: id,
+      // `delete` là giá trị SẴN CÓ trong `AuditAction` cho xoá cứng —
+      // `archive` mới là xoá mềm. Không đẻ thêm giá trị mới cho cùng ý nghĩa.
+      action: "delete",
+      before: pickQuestionAuditFields(before),
+      after: undefined,
+      campusId: before.campusId,
+      reason: reason ?? "Xoá vĩnh viễn câu hỏi chưa dùng ở đâu",
+    });
+    set({ questions: get().questions.filter((q) => q.id !== id) });
+    removeDoc(COLLECTIONS.questions, id);
   },
 
   cloneAsNewVersion(sourceId, actorUid, reason) {
