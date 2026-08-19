@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo } from "react";
 
+import { useAuthStore } from "@/features/auth/state/auth-store";
 import { useExamFormsStore } from "@/features/exam-forms/state/exam-forms-store";
 import { useBlueprintsStore } from "@/features/exams/state/blueprints-store";
 import { useGeneratedStore } from "@/features/exams/state/generated-store";
@@ -33,6 +34,8 @@ import { useQuestionsStore } from "../state/questions-store";
  */
 export function useDeletability() {
   const questions = useQuestionsStore((s) => s.questions);
+  /** Chỉ người TẠO câu mới xoá vĩnh viễn được — xem `question-delete.ts`. */
+  const actorUserId = useAuthStore((s) => s.session?.userId ?? null);
   const questionsHydrated = useQuestionsStore((s) => s.hydrated);
   const examForms = useExamFormsStore((s) => s.forms);
   const examFormsHydrated = useExamFormsStore((s) => s.hydrated);
@@ -85,14 +88,14 @@ export function useDeletability() {
 
   const verdictFor = useCallback(
     (questionId: string): DeleteVerdict =>
-      canHardDelete(questionId, sources, hydration),
-    [sources, hydration],
+      canHardDelete(questionId, sources, hydration, actorUserId),
+    [sources, hydration, actorUserId],
   );
 
   const split = useCallback(
     <T extends { id: string }>(rows: readonly T[]) =>
-      splitDeletable(rows, sources, hydration),
-    [sources, hydration],
+      splitDeletable(rows, sources, hydration, actorUserId),
+    [sources, hydration, actorUserId],
   );
 
   return { ready, verdictFor, split };

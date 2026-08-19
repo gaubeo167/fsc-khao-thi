@@ -90,8 +90,10 @@ export interface DeletionSources {
     answers?: Record<string, unknown>;
     markedForReview?: string[];
   }>;
-  /** Toàn bộ kho câu — để soát chuỗi phiên bản. */
-  questions: Array<Pick<Question, "id"> & { versionOfRootId?: string }>;
+  /** Toàn bộ kho câu — để soát chuỗi phiên bản VÀ tra người tạo. */
+  questions: Array<
+    Pick<Question, "id"> & { versionOfRootId?: string; ownerId?: string | null }
+  >;
 }
 
 /** Mọi store cần thiết đã tải xong chưa. Thiếu MỘT cái là chặn. */
@@ -115,6 +117,7 @@ export interface DeleteBlocker {
     | "attempt"
     | "homework-attempt"
     | "version-chain"
+    | "not-owner"
     | "not-hydrated";
   /** Câu chữ hiện cho người dùng. */
   label: string;
@@ -135,6 +138,7 @@ const LABEL: Record<DeleteBlocker["kind"], string> = {
   attempt: "lượt làm bài của học sinh",
   "homework-attempt": "bài tập học sinh đã làm",
   "version-chain": "chuỗi phiên bản",
+  "not-owner": "quyền",
   "not-hydrated": "dữ liệu đối chiếu",
 };
 
@@ -155,11 +159,24 @@ export function allHydrated(h: DeletionHydration): boolean {
  * Soát một câu hỏi. Trả `deletable: false` kèm lý do cụ thể khi có bất kỳ
  * tham chiếu nào — nêu tên chứ không chỉ đếm, vì người dùng cần biết đi đâu
  * để gỡ.
+ *
+ * ── Quyền ───────────────────────────────────────────────────────────────
+ *
+ * AI TẠO CÂU NÀO THÌ XOÁ VĨNH VIỄN ĐƯỢC CÂU ĐÓ. Không phải "ai có quyền sửa
+ * kho" — trước đây nút xoá chỉ nhìn `canMutate`, tức mọi nhân viên xoá vĩnh
+ * viễn được câu của bất kỳ ai. Xoá cứng là thao tác DUY NHẤT trong hệ không
+ * có đường lùi, nên phạm vi phải hẹp nhất có thể mà vẫn dùng được.
+ *
+ * Luật quyền nằm CHUNG cổng với luật tham chiếu, không tách ra chỗ khác: hai
+ * cổng là hai đường, và sớm muộn một đường sẽ quên mất điều kiện của đường
+ * kia. `actorUserId` bỏ trống = không soát quyền (dùng cho test luật tham
+ * chiếu thuần).
  */
 export function canHardDelete(
   questionId: string,
   src: DeletionSources,
   hydrated: DeletionHydration,
+  actorUserId?: string | null,
 ): DeleteVerdict {
   if (!allHydrated(hydrated)) {
     return {
@@ -173,6 +190,33 @@ export function canHardDelete(
       reason:
         "Chưa đối chiếu đủ để chắc câu này không nằm trong đề hay bài tập nào. Chờ tải xong rồi thử lại — hoặc dùng Lưu trữ, lúc nào cũng an toàn.",
     };
+  }
+
+  // ── Quyền: chỉ người TẠO câu mới xoá vĩnh viễn được câu đó ─────────────
+  //
+  // Trả về sớm chứ không gom chung với các blocker tham chiếu: "câu này không
+  // phải của bạn" đã là câu trả lời trọn vẹn, liệt kê thêm nó nằm trong đề nào
+  // chỉ là nhiễu — và còn rò rỉ thông tin về dữ liệu của người khác.
+  if (actorUserId != null) {
+    const me = src.questions.find((q) => q.id === questionId);
+    if (!me) {
+      return {
+        deletable: false,
+        blockers: [
+          { kind: "not-owner", label: "Không tìm thấy câu hỏi trong kho đang tải" },
+        ],
+        reason:
+          "Không đối chiếu được người tạo câu này nên không xoá vĩnh viễn được. Dùng Lưu trữ.",
+      };
+    }
+    if (me.ownerId !== actorUserId) {
+      return {
+        deletable: false,
+        blockers: [{ kind: "not-owner", label: "Câu này do người khác tạo" }],
+        reason:
+          "Chỉ người TẠO câu mới xoá vĩnh viễn được câu đó. Bạn vẫn Lưu trữ được — câu ẩn khỏi kho và khôi phục lại được.",
+      };
+    }
   }
 
   const blockers: DeleteBlocker[] = [];
@@ -251,7 +295,7 @@ export function canHardDelete(
     return {
       deletable: true,
       reason:
-        "Câu này chưa vào đề, chưa vào bài tập, chưa ai làm, và không nằm trong chuỗi phiên bản nào. Xoá được vĩnh viễn.",
+        "Câu này do bạn tạo, chưa vào đề, chưa vào bài tập, chưa ai làm, và không nằm trong chuỗi phiên bản nào. Xoá được vĩnh viễn.",
       blockers: [],
     };
   }
@@ -274,11 +318,12 @@ export function splitDeletable<T extends { id: string }>(
   rows: readonly T[],
   src: DeletionSources,
   hydrated: DeletionHydration,
+  actorUserId?: string | null,
 ): { deletable: T[]; blocked: Array<{ row: T; verdict: DeleteVerdict }> } {
   const deletable: T[] = [];
   const blocked: Array<{ row: T; verdict: DeleteVerdict }> = [];
   for (const r of rows) {
-    const v = canHardDelete(r.id, src, hydrated);
+    const v = canHardDelete(r.id, src, hydrated, actorUserId);
     if (v.deletable) deletable.push(r);
     else blocked.push({ row: r, verdict: v });
   }

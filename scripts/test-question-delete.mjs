@@ -64,7 +64,7 @@ const EMPTY = {
   homework: [],
   attempts: [],
   homeworkAttempts: [],
-  questions: [{ id: "Q1" }],
+  questions: [{ id: "Q1", ownerId: "u-me" }],
 };
 const src = (over = {}) => ({ ...EMPTY, ...over });
 const verdict = (over = {}, hyd = READY) => canHardDelete("Q1", src(over), hyd);
@@ -242,6 +242,77 @@ const verdict = (over = {}, hyd = READY) => canHardDelete("Q1", src(over), hyd);
 
   const none = splitDeletable(rows, { ...EMPTY, questions: rows }, { ...READY, attempts: false });
   check("chưa tải xong → không câu nào xoá được", none.deletable.length === 0 && none.blocked.length === 3);
+}
+
+/* ── 10. QUYỀN: ai tạo câu nào thì xoá vĩnh viễn được câu đó ───────────── */
+// Trước đây nút xoá chỉ nhìn `canMutate`, tức MỌI nhân viên xoá vĩnh viễn được
+// câu của bất kỳ ai. Xoá cứng là thao tác duy nhất không có đường lùi.
+{
+  const kho = [
+    { id: "Q1", ownerId: "u-me" },
+    { id: "Q2", ownerId: "u-nguoi-khac" },
+  ];
+  const s = src({ questions: kho });
+
+  check(
+    "câu MÌNH tạo, chưa dùng ở đâu → xoá được",
+    canHardDelete("Q1", s, READY, "u-me").deletable === true,
+  );
+  const nguoiKhac = canHardDelete("Q2", s, READY, "u-me");
+  check("câu NGƯỜI KHÁC tạo → CHẶN", nguoiKhac.deletable === false);
+  check(
+    "blocker ghi rõ là vấn đề quyền",
+    nguoiKhac.blockers[0]?.kind === "not-owner",
+    JSON.stringify(nguoiKhac.blockers),
+  );
+  check(
+    "lý do chỉ đường sang Lưu trữ",
+    /Lưu trữ/.test(nguoiKhac.reason),
+    nguoiKhac.reason,
+  );
+  // Không được rò rỉ câu của người khác đang nằm trong đề nào.
+  const kin = canHardDelete(
+    "Q2",
+    src({
+      questions: kho,
+      homework: [{ id: "H9", title: "BTVN bí mật", questionIds: ["Q2"] }],
+    }),
+    READY,
+    "u-me",
+  );
+  check(
+    "chặn vì quyền thì KHÔNG liệt kê tham chiếu của người khác",
+    kin.blockers.every((b) => b.kind === "not-owner"),
+    JSON.stringify(kin.blockers),
+  );
+
+  check(
+    "không truyền actor → không soát quyền (luật tham chiếu thuần)",
+    canHardDelete("Q2", s, READY).deletable === true,
+  );
+  check(
+    "câu mình tạo NHƯNG đã vào đề → vẫn CHẶN (quyền không vượt qua tham chiếu)",
+    canHardDelete(
+      "Q1",
+      src({
+        questions: kho,
+        examForms: [
+          { id: "F", name: "Đề A", variants: [{ questions: [{ originalQuestionId: "Q1" }] }] },
+        ],
+      }),
+      READY,
+      "u-me",
+    ).deletable === false,
+  );
+  check(
+    "không tìm thấy câu trong kho → chặn, không đoán bừa là của mình",
+    canHardDelete("Q-la", s, READY, "u-me").deletable === false,
+  );
+
+  // Hàng loạt: chỉ xoá phần của mình, câu người khác rơi sang nhóm bị chặn.
+  const chia = splitDeletable(kho, s, READY, "u-me");
+  check("hàng loạt: tách đúng phần của mình", chia.deletable.map((r) => r.id).join() === "Q1");
+  check("hàng loạt: câu người khác bị chặn", chia.blocked[0]?.row.id === "Q2");
 }
 
 console.log(`\n${pass} qua, ${fail} trượt`);

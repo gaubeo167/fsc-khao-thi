@@ -748,7 +748,7 @@ export default function QuestionBankPage() {
                 title={
                   !canMutate
                     ? "Bạn không có quyền xoá câu hỏi"
-                    : "Xoá vĩnh viễn — không khôi phục được"
+                    : "Xoá vĩnh viễn câu do bạn tạo — không khôi phục được"
                 }
                 className="bg-destructive text-white hover:bg-destructive/90"
               >
@@ -894,10 +894,11 @@ export default function QuestionBankPage() {
         description={
           bulkDestroying ? (
             <>
-              <b>Không khôi phục được.</b> Những câu này chưa vào đề, chưa vào
-              bài tập, chưa ai làm và không nằm trong chuỗi phiên bản nào — nên
-              xoá đi không để lại tham chiếu hỏng. Cần giữ lại thì bấm Huỷ rồi
-              dùng <b>Lưu trữ</b>.
+              <b>Không khôi phục được.</b> Đều là câu <b>do bạn tạo</b>, chưa
+              vào đề, chưa vào bài tập, chưa ai làm và không nằm trong chuỗi
+              phiên bản nào — nên xoá đi không để lại tham chiếu hỏng. Câu của
+              người khác đã được loại khỏi danh sách này. Cần giữ lại thì bấm
+              Huỷ rồi dùng <b>Lưu trữ</b>.
               <span className="text-meta mt-2 block font-mono text-muted-foreground">
                 {bulkDestroying
                   .slice(0, 12)
