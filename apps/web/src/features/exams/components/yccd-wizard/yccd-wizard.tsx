@@ -401,7 +401,10 @@ export function YccdWizard({
     if (!subjectId || pool.length === 0) return;
     const bp = blueprintsAll.find((b) => b.id === editing.blueprintId);
     if (!bp) return;
-    const pickedIds = new Set(bp.topics.flatMap((t) => t.pickedQuestionIds));
+    // Cùng lý do như ở /admin/shifts: khung đề thiếu `topics` thì nổ cả màn.
+    const pickedIds = new Set(
+      (bp.topics ?? []).flatMap((t) => t.pickedQuestionIds ?? []),
+    );
     const sel = new Set<string>();
     for (const q of pool) {
       if (!pickedIds.has(q.id)) continue;

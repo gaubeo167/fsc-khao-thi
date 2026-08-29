@@ -64,6 +64,44 @@ const USERS = [
     name: "GV Toán",
     role: "teacher",
     campusId: "campus-caugiay",
+    // Có môn thì `useUserScope` mới ra phạm vi khác rỗng — thiếu nó thì tài
+    // khoản này mở Ngân hàng câu hỏi ra thấy TRỐNG TRƠN và tưởng app hỏng.
+    subjectIds: ["subject-toan"],
+  },
+  {
+    uid: "u-teacher-sinh",
+    email: "gv.sinh@fpt.edu.vn",
+    name: "GV Sinh",
+    role: "teacher",
+    campusId: "campus-caugiay",
+    subjectIds: ["subject-sinh"],
+  },
+  /*
+   * HAI Trưởng nhóm môn, cố ý khai môn theo HAI KIỂU khác nhau.
+   *
+   * Phân quyền theo môn là chỗ đã lộ dữ liệu môn khác một lần (TBM Toán xem
+   * và duyệt được câu hỏi môn Sinh). Muốn kiểm được thì phải có ít nhất hai
+   * TBM khác môn để so — một người thấy gì, người kia KHÔNG được thấy.
+   *
+   * Kiểu khai khác nhau là chủ ý: hồ sơ thật hiện còn nhiều bản chỉ có
+   * `subject` dạng chữ tự do, chưa có `subjectIds`. Seed chỉ có kiểu mới thì
+   * `subjectIdsOfUser` bậc khớp chữ không bao giờ được chạy thử.
+   */
+  {
+    uid: "u-lead-toan",
+    email: "tbm.toan@fpt.edu.vn",
+    name: "TBM Toán",
+    role: "subject-lead",
+    campusId: "campus-caugiay",
+    subject: "Toán", // kiểu CŨ — chữ tự do
+  },
+  {
+    uid: "u-lead-sinh",
+    email: "tbm.sinh@fpt.edu.vn",
+    name: "TBM Sinh",
+    role: "subject-lead",
+    campusId: "campus-caugiay",
+    subjectIds: ["subject-sinh"], // kiểu MỚI
   },
   {
     uid: "u-student-1",
@@ -106,6 +144,9 @@ async function upsertUser(u) {
         role: u.role,
         campusId: u.campusId,
         className: u.className ?? null,
+        // Ghi cả hai kiểu khai môn để seed phản ánh đúng dữ liệu thật.
+        ...(u.subjectIds ? { subjectIds: u.subjectIds } : {}),
+        ...(u.subject ? { subject: u.subject } : {}),
         status: "active",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),

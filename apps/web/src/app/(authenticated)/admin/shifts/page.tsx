@@ -62,7 +62,10 @@ import { AssignGradersDialog } from "@/features/grading/dialogs/assign-graders-d
 import { PostExamDialog } from "@/features/exam-shifts/dialogs/post-exam-dialog";
 import { useGradingStore } from "@/features/grading/state/grading-store";
 import { useQuestionsStore } from "@/features/question-bank/state/questions-store";
-import { isManualGradingType } from "@/features/grading/lib/utils";
+import {
+  isManualGradingType,
+  pickedQuestionIdsOf,
+} from "@/features/grading/lib/utils";
 import { PageHeader } from "@/features/shell/components/page-header";
 import { cn } from "@/lib/utils";
 
@@ -641,9 +644,10 @@ export default function ShiftsPage() {
                         // blueprint topics so we know whether to surface the
                         // grading-assignment button.
                         if (!pkg || !bp) return null;
-                        const ids = bp.topics.flatMap(
-                          (t) => t.pickedQuestionIds,
-                        );
+                        // Khung đề CÓ mà thiếu `topics` thì bản viết thẳng
+                        // `.flatMap` nổ, và nổ ở đây là chết CẢ trang này —
+                        // xem `pickedQuestionIdsOf`.
+                        const ids = pickedQuestionIdsOf(bp);
                         const manualCount = ids
                           .map((id) => allQuestions.find((q) => q.id === id))
                           .filter(

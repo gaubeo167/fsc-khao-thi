@@ -69,3 +69,22 @@ export function combineScores(args: {
     max,
   };
 }
+
+/**
+ * Mã câu hỏi mà một khung đề đã bốc — gộp từ mọi chủ điểm.
+ *
+ * ── Vì sao là hàm riêng, không viết thẳng trong JSX ─────────────────────
+ *
+ * Bản viết thẳng là `bp.topics.flatMap((t) => t.pickedQuestionIds)`. Khung đề
+ * CÓ nhưng thiếu `topics` thì `.flatMap` nổ ngay giữa lúc dựng bảng — và nổ
+ * ở đó là chết CẢ trang /admin/shifts: người vận hành thấy "Application
+ * error" trắng màn, không vào được ca thi nào. Một bản ghi lệch khoá cả màn.
+ *
+ * Kiểu khai bảo hai trường này luôn có, nên `tsc` không bao giờ kêu. Chỉ dữ
+ * liệu thật mới nói khác.
+ */
+export function pickedQuestionIdsOf(
+  bp: { topics?: { pickedQuestionIds?: string[] }[] } | null | undefined,
+): string[] {
+  return (bp?.topics ?? []).flatMap((t) => t?.pickedQuestionIds ?? []);
+}
