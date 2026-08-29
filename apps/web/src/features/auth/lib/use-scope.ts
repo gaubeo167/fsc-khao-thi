@@ -6,6 +6,8 @@ import { useUsersStore } from "@/features/admin/users/users-store";
 import { useAuthStore } from "@/features/auth/state/auth-store";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 
+import { subjectIdsOfUser } from "./subject-scope";
+
 /**
  * Resolve the current user's "scope" — which subjects + grades they are
  * actually authorised to work on. Used by question creation, blueprint
@@ -46,6 +48,11 @@ export interface UserScope {
  */
 export const ScopeContext = createContext<UserScope | null>(null);
 
+// Luật "người này phụ trách môn nào" sống ở `subject-scope.ts` — thuần, không
+// dính React, nên test được thẳng bằng node. Bày lại ở đây để chỗ gọi cũ chỉ
+// cần nhớ một đường dẫn.
+export { subjectIdsOfUser, userTeachesSubject } from "./subject-scope";
+
 export function useUserScope(): UserScope {
   const ctx = useContext(ScopeContext);
   // Fall back to the direct hook if no provider is mounted (e.g. unit
@@ -81,28 +88,10 @@ export function useResolveScope(): UserScope {
         hasScope: true,
       };
     }
-    // teacher / subject-lead — bound to their user record.
+    // teacher / subject-lead — bound to their user record. Cùng một hàm với
+    // chỗ hỏi về NGƯỜI KHÁC (`subjectIdsOfUser`), để không có luật thứ hai.
     const u = users.find((x) => x.id === session.userId);
-    const allowedSubjectIds = new Set<string>();
-    if (u?.subjectIds && u.subjectIds.length > 0) {
-      for (const id of u.subjectIds) allowedSubjectIds.add(id);
-    } else if (u?.subject) {
-      // Legacy: `subject` is a free-text label that drifted from the
-      // subjects-store canonical name (vd. seed has "Văn" while the
-      // store entry is "Ngữ văn"). Match in 3 tiers — exact, code,
-      // substring — so legacy teachers still get a non-empty scope
-      // without admin needing to re-edit every record.
-      const needle = u.subject.toLowerCase().trim();
-      const match =
-        subjects.find((s) => s.name.toLowerCase() === needle) ||
-        subjects.find((s) => s.code?.toLowerCase() === needle) ||
-        subjects.find(
-          (s) =>
-            s.name.toLowerCase().includes(needle) ||
-            needle.includes(s.name.toLowerCase()),
-        );
-      if (match) allowedSubjectIds.add(match.id);
-    }
+    const allowedSubjectIds = subjectIdsOfUser(u, subjects) ?? new Set<string>();
 
     const rawGradeIds = u?.gradeIds ?? [];
     const allowedGradeIds: Set<string> | null =

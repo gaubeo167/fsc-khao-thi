@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { Select } from "@/components/ui/select";
+import { useUserScope } from "@/features/auth/lib/use-scope";
 import { useAuthStore } from "@/features/auth/state/auth-store";
 import { useCampusStore } from "@/features/campus/state/campus-store";
 import { DifficultyPills } from "@/features/exams/components/difficulty-pills";
@@ -65,6 +66,7 @@ const MaterialViewerDialog = dynamic(
 
 export default function ApprovalsPage() {
   const session = useAuthStore((s) => s.session);
+  const scope = useUserScope();
   const activeCampusId = useCampusStore((s) => s.activeCampusId);
   const grades = useGradesStore((s) => s.grades);
   const subjects = useSubjectsStore((s) => s.subjects);
@@ -90,12 +92,21 @@ export default function ApprovalsPage() {
       // chỉ tab Học liệu nhớ điều kiện này.
       if (!inApprovalQueue(q)) return false;
       if (q.kho !== "campus") return false;
+      // Hàng đợi duyệt CẮT THEO MÔN, không chỉ theo cơ sở.
+      //
+      // Trưởng nhóm môn Toán từng thấy — và duyệt được — câu của môn Sinh:
+      // trang này chỉ lọc `campusId`, trong khi màn Ngân hàng câu hỏi đã cắt
+      // theo môn từ lâu. Dùng lại đúng `useUserScope()` của màn kia, không
+      // đẻ luật thứ hai. Bậc admin (`isUnscoped`) vẫn thấy toàn bộ.
+      if (!scope.isUnscoped && scope.allowedSubjectIds != null) {
+        if (!scope.allowedSubjectIds.has(q.subjectId)) return false;
+      }
       if (session.role === "superadmin") {
         return activeCampusId ? q.campusId === activeCampusId : true;
       }
       return q.campusId === session.campusId;
     });
-  }, [questions, session, activeCampusId]);
+  }, [questions, session, activeCampusId, scope]);
 
   const kpis = useMemo(() => {
     return {
@@ -476,6 +487,7 @@ function KindTab({
 
 function PackageApprovalsSection({ canApprove }: { canApprove: boolean }) {
   const session = useAuthStore((s) => s.session);
+  const scope = useUserScope();
   const activeCampusId = useCampusStore((s) => s.activeCampusId);
   const packages = usePackagesStore((s) => s.packages);
   const setPackageStatus = usePackagesStore((s) => s.setStatus);
@@ -497,10 +509,14 @@ function PackageApprovalsSection({ canApprove }: { canApprove: boolean }) {
       if (!inApprovalQueue(p)) return false;
       const bp = blueprints.find((b) => b.id === p.blueprintId);
       if (!bp) return false;
+      // Cắt theo MÔN như tab câu hỏi — môn của gói đề nằm ở khung đề.
+      if (!scope.isUnscoped && scope.allowedSubjectIds != null) {
+        if (!scope.allowedSubjectIds.has(bp.subjectId)) return false;
+      }
       if (campusScope) return bp.campusId === campusScope;
       return true;
     });
-  }, [packages, blueprints, session, activeCampusId]);
+  }, [packages, blueprints, session, activeCampusId, scope]);
 
   const kpis = useMemo(() => {
     return {
@@ -752,6 +768,7 @@ function MaterialApprovalsSection({
   canApprove: boolean;
 }) {
   const session = useAuthStore((s) => s.session);
+  const scope = useUserScope();
   const activeCampusId = useCampusStore((s) => s.activeCampusId);
   const allMaterials = useMaterialsStore((s) => s.materials);
   const setMaterialStatus = useMaterialsStore((s) => s.setStatus);
@@ -775,12 +792,16 @@ function MaterialApprovalsSection({
     return allMaterials.filter((m) => {
       if (!inApprovalQueue(m)) return false;
       if (m.kho !== "campus") return false;
+      // Cắt theo MÔN như hai tab kia.
+      if (!scope.isUnscoped && scope.allowedSubjectIds != null) {
+        if (!scope.allowedSubjectIds.has(m.subjectId)) return false;
+      }
       if (session.role === "superadmin") {
         return activeCampusId ? m.campusId === activeCampusId : true;
       }
       return m.campusId === session.campusId;
     });
-  }, [allMaterials, session, activeCampusId]);
+  }, [allMaterials, session, activeCampusId, scope]);
 
   const kpis = useMemo(
     () => ({

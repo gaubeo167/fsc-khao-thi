@@ -32,6 +32,8 @@ import { cn } from "@/lib/utils";
 
 import { isYccdPackage, type ExamPackage, type GeneratedExam } from "../../data/types";
 import { GeneratedView } from "../generated-view";
+import { useUserScope } from "@/features/auth/lib/use-scope";
+
 import { useBlueprintsStore } from "../../state/blueprints-store";
 import { useGeneratedStore } from "../../state/generated-store";
 import { usePackagesStore } from "../../state/packages-store";
@@ -112,6 +114,7 @@ export function YccdExamManager() {
   const session = useAuthStore((s) => s.session);
   const activeCampusId = useCampusStore((s) => s.activeCampusId);
   const packages = usePackagesStore((s) => s.packages);
+  const scope = useUserScope();
   const clonePackage = usePackagesStore((s) => s.cloneAsNewVersion);
   const updatePackage = usePackagesStore((s) => s.update);
   const archivePackage = usePackagesStore((s) => s.archive);
@@ -158,9 +161,22 @@ export function YccdExamManager() {
         (p) =>
           !activeCampusId || p.campusId === activeCampusId || p.campusId == null,
       )
+      // Cắt theo MÔN.
+      //
+      // Kho đề này từng chỉ lọc theo cơ sở, nên Trưởng nhóm môn Toán mở ra
+      // thấy nguyên gói "Test Sinh 10" của môn Sinh. Môn của gói đề nằm ở
+      // khung đề (`blueprint.subjectId`) chứ không ở gói. Bậc admin
+      // (`isUnscoped`) vẫn thấy toàn bộ.
+      .filter((p) => {
+        if (scope.isUnscoped || scope.allowedSubjectIds == null) return true;
+        const bp = blueprints.find((b) => b.id === p.blueprintId);
+        // Không tìm được khung đề thì KHÔNG hiện: thà thiếu còn hơn lộ gói
+        // của môn khác vì dữ liệu cũ chưa gắn khung.
+        return bp ? scope.allowedSubjectIds.has(bp.subjectId) : false;
+      })
       .filter((p) => !q || p.name.toLowerCase().includes(q))
       .sort((a, b) => toMillis(b.updatedAt) - toMillis(a.updatedAt));
-  }, [packages, showArchived, activeCampusId, query]);
+  }, [packages, blueprints, showArchived, activeCampusId, query, scope]);
 
   /**
    * Mã đề của các gói ĐANG HIỆN ở tab "Đề YCCĐ" (`rows` đã lọc lưu trữ /
