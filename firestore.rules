@@ -396,10 +396,34 @@ service cloud.firestore {
 
     // ───── /grading_assignments — who grades which shift's essays ─────────
     // Staff-only "who grades what" table; students have no screen for it.
+    //
+    // TBM (subject-lead) PHẢI ghi được: phân công người chấm là việc của tổ
+    // chuyên môn, không phải của admin cơ sở. Trước đây rule chỉ mở cho
+    // `isAdmin()`, nên TBM mở được hộp thoại, chọn được người, bấm "Lưu phân
+    // công" — rồi Firestore từ chối. Mà `writeDoc` chỉ `console.warn` nên
+    // màn hình vẫn hiện như đã lưu, tới lúc tải lại mới thấy mất.
+    //
+    // Cắt theo MÔN nằm ở giao diện (`assign-graders-dialog` chỉ hiện GV cùng
+    // môn với ca thi), KHÔNG ở đây — cùng lối với `isApprover()`: hồ sơ TBM
+    // cũ mới chỉ có `subject` dạng chữ tự do, chưa có `subjectIds`, nên
+    // `leadScopeOk` sẽ từ chối đúng những người cần cho phép. Rule giữ vế
+    // CƠ SỞ, là vế luôn có dữ liệu để kiểm.
+    function isGradingAssigner() {
+      return isAdmin() || (isSignedIn() && role() == "subject-lead");
+    }
+    // TBM chỉ đụng phân công trong cơ sở của mình. Doc thiếu `campusId` (dữ
+    // liệu cũ) thì chỉ admin sửa được — thà chặt còn hơn cho ghi mù.
+    function assignmentCampusOk(data) {
+      return isAdmin() ||
+        (data.get("campusId", null) != null &&
+          data.campusId == callerCampusId());
+    }
     match /grading_assignments/{id} {
       allow read: if isTeacherOrAbove();
-      allow create: if isAdmin();
-      allow update, delete: if isAdmin();
+      allow create: if isGradingAssigner() &&
+        assignmentCampusOk(request.resource.data);
+      allow update, delete: if isGradingAssigner() &&
+        assignmentCampusOk(resource.data);
     }
 
     // ───── /exam_forms — frozen snapshots of exam content ─────────────────

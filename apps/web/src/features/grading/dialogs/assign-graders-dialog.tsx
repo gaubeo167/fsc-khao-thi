@@ -10,10 +10,12 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useUsersStore } from "@/features/admin/users/users-store";
+import { userTeachesSubject } from "@/features/auth/lib/use-scope";
 import { useAuthStore } from "@/features/auth/state/auth-store";
 import type { ExamShift } from "@/features/exam-shifts/data/types";
 import { useShiftsStore } from "@/features/exam-shifts/state/shifts-store";
 import { useGradingStore } from "@/features/grading/state/grading-store";
+import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -53,6 +55,7 @@ export function AssignGradersDialog({
 }: Props) {
   const session = useAuthStore((s) => s.session);
   const users = useUsersStore((s) => s.users);
+  const subjects = useSubjectsStore((s) => s.subjects);
   const assignments = useGradingStore((s) => s.assignments);
   const assignGrader = useGradingStore((s) => s.assignGrader);
   const unassignGrader = useGradingStore((s) => s.unassignGrader);
@@ -108,9 +111,17 @@ export function AssignGradersDialog({
   );
   const assignmentsDirty = toAdd.length > 0 || toRemove.length > 0;
 
-  // Eligible graders: teachers / subject-leads / campus-admins in the
-  // same campus as the shift. Subject-lead and teacher are the typical
-  // assignees; campus-admin is included so the admin can self-assign.
+  /**
+   * Người được phép chấm ca này.
+   *
+   * Lọc theo cơ sở, vai trò VÀ MÔN của ca thi. Thiếu vế môn thì Trưởng nhóm
+   * môn Toán mở hộp này ra thấy cả giáo viên Sinh, Văn — giao nhầm người
+   * chấm là bài chấm sai chuyên môn, mà lúc phát hiện thì điểm đã trả.
+   *
+   * Bậc admin (`campus-admin` · `academic-director`) KHÔNG bị lọc môn:
+   * `userTeachesSubject` trả `true` cho họ, để admin vẫn tự nhận chấm được
+   * — đúng lý do họ có mặt trong danh sách này ngay từ đầu.
+   */
   const eligible = useMemo(() => {
     return users.filter(
       (u) =>
@@ -118,9 +129,10 @@ export function AssignGradersDialog({
         ["teacher", "subject-lead", "campus-admin", "academic-director"].includes(
           u.role,
         ) &&
-        (shift.campusId == null || u.campusId === shift.campusId),
+        (shift.campusId == null || u.campusId === shift.campusId) &&
+        userTeachesSubject(u, shift.subjectId, subjects),
     );
-  }, [users, shift.campusId]);
+  }, [users, shift.campusId, shift.subjectId, subjects]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -135,6 +147,14 @@ export function AssignGradersDialog({
     });
   }, [eligible, search, selectedIds]);
 
+  /**
+   * Lỗi máy chủ trả về khi lưu phân công.
+   *
+   * Ghi Firestore chạy nền và trước đây chỉ `console.warn` — TBM bấm lưu,
+   * rules từ chối, màn hình vẫn hiện "Phân công đã đồng bộ". Phải nói ra.
+   */
+  const [saveError, setSaveError] = useState<string | null>(null);
+
   function toggleSelect(id: string) {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -146,10 +166,19 @@ export function AssignGradersDialog({
 
   function handleSaveAssignments() {
     if (!session || !assignmentsDirty) return;
+    setSaveError(null);
+    const bao = (e: unknown) => {
+      const ma = (e as { code?: string } | null)?.code ?? "";
+      setSaveError(
+        ma === "permission-denied"
+          ? "Máy chủ từ chối: tài khoản này không có quyền phân công người chấm cho ca thi của cơ sở đó. Nhờ admin cơ sở thực hiện, hoặc kiểm tra lại môn/cơ sở trong hồ sơ."
+          : `Lưu không thành công${ma ? ` (${ma})` : ""} — các thay đổi đã được hoàn lại. Thử lại hoặc kiểm tra kết nối mạng.`,
+      );
+    };
     // Apply removals first, then additions.
     for (const id of toRemove) {
       const a = shiftAssignments.find((x) => x.graderId === id);
-      if (a) unassignGrader(a.id);
+      if (a) unassignGrader(a.id, bao);
     }
     for (const id of toAdd) {
       const u = users.find((x) => x.id === id);
@@ -160,8 +189,11 @@ export function AssignGradersDialog({
         graderName: u.name,
         assignedBy: session.userId,
         assignedByName: session.name ?? "Admin",
+        // Rules đọc trường này để chặn ghi chéo cơ sở. Thiếu nó thì bản ghi
+        // chỉ admin sửa được — xem `assignmentCampusOk` trong firestore.rules.
+        campusId: shift.campusId ?? session.campusId ?? null,
         note: note.trim() || null,
-      });
+      }, bao);
     }
     setNote("");
   }
@@ -392,6 +424,15 @@ export function AssignGradersDialog({
             )}
           </section>
         </div>
+
+        {saveError && (
+          <p
+            role="alert"
+            className="text-meta border-t border-rose-200 bg-rose-50 px-5 py-2 font-medium text-rose-800"
+          >
+            {saveError}
+          </p>
+        )}
 
         <footer className="flex items-center justify-between gap-2 border-t bg-[var(--color-surface-2)] px-5 py-3">
           <span className="text-[11px] text-muted-foreground">

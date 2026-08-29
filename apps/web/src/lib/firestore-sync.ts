@@ -90,6 +90,7 @@ export function writeDoc(
   collectionName: string,
   id: string,
   data: Record<string, unknown>,
+  onError?: (e: unknown) => void,
 ): void {
   if (!isFirebaseConfigured()) return;
   setDoc(doc(getDb(), collectionName, id), {
@@ -98,6 +99,7 @@ export function writeDoc(
   }).catch((e) => {
     // eslint-disable-next-line no-console
     console.warn(`[firestore] setDoc ${collectionName}/${id} failed`, e);
+    onError?.(e);
   });
 }
 
@@ -118,11 +120,16 @@ export function patchDoc(
 }
 
 /** Background `deleteDoc` with logging. No-ops in demo mode. */
-export function removeDoc(collectionName: string, id: string): void {
+export function removeDoc(
+  collectionName: string,
+  id: string,
+  onError?: (e: unknown) => void,
+): void {
   if (!isFirebaseConfigured()) return;
   deleteDoc(doc(getDb(), collectionName, id)).catch((e) => {
     // eslint-disable-next-line no-console
     console.warn(`[firestore] deleteDoc ${collectionName}/${id} failed`, e);
+    onError?.(e);
   });
 }
 

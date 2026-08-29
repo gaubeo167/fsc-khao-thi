@@ -67,10 +67,17 @@ interface State {
 }
 
 interface Actions {
+  /**
+   * `onError` bắt buộc phải có chỗ nhận: ghi Firestore là chạy nền, và nếu
+   * rules từ chối thì kho cục bộ ĐÃ đổi lạc quan rồi — màn hình trông như đã
+   * lưu cho tới lúc tải lại. Đúng lỗi "TBM phân công chấm không được nhưng
+   * không báo gì". Chỗ gọi phải hiện lỗi ra, đừng nuốt.
+   */
   assignGrader(
     input: Omit<GradingAssignment, "id" | "assignedAt">,
+    onError?: (e: unknown) => void,
   ): GradingAssignment;
-  unassignGrader(id: string): void;
+  unassignGrader(id: string, onError?: (e: unknown) => void): void;
   gradersForShift(shiftId: string): GradingAssignment[];
   isAssigned(shiftId: string, graderId: string): boolean;
 
@@ -97,7 +104,7 @@ export const useGradingStore = create<State & Actions>()((set, get) => ({
   grades: [],
   hydrated: false,
 
-  assignGrader(input) {
+  assignGrader(input, onError) {
     const existing = get().assignments.find(
       (a) => a.shiftId === input.shiftId && a.graderId === input.graderId,
     );
@@ -112,13 +119,28 @@ export const useGradingStore = create<State & Actions>()((set, get) => ({
       COLLECTIONS.gradingAssignments,
       rec.id,
       sanitizeForFirestore(rec as unknown as Record<string, unknown>),
+      (e) => {
+        // Máy chủ từ chối → gỡ lại bản ghi lạc quan, không để màn hình nói
+        // dối là đã lưu.
+        set({ assignments: get().assignments.filter((a) => a.id !== rec.id) });
+        onError?.(e);
+      },
     );
     return rec;
   },
 
-  unassignGrader(id) {
-    set({ assignments: get().assignments.filter((a) => a.id !== id) });
-    removeDoc(COLLECTIONS.gradingAssignments, id);
+  unassignGrader(id, onError) {
+    const truoc = get().assignments;
+    set({ assignments: truoc.filter((a) => a.id !== id) });
+    removeDoc(COLLECTIONS.gradingAssignments, id, (e) => {
+      // Xoá hụt thì trả lại hàng đã biến mất khỏi màn hình.
+      const con = get().assignments;
+      if (!con.some((a) => a.id === id)) {
+        const cu = truoc.find((a) => a.id === id);
+        if (cu) set({ assignments: [cu, ...con] });
+      }
+      onError?.(e);
+    });
   },
 
   gradersForShift(shiftId) {
