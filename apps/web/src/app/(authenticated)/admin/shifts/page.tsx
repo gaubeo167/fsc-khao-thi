@@ -884,49 +884,36 @@ export default function ShiftsPage() {
                         làm — nên ca đã kết thúc, tức mọi ca có bài làm, không
                         ai ẩn được, kể cả admin gốc.
                       */}
-                      {(() => {
-                        const vAn = canHideShift(session, sh);
-                        const vHien = canUnhideShift(session, sh);
-                        if (sh.archivedAt) {
-                          if (!vHien.ok) return null;
-                          return (
-                            <IconButton
-                              size="sm"
-                              title="Hiện lại ca thi trong danh sách"
-                              onClick={() => {
-                                if (!session) return;
-                                restoreShift(sh.id, session.userId);
-                              }}
-                            >
-                              <Eye className="h-3.5 w-3.5" strokeWidth={1.75} />
-                            </IconButton>
-                          );
-                        }
-                        if (!vAn.ok) return null;
-                        return (
-                          <IconButton
-                            size="sm"
-                            title="Ẩn khỏi danh sách — dữ liệu và báo cáo giữ nguyên"
-                            onClick={() => {
-                              if (!session) return;
-                              archiveShift(
-                                sh.id,
-                                session.userId,
-                                "Admin ẩn khỏi danh sách ca thi",
-                              );
-                            }}
-                          >
-                            <EyeOff className="h-3.5 w-3.5" strokeWidth={1.75} />
-                          </IconButton>
-                        );
-                      })()}
+                      {/*
+                        Chỉ nút ẨN. Việc HIỆN LẠI do nút khôi phục ngay bên
+                        dưới đảm nhiệm — bản đầu em vẽ thêm một nút "Hiện lại"
+                        nữa, thành hai nút cùng một việc trên cùng một dòng,
+                        trong đúng cái tính năng sinh ra để bớt rối.
+                      */}
+                      {canHideShift(session, sh).ok && (
+                        <IconButton
+                          size="sm"
+                          title="Ẩn khỏi danh sách — dữ liệu và báo cáo giữ nguyên"
+                          onClick={() => {
+                            if (!session) return;
+                            archiveShift(
+                              sh.id,
+                              session.userId,
+                              "Admin ẩn khỏi danh sách ca thi",
+                            );
+                          }}
+                        >
+                          <EyeOff className="h-3.5 w-3.5" strokeWidth={1.75} />
+                        </IconButton>
+                      )}
                       {sh.archivedAt ? (
                         <IconButton
                           size="sm"
                           variant="primary"
-                          title="Khôi phục ca thi đã lưu trữ"
+                          title="Hiện lại ca thi trong danh sách"
+                          disabled={!canUnhideShift(session, sh).ok}
                           onClick={() => {
-                            if (!session) return;
+                            if (!session || !canUnhideShift(session, sh).ok) return;
                             restoreShift(sh.id, session.userId);
                           }}
                         >

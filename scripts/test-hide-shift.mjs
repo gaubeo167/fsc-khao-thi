@@ -101,6 +101,18 @@ const GD = { role: "academic-director", campusId: CS };
   check("ca không tồn tại → không, không nổ", !canHideShift(ADMIN_GOC, null).ok);
 }
 
+/* ── 3b. ĐÃ ẨN rồi thì không ẩn nữa ──────────────────────────────────── */
+// Chỗ gọi dùng chính hàm này để quyết vẽ ô tích và nút Ẩn hay không. Thiếu vế
+// này là dòng đã ẩn vẫn mời người dùng ẩn lần nữa, bấm xong ra "Ẩn 0 ca" —
+// đúng lỗi /qa bắt được sau khi tính năng đã lên production.
+{
+  const daAn = { ...daXong, archivedAt: gio(-1) };
+  const v = canHideShift(ADMIN_GOC, daAn);
+  check("ca ĐÃ ẨN → không ẩn được nữa", !v.ok);
+  check("…lý do nói đã ẩn từ trước", /đã ẩn/i.test(v.reason), v.reason);
+  check("…nhưng HIỆN LẠI thì được", canUnhideShift(ADMIN_GOC, daAn).ok);
+}
+
 /* ── 4. Hiện lại: cùng bậc quyền, không cần điều kiện trạng thái ─────── */
 {
   check("admin gốc hiện lại được", canUnhideShift(ADMIN_GOC, { ...daXong, archivedAt: gio(-1) }).ok);

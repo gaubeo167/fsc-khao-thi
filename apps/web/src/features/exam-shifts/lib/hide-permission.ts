@@ -75,6 +75,13 @@ export function canHideShift(
         "Chỉ admin cơ sở của chính cơ sở này và tài khoản admin gốc mới ẩn được ca thi.",
     };
   }
+  // Đã ẩn rồi thì không "ẩn" được nữa. Không phải bắt bẻ chữ nghĩa: chỗ gọi
+  // dùng chính hàm này để quyết định có vẽ ô tích và nút Ẩn hay không, nên
+  // thiếu vế này là dòng đã ẩn vẫn mời người dùng ẩn lần nữa, bấm xong ra
+  // "Ẩn 0 ca".
+  if (shift.archivedAt) {
+    return { ok: false, reason: "Ca này đã ẩn từ trước." };
+  }
   const eff = effectiveShiftStatus(shift);
   if (eff !== "completed" && eff !== "cancelled") {
     return {
