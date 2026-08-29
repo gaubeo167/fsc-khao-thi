@@ -108,6 +108,7 @@ export function patchDoc(
   collectionName: string,
   id: string,
   patch: Record<string, unknown>,
+  onError?: (e: unknown) => void,
 ): void {
   if (!isFirebaseConfigured()) return;
   updateDoc(doc(getDb(), collectionName, id), {
@@ -116,6 +117,7 @@ export function patchDoc(
   }).catch((e) => {
     // eslint-disable-next-line no-console
     console.warn(`[firestore] updateDoc ${collectionName}/${id} failed`, e);
+    onError?.(e);
   });
 }
 

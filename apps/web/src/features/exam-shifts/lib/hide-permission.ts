@@ -35,6 +35,8 @@ import { effectiveShiftStatus, type ExamShift } from "../data/types";
 export interface HideActor {
   role?: string | null;
   campusId?: string | null;
+  /** Cần cho `canPublishResults` — chủ ca thi cũng được sửa ca của mình. */
+  userId?: string | null;
 }
 
 export type HideVerdict =
@@ -45,6 +47,7 @@ export type HideVerdict =
 export type HideTarget = Pick<ExamShift, "status" | "startAt" | "endAt"> & {
   campusId?: string | null;
   archivedAt?: string | null;
+  ownerId?: string | null;
 };
 
 /** Người này có ở bậc quản lý danh sách của cơ sở đó không. */
@@ -132,4 +135,36 @@ export function planBulkHide<T extends HideTarget & { id: string }>(
     else skip.push({ shift: s, reason: v.reason });
   }
   return { hide, skip };
+}
+
+/**
+ * Ai được đụng vào ca thi sau khi nó kết thúc — công bố điểm, đổi trạng thái.
+ *
+ * ── Vì sao phải khớp CHÍNH XÁC với firestore.rules ──────────────────────
+ *
+ * Rules cho `/shifts` là `allow update: if isAdmin() || resource.data.ownerId
+ * == uid()`. Giao diện rộng hơn rules là cái bẫy tệ nhất trong hệ này: kho
+ * zustand đổi lạc quan TRƯỚC, `patchDoc` ghi nền và NUỐT lỗi, nên người dùng
+ * thấy hộp thoại đóng lại như đã lưu, tải lại trang mới biết là không.
+ *
+ * Đúng lỗi Khánh Linh báo ở phân công chấm. Nên ở đây khai đúng bằng rules,
+ * không rộng hơn một ly.
+ *
+ * (Muốn cho Trưởng nhóm môn công bố điểm cho ca môn mình thì phải NỚI RULES
+ * trước, rồi mới nới chỗ này — không làm ngược lại.)
+ */
+export function canPublishResults(
+  actor: HideActor | null | undefined,
+  shift: HideTarget | null | undefined,
+): HideVerdict {
+  if (!shift) return { ok: false, reason: "Không tìm thấy ca thi." };
+  if (isCampusRoot(actor, shift.campusId ?? null)) return { ok: true };
+  if (actor?.userId && shift.ownerId && actor.userId === shift.ownerId) {
+    return { ok: true };
+  }
+  return {
+    ok: false,
+    reason:
+      "Chỉ admin cơ sở, tài khoản admin gốc, hoặc người tạo ca thi mới công bố điểm / đổi trạng thái ca này được.",
+  };
 }

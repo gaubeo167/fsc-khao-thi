@@ -26,7 +26,12 @@ interface State {
 
 interface Actions {
   create(input: Omit<ExamShift, "id" | "createdAt" | "updatedAt">): ExamShift;
-  update(id: string, patch: Partial<ExamShift>): void;
+  /**
+   * `onError` để chỗ gọi HIỆN lỗi ra. Ghi Firestore chạy nền và kho đã đổi
+   * lạc quan từ trước, nên rules từ chối mà không ai bắt thì màn hình nói dối
+   * là đã lưu — đúng lỗi đã gặp ở phân công chấm.
+   */
+  update(id: string, patch: Partial<ExamShift>, onError?: (e: unknown) => void): void;
   /**
    * Soft-delete. Sets archivedAt + archivedBy + archiveReason.
    * Hard delete is forbidden — attempts/audit/exam_forms permanently
@@ -126,7 +131,7 @@ export const useShiftsStore = create<State & Actions>()((set, get) => ({
     return shift;
   },
 
-  update(id, patch) {
+  update(id, patch, onError) {
     const before = get().shifts.find((s) => s.id === id);
     const now = new Date().toISOString();
     set({
@@ -138,6 +143,14 @@ export const useShiftsStore = create<State & Actions>()((set, get) => ({
       COLLECTIONS.shifts,
       id,
       sanitizeForFirestore(patch as Record<string, unknown>),
+      (e) => {
+        // Máy chủ từ chối → trả ca về đúng như trước. Giữ giá trị mà máy chủ
+        // không hề nhận là màn hình nói dối cho tới lần tải lại trang.
+        if (before) {
+          set({ shifts: get().shifts.map((s) => (s.id === id ? before : s)) });
+        }
+        onError?.(e);
+      },
     );
     recordAudit({
       entityType: "shift",

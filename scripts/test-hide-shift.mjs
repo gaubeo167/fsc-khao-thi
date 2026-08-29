@@ -38,7 +38,8 @@ execFileSync(
   ],
   { cwd: "apps/web", stdio: "pipe" },
 );
-const { canHideShift, canUnhideShift, isCampusRoot, planBulkHide } = await import(out);
+const { canHideShift, canUnhideShift, isCampusRoot, planBulkHide, canPublishResults } =
+  await import(out);
 
 let pass = 0,
   fail = 0;
@@ -140,6 +141,33 @@ const GD = { role: "academic-director", campusId: CS };
   check("…và mọi ca đều có lý do", gvPlan.skip.length === rows.length);
 
   check("danh sách rỗng → không nổ", planBulkHide(ADMIN_GOC, []).hide.length === 0);
+}
+
+/* ── 8. Công bố điểm / đổi trạng thái: PHẢI khớp firestore.rules ─────────
+ *
+ * Rules cho /shifts: `allow update: if isAdmin() || resource.data.ownerId == uid()`.
+ * Giao diện rộng hơn rules là cái bẫy tệ nhất trong hệ này: kho đổi lạc quan
+ * TRƯỚC, patchDoc nuốt lỗi, nên người dùng thấy hộp đóng như đã lưu còn máy
+ * chủ không nhận gì. /qa đã bắt được đúng cảnh đó: TBM Toán bấm "Lưu công bố"
+ * trên ca của admin → giao diện im lặng, máy chủ giữ nguyên giá trị cũ.
+ */
+{
+  const caCuaAdmin = { ...daXong, ownerId: "u-admin" };
+  const caCuaGV = { ...daXong, ownerId: "u-gv" };
+
+  check("admin gốc công bố được", canPublishResults({ ...ADMIN_GOC, userId: "u-sa" }, caCuaAdmin).ok);
+  check("admin trường công bố được", canPublishResults({ ...ADMIN_TRUONG, userId: "u-ad" }, caCuaAdmin).ok);
+  check("CHỦ ca thi công bố được ca của mình", canPublishResults({ ...GV, userId: "u-gv" }, caCuaGV).ok);
+
+  const tbmThu = canPublishResults({ ...TBM, userId: "u-tbm" }, caCuaAdmin);
+  check("TBM KHÔNG công bố được ca của người khác", !tbmThu.ok);
+  check("…lý do nói rõ ai mới được", /admin|người tạo/i.test(tbmThu.reason), tbmThu.reason);
+  check("GV không phải chủ ca → không", !canPublishResults({ ...GV, userId: "u-gv-khac" }, caCuaAdmin).ok);
+  check("admin cơ sở KHÁC → không", !canPublishResults({ ...ADMIN_KHAC, userId: "u-ad2" }, caCuaAdmin).ok);
+  check("không đăng nhập → không", !canPublishResults(null, caCuaAdmin).ok);
+  check("ca không tồn tại → không, không nổ", !canPublishResults(ADMIN_GOC, null).ok);
+  // Ca thiếu ownerId không được thành cửa mở cho tất cả.
+  check("ca thiếu ownerId → chỉ admin qua", !canPublishResults({ ...GV, userId: "u-gv" }, daXong).ok);
 }
 
 console.log(`\n${pass} qua, ${fail} trượt`);

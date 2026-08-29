@@ -11,6 +11,7 @@ import {
   type ExamShift,
   type StudentResultVisibility,
 } from "@/features/exam-shifts/data/types";
+import { canPublishResults } from "@/features/exam-shifts/lib/hide-permission";
 import { useShiftsStore } from "@/features/exam-shifts/state/shifts-store";
 import { cn } from "@/lib/utils";
 
@@ -42,6 +43,17 @@ export function PostExamDialog({
   shift: ExamShift | null;
 }) {
   const updateShift = useShiftsStore((s) => s.update);
+  /**
+   * Bản SỐNG của ca thi trong kho.
+   *
+   * `shift` truyền vào là bản chụp lúc mở hộp. Lưu xong, kho đổi nhưng bản
+   * chụp thì không — nên chân hộp cứ nói "Có thay đổi chưa lưu" mãi dù đã lưu
+   * rồi, và người dùng tưởng hỏng. Cùng lối với `liveShift` ở hộp phân công
+   * chấm.
+   */
+  const liveShift = useShiftsStore((s) =>
+    shift ? s.shifts.find((x) => x.id === shift.id) ?? null : null,
+  );
   const setShiftStatus = useShiftsStore((s) => s.setStatus);
   const session = useAuthStore((s) => s.session);
 
@@ -49,6 +61,13 @@ export function PostExamDialog({
     DEFAULT_RESULT_VISIBILITY,
   );
   const [xacNhanHuy, setXacNhanHuy] = useState(false);
+  /**
+   * Lỗi máy chủ trả về khi lưu.
+   *
+   * Ghi Firestore chạy nền và kho đã đổi lạc quan từ trước — không bắt thì hộp
+   * này đóng lại như đã lưu trong khi máy chủ không nhận gì.
+   */
+  const [loiLuu, setLoiLuu] = useState<string | null>(null);
 
   // Nạp lại mỗi lần mở một ca khác — giữ state cũ là hiện nhầm cài đặt của
   // ca trước và người dùng bấm Lưu thì ghi đè thật.
@@ -56,16 +75,22 @@ export function PostExamDialog({
     if (!open || !shift) return;
     setVisibility(shift.studentResultVisibility ?? DEFAULT_RESULT_VISIBILITY);
     setXacNhanHuy(false);
+    setLoiLuu(null);
   }, [open, shift]);
 
   if (!shift) return null;
 
+  // Khai ĐÚNG bằng firestore.rules (`isAdmin() || ownerId == uid()`), không
+  // rộng hơn một ly: rộng hơn là người dùng bấm lưu, hộp đóng như đã xong, mà
+  // máy chủ từ chối im lặng.
+  const quyen = canPublishResults(session, shift);
   const eff = effectiveShiftStatus(shift);
-  const hienTai = shift.studentResultVisibility ?? DEFAULT_RESULT_VISIBILITY;
+  const hienTai =
+    (liveShift ?? shift).studentResultVisibility ?? DEFAULT_RESULT_VISIBILITY;
   const doiCaiDat = visibility !== hienTai;
   // Ca ĐANG diễn ra không huỷ ở đây: đường đó là "Dừng ca thi ngay" trên
   // danh sách, có cảnh báo riêng về học sinh đang làm bài.
-  const huyDuoc = eff !== "in-progress" && eff !== "cancelled";
+  const huyDuoc = quyen.ok && eff !== "in-progress" && eff !== "cancelled";
 
   const LUA_CHON: Array<{
     v: StudentResultVisibility;
@@ -191,6 +216,20 @@ export function PostExamDialog({
           </section>
         )}
 
+        {!quyen.ok && (
+          <p className="text-meta border-t border-amber-300 bg-amber-50 px-5 py-2 font-medium text-amber-900">
+            ⚠ {quyen.reason}
+          </p>
+        )}
+        {loiLuu && (
+          <p
+            role="alert"
+            className="text-meta border-t border-rose-200 bg-rose-50 px-5 py-2 font-medium text-rose-800"
+          >
+            {loiLuu}
+          </p>
+        )}
+
         <footer className="flex items-center justify-between gap-2 border-t bg-[var(--color-surface-2)] px-5 py-3">
           <span className="text-meta text-muted-foreground">
             {doiCaiDat ? (
@@ -208,10 +247,29 @@ export function PostExamDialog({
             </Button>
             <Button
               size="sm"
-              disabled={!doiCaiDat || !session}
+              disabled={!doiCaiDat || !session || !quyen.ok}
               onClick={() => {
-                updateShift(shift.id, { studentResultVisibility: visibility });
-                onOpenChange(false);
+                setLoiLuu(null);
+                updateShift(
+                  shift.id,
+                  { studentResultVisibility: visibility },
+                  (e) => {
+                    const ma = (e as { code?: string } | null)?.code ?? "";
+                    setLoiLuu(
+                      ma === "permission-denied"
+                        ? "Máy chủ từ chối: tài khoản này không có quyền đổi công bố điểm của ca thi đó. Nhờ admin cơ sở hoặc người tạo ca thực hiện."
+                        : `Lưu không thành công${ma ? ` (${ma})` : ""} — cài đặt đã được hoàn lại. Thử lại hoặc kiểm tra kết nối mạng.`,
+                    );
+                    setVisibility(
+                      (liveShift ?? shift).studentResultVisibility ??
+                        DEFAULT_RESULT_VISIBILITY,
+                    );
+                  },
+                );
+                // KHÔNG tự đóng. Ghi Firestore chạy nền: đóng ngay thì dải báo
+                // lỗi không bao giờ kịp hiện. Lưu xong, chân hộp tự đổi sang
+                // "Đã đồng bộ" (vì `doiCaiDat` hết đúng) — người dùng đọc rồi
+                // tự đóng.
               }}
             >
               <Save className="h-3.5 w-3.5" />
