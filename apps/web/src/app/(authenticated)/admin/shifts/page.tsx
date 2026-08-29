@@ -13,6 +13,7 @@ import {
   ShieldOff,
   DoorOpen,
   GraduationCap,
+  Megaphone,
   RotateCcw,
   Trash2,
   Users,
@@ -58,6 +59,7 @@ import { usePackagesStore } from "@/features/exams/state/packages-store";
 import { useGradesStore } from "@/features/grades/state/grades-store";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import { AssignGradersDialog } from "@/features/grading/dialogs/assign-graders-dialog";
+import { PostExamDialog } from "@/features/exam-shifts/dialogs/post-exam-dialog";
 import { useGradingStore } from "@/features/grading/state/grading-store";
 import { useQuestionsStore } from "@/features/question-bank/state/questions-store";
 import { isManualGradingType } from "@/features/grading/lib/utils";
@@ -121,6 +123,8 @@ export default function ShiftsPage() {
   // When the user tries to edit/delete an in-progress shift we stash the
   // attempted action here and show the force-stop warning instead. Acting
   // on the warning cancels the shift and opens the deferred dialog.
+  /** Ca đang mở hộp "Sau kỳ thi" (công bố điểm · huỷ ca). */
+  const [postExam, setPostExam] = useState<ExamShift | null>(null);
   const [forceStop, setForceStop] = useState<{
     shift: ExamShift;
     intent: "edit" | "delete";
@@ -751,6 +755,18 @@ export default function ShiftsPage() {
                       >
                         <PencilLine className="h-3.5 w-3.5" strokeWidth={1.75} />
                       </IconButton>
+                      {/*
+                        Công bố điểm + huỷ ca. Hộp RIÊNG chứ không nằm trong
+                        trình tạo ca: trình tạo khoá ngay khi có bài làm, mà
+                        hai việc này chỉ có nghĩa sau khi học sinh đã thi.
+                      */}
+                      <IconButton
+                        size="sm"
+                        title="Sau kỳ thi — công bố điểm cho học sinh · huỷ ca"
+                        onClick={() => setPostExam(sh)}
+                      >
+                        <Megaphone className="h-3.5 w-3.5" strokeWidth={1.75} />
+                      </IconButton>
                       {sh.archivedAt ? (
                         <IconButton
                           size="sm"
@@ -863,6 +879,12 @@ export default function ShiftsPage() {
             "Admin xoá từ danh sách ca thi",
           );
         }}
+      />
+
+      <PostExamDialog
+        open={postExam != null}
+        onOpenChange={(o) => !o && setPostExam(null)}
+        shift={postExam}
       />
 
       {gradingTarget && (
