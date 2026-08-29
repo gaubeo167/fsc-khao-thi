@@ -17,7 +17,7 @@ import {
 } from "@/lib/storage";
 
 import { buildAudioMarker } from "../lib/audio-marker";
-import { classifyMediaUrl, embedHint } from "./media-utils";
+import { classifyAudioUrl, classifyMediaUrl, embedHint } from "./media-utils";
 
 export type MediaKind = "image" | "video" | "audio" | "link";
 
@@ -441,9 +441,7 @@ export function MediaInsertDialog({
               {kind === "video" && url.trim() && (
                 <VideoUrlPreview url={url.trim()} />
               )}
-              {kind === "audio" && url.trim() && (
-                <audio src={url.trim()} controls className="mt-1 w-full" />
-              )}
+              {kind === "audio" && url.trim() && <AudioUrlPreview url={url.trim()} />}
             </div>
           )}
 
@@ -559,5 +557,32 @@ function VideoUrlPreview({ url }: { url: string }) {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Xem thử file nghe NGAY tại chỗ dán link.
+ *
+ * Link chia sẻ Drive / Dropbox được đổi sang lối tải thẳng; link không phải
+ * file âm thanh thì báo ngay ở đây. Không có bước này thì người soạn chỉ biết
+ * link hỏng vào lúc học sinh đang thi — mà lúc đó không sửa được nữa.
+ */
+function AudioUrlPreview({ url }: { url: string }) {
+  const nguon = classifyAudioUrl(url);
+  if (nguon.kind === "unsupported") {
+    return (
+      <p className="text-meta mt-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-amber-900">
+        ⚠ {nguon.reason}
+      </p>
+    );
+  }
+  return (
+    <>
+      <audio src={nguon.src} controls className="mt-1 w-full" />
+      <p className="text-meta mt-1 text-muted-foreground">
+        Bấm nghe thử. Không ra tiếng nghĩa là file chưa mở quyền xem cho người
+        có link — sửa quyền chia sẻ, hoặc tải thẳng file lên.
+      </p>
+    </>
   );
 }

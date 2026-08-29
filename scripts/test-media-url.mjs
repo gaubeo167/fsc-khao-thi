@@ -33,7 +33,7 @@ execFileSync(
   ],
   { cwd: "apps/web", stdio: "pipe" },
 );
-const { classifyMediaUrl, embedHint } = await import(out);
+const { classifyMediaUrl, classifyAudioUrl, embedHint } = await import(out);
 
 let pass = 0,
   fail = 0;
@@ -123,6 +123,57 @@ check(
 }
 check("chuỗi rỗng → link", classifyMediaUrl("").type === "link");
 check("chuỗi không phải URL → link", classifyMediaUrl("bài giảng số 1").type === "link");
+
+/* ── ÂM THANH ────────────────────────────────────────────────────────────
+ *
+ * Phần nghe cắm thẳng `<audio src>` nên link chia sẻ Drive — cái giáo viên
+ * ai cũng dán — trả về một TRANG HTML, không phải tiếng: máy phát đứng ở
+ * 0:00 / 0:00, bấm không chạy, không báo gì. Chỉ lộ ra lúc học sinh đang thi.
+ *
+ * Không rơi về iframe như video được: bộ đếm số lượt nghe chỉ chạy trên thẻ
+ * `<audio>` của mình, nhét iframe vào là mất luôn giới hạn lượt.
+ */
+{
+  const au = (u) => classifyAudioUrl(u);
+
+  check("file .mp3 phát thẳng", au("https://cdn.fsc.vn/bai1.mp3").kind === "playable");
+  check("file .m4a có query vẫn nhận", au("https://cdn.fsc.vn/b.m4a?v=2").kind === "playable");
+  check("file tải lên (data:) phát thẳng", au("data:audio/mpeg;base64,AAA").kind === "playable");
+  check("blob: phát thẳng", au("blob:https://fsc.vn/abc").kind === "playable");
+  check("đường dẫn tương đối phát thẳng", au("/uploads/nghe-1.mp3").kind === "playable");
+
+  const drive = au("https://drive.google.com/file/d/1AbC_dEf/view?usp=sharing");
+  check("link Drive KHÔNG bị coi là hỏng", drive.kind === "playable", JSON.stringify(drive));
+  check(
+    "…mà đổi sang lối tải thẳng (uc?export=download)",
+    drive.src === "https://drive.google.com/uc?export=download&id=1AbC_dEf",
+    drive.src,
+  );
+  const driveId = au("https://drive.google.com/open?id=XyZ123");
+  check("Drive dạng ?id= cũng nhận", driveId.src === "https://drive.google.com/uc?export=download&id=XyZ123", driveId.src);
+  check(
+    "Drive không có mã file → báo rõ, không phát bừa",
+    au("https://drive.google.com/drive/my-drive").kind === "unsupported",
+  );
+
+  const dropbox = au("https://www.dropbox.com/s/abc/bai1.mp3?dl=0");
+  check("Dropbox phát được", dropbox.kind === "playable");
+  check("…bỏ dl= và thêm raw=1", dropbox.src.includes("raw=1") && !dropbox.src.includes("dl=0"), dropbox.src);
+
+  const yt = au("https://youtu.be/abc");
+  check("YouTube → báo không dùng được cho câu nghe", yt.kind === "unsupported");
+  check("…và nói ra lý do đếm lượt nghe", yt.reason.includes("lượt nghe"), yt.reason);
+
+  check("trang web thường → không phát bừa", au("https://vnexpress.net/tin").kind === "unsupported");
+  check("chuỗi rỗng → không phát bừa", au("").kind === "unsupported");
+  check("mọi lời báo lỗi đều mách nước tải file lên", [
+    au("https://vnexpress.net/tin"),
+    au("https://youtu.be/abc"),
+    au("https://drive.google.com/drive/my-drive"),
+  ].every((r) => /tải\s+(thẳng\s+)?file|tải file/i.test(r.reason)), JSON.stringify([
+    au("https://vnexpress.net/tin").reason,
+  ]));
+}
 
 console.log(`\n${pass} pass · ${fail} fail`);
 process.exit(fail === 0 ? 0 : 1);

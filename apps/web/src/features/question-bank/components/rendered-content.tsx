@@ -6,7 +6,7 @@ import { Math } from "./math";
 import { parseAudioMarker, type AudioMarker } from "../lib/audio-marker";
 import { splitTableBlocks } from "../lib/table-block";
 import { mathAnyRe } from "@/lib/math-delimiters";
-import { classifyMediaUrl } from "./media-utils";
+import { classifyAudioUrl, classifyMediaUrl } from "./media-utils";
 import { cn } from "@/lib/utils";
 
 interface Block {
@@ -639,6 +639,11 @@ function AudioBlock({
     setMsg(null);
   }
 
+  // Link chia sẻ (Drive · Dropbox) phải đổi sang lối tải thẳng thì `<audio>`
+  // mới nhận được tiếng; link không phải file âm thanh thì nói ra chứ đừng
+  // hiện một máy phát đứng ở 0:00 không ai hiểu vì sao.
+  const nguon = classifyAudioUrl(marker.src);
+
   return (
     <span className="my-2 block rounded-lg border bg-violet-50/50 px-3 py-2.5 text-[13px] ring-1 ring-violet-200">
       <span className="flex items-center gap-2">
@@ -663,9 +668,14 @@ function AudioBlock({
         )}
       </span>
 
+      {nguon.kind === "unsupported" ? (
+        <span className="text-meta mt-1.5 block rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-amber-900">
+          ⚠ Không phát được file nghe này. {nguon.reason}
+        </span>
+      ) : (
       <audio
         ref={ref}
-        src={marker.src}
+        src={nguon.src}
         controls
         controlsList="nodownload noplaybackrate"
         onPlay={() => void onPlay()}
@@ -690,8 +700,9 @@ function AudioBlock({
         }}
         className="mt-1.5 w-full"
       />
+      )}
 
-      {capped && (
+      {capped && nguon.kind === "playable" && (
         <span className="text-meta mt-1 block text-violet-800">
           {msg ??
             (limit

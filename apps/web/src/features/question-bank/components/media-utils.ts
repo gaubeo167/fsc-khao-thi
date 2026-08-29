@@ -104,3 +104,114 @@ export function embedHint(kind: EmbedKind): string | null {
     "Hỗ trợ: YouTube, Vimeo, Google Drive (link chia sẻ), hoặc file .mp4/.webm trực tiếp."
   );
 }
+
+/* ────────────────────────────────────────────────────────────────────────
+ * ÂM THANH
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/**
+ * URL âm thanh → nguồn phát được, hoặc lý do không phát được.
+ *
+ * ── Vì sao không dùng chung `classifyMediaUrl` ──────────────────────────
+ *
+ * Video hỏng thì rơi về iframe của nhà cung cấp và vẫn xem được. Âm thanh
+ * KHÔNG có lối đó: câu nghe hiểu giới hạn số lượt nghe, mà bộ đếm lượt chỉ
+ * chạy trên thẻ `<audio>` của mình — nhét iframe vào là mất luôn giới hạn,
+ * học sinh nghe bao nhiêu lần cũng được.
+ *
+ * Nên ở đây chỉ có hai kết cục: ra được đường dẫn PHÁT THẲNG, hoặc nói thẳng
+ * là không dùng được và bảo người soạn tải file lên.
+ *
+ * ── Vì sao cần ──────────────────────────────────────────────────────────
+ *
+ * Trước đây phần âm thanh cắm thẳng `<audio src={url}>`. Giáo viên dán link
+ * chia sẻ Google Drive — cái ai cũng dán — thì `<audio>` nhận về một trang
+ * HTML, không phải tiếng: máy phát đứng ở 0:00 / 0:00, bấm không chạy, và
+ * không có một dòng báo nào. Lộ ra lúc học sinh đang thi.
+ */
+export type AudioSource =
+  | { kind: "playable"; src: string }
+  | { kind: "unsupported"; reason: string };
+
+const DIRECT_AUDIO_EXT = /\.(mp3|m4a|aac|wav|ogg|oga|opus|flac|weba|webm)(\?.*)?$/i;
+
+export function classifyAudioUrl(url: string): AudioSource {
+  const trimmed = (url ?? "").trim();
+  if (!trimmed) return { kind: "unsupported", reason: "Chưa có đường dẫn." };
+
+  // File tự tải lên (blob/data) — phát thẳng.
+  if (trimmed.startsWith("data:audio/") || trimmed.startsWith("blob:")) {
+    return { kind: "playable", src: trimmed };
+  }
+
+  // CHÚ Ý THỨ TỰ: xét TÊN MIỀN trước, đuôi file sau.
+  //
+  // Link chia sẻ Dropbox là `.../bai1.mp3?dl=0` — đuôi `.mp3` nằm ngay đó
+  // nhưng nội dung trả về vẫn là TRANG HTML. Kiểm đuôi trước thì link này lọt
+  // qua nguyên xi và máy phát lại đứng ở 0:00 y như cũ.
+  let u: URL;
+  try {
+    u = new URL(trimmed, "https://x.invalid");
+  } catch {
+    return {
+      kind: "unsupported",
+      reason: "Đường dẫn không hợp lệ.",
+    };
+  }
+  // Đường dẫn tương đối (/uploads/…) — do mình phục vụ, cứ phát.
+  if (u.hostname === "x.invalid") {
+    return DIRECT_AUDIO_EXT.test(u.pathname)
+      ? { kind: "playable", src: trimmed }
+      : {
+          kind: "unsupported",
+          reason:
+            "Đường dẫn này không trỏ thẳng tới một file âm thanh. Tải file lên (nút bên cạnh) hoặc dán link kết thúc bằng .mp3 / .m4a / .wav.",
+        };
+  }
+
+  const host = u.hostname.replace(/^www\./, "");
+
+  // Google Drive: link chia sẻ là TRANG xem, phải đổi sang lối tải thẳng thì
+  // `<audio>` mới nhận được tiếng.
+  if (host === "drive.google.com" || host === "docs.google.com") {
+    const m = u.pathname.match(/\/file\/d\/([\w-]+)/);
+    const id = m ? m[1]! : u.searchParams.get("id");
+    if (id) {
+      return {
+        kind: "playable",
+        src: `https://drive.google.com/uc?export=download&id=${id}`,
+      };
+    }
+    return {
+      kind: "unsupported",
+      reason:
+        "Link Drive này không có mã file. Dùng link dạng .../file/d/<mã>/view, hoặc tải thẳng file lên.",
+    };
+  }
+
+  // Dropbox: `?dl=0` mở trang xem; `raw=1` trả thẳng file.
+  if (host === "dropbox.com" || host === "dl.dropboxusercontent.com") {
+    u.searchParams.delete("dl");
+    u.searchParams.set("raw", "1");
+    return { kind: "playable", src: u.toString() };
+  }
+
+  // Đuôi file thật — xét trên ĐƯỜNG DẪN, không tính chuỗi truy vấn.
+  if (DIRECT_AUDIO_EXT.test(u.pathname)) {
+    return { kind: "playable", src: trimmed };
+  }
+
+  if (host.endsWith("youtube.com") || host === "youtu.be") {
+    return {
+      kind: "unsupported",
+      reason:
+        "YouTube không phát được trong ô nghe (và không đếm được số lượt nghe). Tải file âm thanh lên thay vì dán link.",
+    };
+  }
+
+  return {
+    kind: "unsupported",
+    reason:
+      "Đường dẫn này không trỏ thẳng tới một file âm thanh. Tải file lên (nút bên cạnh) hoặc dán link kết thúc bằng .mp3 / .m4a / .wav.",
+  };
+}
