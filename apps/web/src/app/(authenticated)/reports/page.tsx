@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   ClipboardEdit,
   Download,
+  Eye,
   Hourglass,
   Search,
   ShieldAlert,
@@ -42,6 +43,7 @@ import { generateInsights } from "@/features/reports/lib/ai-insights";
 import { useAttemptsStore } from "@/features/shift-exam/state/attempts-store";
 import { useGradesStore } from "@/features/grades/state/grades-store";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
+import { ProctoringReport } from "@/features/reports/components/proctoring-report";
 import { PageHeader } from "@/features/shell/components/page-header";
 import { cn } from "@/lib/utils";
 
@@ -70,9 +72,13 @@ export default function ReportsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const tabParam = searchParams.get("tab");
-  const reportTab: "shifts" | "homework" =
-    tabParam === "homework" ? "homework" : "shifts";
-  function setReportTab(next: "shifts" | "homework") {
+  const reportTab: "shifts" | "homework" | "proctoring" =
+    tabParam === "homework"
+      ? "homework"
+      : tabParam === "proctoring"
+        ? "proctoring"
+        : "shifts";
+  function setReportTab(next: "shifts" | "homework" | "proctoring") {
     const params = new URLSearchParams(searchParams.toString());
     if (next === "shifts") params.delete("tab");
     else params.set("tab", next);
@@ -584,9 +590,29 @@ export default function ReportsPage() {
           <ClipboardEdit className="h-3.5 w-3.5" />
           Bài tập về nhà
         </button>
+        <button
+          type="button"
+          onClick={() => setReportTab("proctoring")}
+          className={cn(
+            // Dùng `.text-meta` (12px) chứ không chép cỡ chữ tự chế của hai
+            // tab bên cạnh: chúng còn ở nửa pixel, mà DESIGN.md cấm thêm mới.
+            // Lệch nửa pixel không ai nhìn ra; thêm một chỗ thì bánh cóc kêu.
+            // (Đừng viết cỡ chữ ra đây dưới dạng chữ — bộ đếm quét cả chú
+            // thích, viết ra là tự làm mốc tăng.)
+            "text-meta inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-medium transition-colors",
+            reportTab === "proctoring"
+              ? "bg-foreground text-background"
+              : "text-foreground/65 hover:bg-accent hover:text-foreground",
+          )}
+        >
+          <Eye className="h-3.5 w-3.5" />
+          Giờ coi thi
+        </button>
       </div>
 
-      {reportTab === "homework" ? (
+      {reportTab === "proctoring" ? (
+        <ProctoringReport shifts={reportableShifts} users={users} />
+      ) : reportTab === "homework" ? (
         <HomeworkReports
           summaries={homeworkSummaries}
           kpis={homeworkKpis}
