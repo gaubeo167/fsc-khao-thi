@@ -12,6 +12,7 @@ import {
   Shield,
   ShieldOff,
   DoorOpen,
+  EyeOff,
   GraduationCap,
   Megaphone,
   RotateCcw,
@@ -60,6 +61,11 @@ import { useGradesStore } from "@/features/grades/state/grades-store";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import { AssignGradersDialog } from "@/features/grading/dialogs/assign-graders-dialog";
 import { PostExamDialog } from "@/features/exam-shifts/dialogs/post-exam-dialog";
+import {
+  canHideShift,
+  canUnhideShift,
+  planBulkHide,
+} from "@/features/exam-shifts/lib/hide-permission";
 import { useGradingStore } from "@/features/grading/state/grading-store";
 import { useQuestionsStore } from "@/features/question-bank/state/questions-store";
 import {
@@ -126,6 +132,11 @@ export default function ShiftsPage() {
   // When the user tries to edit/delete an in-progress shift we stash the
   // attempted action here and show the force-stop warning instead. Acting
   // on the warning cancels the shift and opens the deferred dialog.
+  /** Ca đang tích để ẩn hàng loạt. Ẩn từng ca một thì không gọi là bớt rối. */
+  const [dangTich, setDangTich] = useState<ReadonlySet<string>>(new Set());
+  /** Xác nhận ẩn hàng loạt — null là chưa mở. */
+  const [xacNhanAn, setXacNhanAn] = useState<ReturnType<typeof planBulkHide> | null>(null);
+
   /** Ca đang mở hộp "Sau kỳ thi" (công bố điểm · huỷ ca). */
   const [postExam, setPostExam] = useState<ExamShift | null>(null);
   const [forceStop, setForceStop] = useState<{
@@ -209,6 +220,28 @@ export default function ShiftsPage() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scoped, statusFilter, gradeFilter, subjectFilter, classFilter, search]);
+
+  /**
+   * Ca ẩn được trong danh sách ĐANG THẤY.
+   *
+   * Cắt theo `filtered` chứ không theo toàn bộ ca: đổi bộ lọc là tập đã tích
+   * co lại theo, nên không bao giờ ẩn nhầm một ca đang bị bộ lọc giấu đi.
+   */
+  const anDuocIds = useMemo(
+    () => filtered.filter((sh) => canHideShift(session, sh).ok).map((sh) => sh.id),
+    [filtered, session],
+  );
+  /** Có ai ẩn được gì không — không thì đừng hiện cột tích cho vướng. */
+  const coQuyenAn = anDuocIds.length > 0;
+
+  // Bỏ khỏi tập đã tích những ca không còn hiển thị.
+  useEffect(() => {
+    const thay = new Set(anDuocIds);
+    setDangTich((cur) => {
+      const next = new Set([...cur].filter((id) => thay.has(id)));
+      return next.size === cur.size ? cur : next;
+    });
+  }, [anDuocIds]);
 
   const kpis = useMemo(() => {
     const eff = scoped.map((s) => effectiveShiftStatus(s));
@@ -462,9 +495,43 @@ export default function ShiftsPage() {
             onChange={(e) => setShowArchived(e.target.checked)}
             className="h-3.5 w-3.5"
           />
-          Hiển thị đã lưu trữ
+          Hiện cả ca đã ẩn
         </label>
       </div>
+
+      {/*
+        Thanh ẩn HÀNG LOẠT. Đây mới là phần "bớt rối": ẩn từng ca một trong một
+        danh sách đã dài thì không bớt được gì. Chỉ hiện khi có ca đang tích.
+      */}
+      {dangTich.size > 0 && (
+        <div className="mb-3 flex items-center gap-3 rounded-xl border border-primary/40 bg-primary/5 px-4 py-2.5">
+          <span className="text-body font-semibold">
+            Đã chọn {dangTich.size} ca thi
+          </span>
+          <button
+            type="button"
+            onClick={() => setDangTich(new Set())}
+            className="text-meta rounded-md border bg-card px-2.5 py-1 font-medium hover:bg-accent"
+          >
+            Bỏ chọn
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              setXacNhanAn(
+                planBulkHide(
+                  session,
+                  filtered.filter((s) => dangTich.has(s.id)),
+                ),
+              )
+            }
+            className="text-meta ml-auto inline-flex items-center gap-1.5 rounded-md border border-primary bg-primary px-3 py-1 font-semibold text-primary-foreground hover:opacity-90"
+          >
+            <EyeOff className="h-3.5 w-3.5" />
+            Ẩn khỏi danh sách
+          </button>
+        </div>
+      )}
 
       {filtered.length === 0 ? (
         <div className="rounded-xl border bg-card p-10 text-center">
@@ -480,6 +547,23 @@ export default function ShiftsPage() {
         <table className="w-full text-[12.5px]">
         <thead className="bg-muted/30 text-[11px] uppercase tracking-wide text-muted-foreground">
           <tr>
+            {/*
+              Ô tích chỉ hiện với người ẩn được ca — giáo viên không thấy cột
+              này, đỡ mời họ tích rồi báo không có quyền.
+            */}
+            {coQuyenAn && (
+              <th className="w-0 px-3 py-2.5 text-left font-semibold">
+                <input
+                  type="checkbox"
+                  aria-label="Chọn tất cả ca ẩn được"
+                  className="h-3.5 w-3.5"
+                  checked={anDuocIds.length > 0 && anDuocIds.every((id) => dangTich.has(id))}
+                  onChange={(e) =>
+                    setDangTich(e.target.checked ? new Set(anDuocIds) : new Set())
+                  }
+                />
+              </th>
+            )}
             <th className="px-3 py-2.5 text-left font-semibold">Mã</th>
             <th className="px-3 py-2.5 text-left font-semibold">Tên ca</th>
             <th className="px-3 py-2.5 text-left font-semibold">Môn · Khối</th>
@@ -534,6 +618,26 @@ export default function ShiftsPage() {
                   sh.archivedAt && "opacity-60",
                 )}
               >
+                {coQuyenAn && (
+                  <td className="px-3 py-2.5">
+                    {canHideShift(session, sh).ok ? (
+                      <input
+                        type="checkbox"
+                        aria-label={`Chọn ${sh.name}`}
+                        className="h-3.5 w-3.5"
+                        checked={dangTich.has(sh.id)}
+                        onChange={() =>
+                          setDangTich((cur) => {
+                            const next = new Set(cur);
+                            if (next.has(sh.id)) next.delete(sh.id);
+                            else next.add(sh.id);
+                            return next;
+                          })
+                        }
+                      />
+                    ) : null}
+                  </td>
+                )}
                 <td className="px-3 py-2.5 font-mono text-[11px] text-muted-foreground">
                   {sh.id}
                 </td>
@@ -771,6 +875,51 @@ export default function ShiftsPage() {
                       >
                         <Megaphone className="h-3.5 w-3.5" strokeWidth={1.75} />
                       </IconButton>
+                      {/*
+                        ẨN ≠ XOÁ. Ẩn chỉ là chuyện hiển thị của màn vận hành:
+                        bài làm, điểm, minh chứng, báo cáo giữ nguyên, và học
+                        sinh không thấy khác gì (không màn nào của học sinh lọc
+                        theo `archivedAt`). Trước đây hai việc này dùng CHUNG
+                        một nút thùng rác, mà nút đó tự chặn khi ca đã có bài
+                        làm — nên ca đã kết thúc, tức mọi ca có bài làm, không
+                        ai ẩn được, kể cả admin gốc.
+                      */}
+                      {(() => {
+                        const vAn = canHideShift(session, sh);
+                        const vHien = canUnhideShift(session, sh);
+                        if (sh.archivedAt) {
+                          if (!vHien.ok) return null;
+                          return (
+                            <IconButton
+                              size="sm"
+                              title="Hiện lại ca thi trong danh sách"
+                              onClick={() => {
+                                if (!session) return;
+                                restoreShift(sh.id, session.userId);
+                              }}
+                            >
+                              <Eye className="h-3.5 w-3.5" strokeWidth={1.75} />
+                            </IconButton>
+                          );
+                        }
+                        if (!vAn.ok) return null;
+                        return (
+                          <IconButton
+                            size="sm"
+                            title="Ẩn khỏi danh sách — dữ liệu và báo cáo giữ nguyên"
+                            onClick={() => {
+                              if (!session) return;
+                              archiveShift(
+                                sh.id,
+                                session.userId,
+                                "Admin ẩn khỏi danh sách ca thi",
+                              );
+                            }}
+                          >
+                            <EyeOff className="h-3.5 w-3.5" strokeWidth={1.75} />
+                          </IconButton>
+                        );
+                      })()}
                       {sh.archivedAt ? (
                         <IconButton
                           size="sm"
@@ -849,8 +998,13 @@ export default function ShiftsPage() {
                     🔒 <b>Không thể xoá ca thi này.</b> Đã có{" "}
                     <b>{attemptCount}</b> lượt làm bài của học sinh được ghi
                     nhận. Dữ liệu thi của HS không được phép xoá để bảo toàn
-                    minh chứng / kết quả. Có thể đổi trạng thái sang "Đã huỷ"
-                    để ẩn ca thi khỏi danh sách hoạt động.
+                    minh chứng / kết quả.
+                    <br />
+                    <br />
+                    Muốn cho gọn danh sách thì dùng nút{" "}
+                    <b>Ẩn khỏi danh sách</b> (biểu tượng con mắt gạch chéo) ở
+                    ngay hàng này — ca biến khỏi danh sách mà dữ liệu và báo
+                    cáo giữ nguyên, bật lại bằng ô “Hiện cả ca đã ẩn”.
                   </>
                 );
               }
@@ -882,6 +1036,57 @@ export default function ShiftsPage() {
             session.userId,
             "Admin xoá từ danh sách ca thi",
           );
+        }}
+      />
+
+      {/*
+        Xác nhận ẩn hàng loạt. Nói RÕ cái nào bị bỏ qua và vì sao — lặng lẽ ẩn
+        7 trong 10 ca người dùng đã tích là mất niềm tin vào cả cái nút.
+      */}
+      <ConfirmActionDialog
+        open={xacNhanAn != null}
+        onOpenChange={(o) => !o && setXacNhanAn(null)}
+        title={`Ẩn ${xacNhanAn?.hide.length ?? 0} ca thi khỏi danh sách?`}
+        description={
+          xacNhanAn ? (
+            <div className="space-y-2">
+              <p>
+                Ca đã ẩn biến khỏi danh sách này cho đỡ rối. <strong>Dữ liệu
+                giữ nguyên</strong>: bài làm, điểm, minh chứng và báo cáo không
+                đổi, học sinh cũng không thấy khác gì. Bật “Hiện cả ca đã ẩn”
+                để xem lại và bỏ ẩn bất cứ lúc nào.
+              </p>
+              {xacNhanAn.skip.length > 0 && (
+                <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-amber-900">
+                  <p className="font-semibold">
+                    {xacNhanAn.skip.length} ca KHÔNG ẩn được:
+                  </p>
+                  <ul className="mt-1 space-y-0.5">
+                    {xacNhanAn.skip.slice(0, 5).map(({ shift, reason }) => (
+                      <li key={shift.id}>
+                        · {(shift as ExamShift).name} — {reason}
+                      </li>
+                    ))}
+                    {xacNhanAn.skip.length > 5 && (
+                      <li>· …và {xacNhanAn.skip.length - 5} ca nữa</li>
+                    )}
+                  </ul>
+                </div>
+              )}
+            </div>
+          ) : (
+            ""
+          )
+        }
+        confirmLabel={`Ẩn ${xacNhanAn?.hide.length ?? 0} ca`}
+        disableConfirm={(xacNhanAn?.hide.length ?? 0) === 0}
+        onConfirm={() => {
+          if (!xacNhanAn || !session) return;
+          for (const sh of xacNhanAn.hide) {
+            archiveShift(sh.id, session.userId, "Admin ẩn hàng loạt khỏi danh sách");
+          }
+          setDangTich(new Set());
+          setXacNhanAn(null);
         }}
       />
 
