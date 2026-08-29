@@ -20,6 +20,11 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { useAuthStore } from "@/features/auth/state/auth-store";
+import {
+  filterGradesByScope,
+  filterSubjectsByScope,
+  useUserScope,
+} from "@/features/auth/lib/use-scope";
 import { useCampusStore } from "@/features/campus/state/campus-store";
 import { useGradesStore } from "@/features/grades/state/grades-store";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
@@ -57,7 +62,7 @@ export function AiBatchDialog({ open, onOpenChange, onBack }: Props) {
   const session = useAuthStore((s) => s.session);
   const activeCampusId = useCampusStore((s) => s.activeCampusId);
   const allSubjects = useSubjectsStore((s) => s.subjects);
-  const grades = useGradesStore((s) => s.grades);
+  const allGrades = useGradesStore((s) => s.grades);
   const tocNodes = useSubjectsStore((s) => s.tocNodes);
   const createQuestion = useQuestionsStore((s) => s.create);
 
@@ -68,7 +73,11 @@ export function AiBatchDialog({ open, onOpenChange, onBack }: Props) {
     session?.role === "superadmin"
       ? activeCampusId
       : session?.campusId ?? null;
-  const subjects = operatingCampusId
+  // HAI TẦNG: cơ sở, rồi MÔN·KHỐI của người đang đăng nhập. Thiếu tầng hai
+  // thì Trưởng nhóm môn Toán sinh được câu hỏi môn Sinh bằng AI — xem ghi chú
+  // dài ở admin/question-bank/page.tsx.
+  const scope = useUserScope();
+  const subjectsInCampus = operatingCampusId
     ? allSubjects.filter(
         (s) =>
           !s.campusIds ||
@@ -76,6 +85,8 @@ export function AiBatchDialog({ open, onOpenChange, onBack }: Props) {
           s.campusIds.includes(operatingCampusId),
       )
     : allSubjects;
+  const subjects = filterSubjectsByScope(subjectsInCampus, scope);
+  const grades = filterGradesByScope(allGrades, scope);
 
   const [subjectId, setSubjectId] = useState("");
   const [gradeId, setGradeId] = useState("");

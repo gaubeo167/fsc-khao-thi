@@ -28,6 +28,11 @@ import { KpiCard } from "@/components/ui/kpi-card";
 import { Select } from "@/components/ui/select";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useAuthStore } from "@/features/auth/state/auth-store";
+import {
+  filterGradesByScope,
+  filterSubjectsByScope,
+  useUserScope,
+} from "@/features/auth/lib/use-scope";
 import { useCampusStore } from "@/features/campus/state/campus-store";
 import { useGradesStore } from "@/features/grades/state/grades-store";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
@@ -59,8 +64,23 @@ const HomeworkPreviewDialog = dynamic(
 export default function HomeworkAdminPage() {
   const session = useAuthStore((s) => s.session);
   const activeCampusId = useCampusStore((s) => s.activeCampusId);
-  const subjects = useSubjectsStore((s) => s.subjects);
-  const grades = useGradesStore((s) => s.grades);
+  // Hai ô lọc dưới đây trước đây đổ THẲNG từ kho — không cắt cơ sở, không cắt
+  // môn·khối. Nặng hơn chỗ khác một bậc: /admin/homework mở cho MỌI nhân viên
+  // (roles: STAFF), nên giáo viên một môn nhìn thấy đủ môn của cả trường và cả
+  // khối mình không dạy. Xem ghi chú dài ở admin/question-bank/page.tsx.
+  // `userScope` chứ không phải `scope` — trang này đã có biến `scope` là danh
+  // sách bài tập đã lọc.
+  const userScope = useUserScope();
+  const allSubjects = useSubjectsStore((s) => s.subjects);
+  const allGrades = useGradesStore((s) => s.grades);
+  const subjects = useMemo(
+    () => filterSubjectsByScope(allSubjects, userScope),
+    [allSubjects, userScope],
+  );
+  const grades = useMemo(
+    () => filterGradesByScope(allGrades, userScope),
+    [allGrades, userScope],
+  );
   const allHomework = useHomeworkStore((s) => s.homework);
   const archive = useHomeworkStore((s) => s.archive);
   const restore = useHomeworkStore((s) => s.restore);

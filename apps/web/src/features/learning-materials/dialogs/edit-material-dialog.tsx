@@ -16,6 +16,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { useAuthStore } from "@/features/auth/state/auth-store";
+import {
+  filterGradesByScope,
+  filterSubjectsByScope,
+  useUserScope,
+} from "@/features/auth/lib/use-scope";
 import { useCampusStore } from "@/features/campus/state/campus-store";
 import { useCampusScope } from "@/features/campus/lib/use-campus-scope";
 import { useGradesStore } from "@/features/grades/state/grades-store";
@@ -54,8 +59,12 @@ export function EditMaterialDialog({ material, onClose }: Props) {
   const tocNodes = useSubjectsStore((s) => s.tocNodes);
   const update = useMaterialsStore((s) => s.update);
   const campusScope = useCampusScope();
-  const subjects = campusScope.scopeSubjects(allSubjects);
-  const grades = campusScope.scopeGrades(allGrades);
+  // Cắt thêm theo MÔN · KHỐI của người đang đăng nhập, không chỉ theo cơ sở.
+  // Thiếu vế này thì Trưởng nhóm môn Toán vẫn chọn được môn Sinh — xem ghi
+  // chú dài ở admin/question-bank/page.tsx.
+  const scope = useUserScope();
+  const subjects = filterSubjectsByScope(campusScope.scopeSubjects(allSubjects), scope);
+  const grades = filterGradesByScope(campusScope.scopeGrades(allGrades), scope);
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");

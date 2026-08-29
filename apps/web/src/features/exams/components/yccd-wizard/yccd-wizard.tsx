@@ -20,6 +20,11 @@ import { useCampusStore } from "@/features/campus/state/campus-store";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import { useQuestionsStore } from "@/features/question-bank/state/questions-store";
 import { useAuthStore } from "@/features/auth/state/auth-store";
+import {
+  filterGradesByScope,
+  filterSubjectsByScope,
+  useUserScope,
+} from "@/features/auth/lib/use-scope";
 import { useBlueprintsStore } from "@/features/exams/state/blueprints-store";
 import { usePackagesStore } from "@/features/exams/state/packages-store";
 import { useGeneratedStore } from "@/features/exams/state/generated-store";
@@ -108,15 +113,25 @@ export function YccdWizard({
   const partConfigsHydrated = usePartConfigsStore((s) => s.hydrated);
   const upsertPartConfig = usePartConfigsStore((s) => s.upsert);
 
+  // HAI TẦNG: cơ sở, rồi MÔN của người đang đăng nhập.
+  //
+  // Thiếu tầng hai thì Trưởng nhóm môn Toán mở "Tạo đề theo YCCĐ" ra vẫn chọn
+  // được môn Sinh, rồi bốc câu môn Sinh vào đề — mà trang này chỉ mở cho LEAD
+  // trở lên, tức đúng những người CÓ phạm vi môn. Xem ghi chú dài ở
+  // admin/question-bank/page.tsx.
+  const scope = useUserScope();
   const campusSubjects = useMemo(
     () =>
-      subjects.filter(
-        (s) =>
-          s.status === "active" &&
-          (!activeCampusId ||
-            (Array.isArray(s.campusIds) && s.campusIds.includes(activeCampusId))),
+      filterSubjectsByScope(
+        subjects.filter(
+          (s) =>
+            s.status === "active" &&
+            (!activeCampusId ||
+              (Array.isArray(s.campusIds) && s.campusIds.includes(activeCampusId))),
+        ),
+        scope,
       ),
-    [subjects, activeCampusId],
+    [subjects, activeCampusId, scope],
   );
 
   const [subjectId, setSubjectId] = useState("");

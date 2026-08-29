@@ -21,7 +21,11 @@ import { Input } from "@/components/ui/input";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { Select } from "@/components/ui/select";
 import { ConfirmActionDialog } from "@/features/admin/users/dialogs/confirm-action-dialog";
-import { useUserScope } from "@/features/auth/lib/use-scope";
+import {
+  filterGradesByScope,
+  filterSubjectsByScope,
+  useUserScope,
+} from "@/features/auth/lib/use-scope";
 import { useAuthStore } from "@/features/auth/state/auth-store";
 import { CampusGateBanner } from "@/features/campus/components/campus-gate-banner";
 import { useCampusGate } from "@/features/campus/hooks/use-campus-gate";
@@ -165,16 +169,32 @@ export default function QuestionBankPage() {
     () => (operatingCampus ? new Set(operatingCampus.gradeIds) : null),
     [operatingCampus],
   );
-  // Dùng luật chung `campus-scope.ts` chứ không chép lại điều kiện lọc —
-  // bản chép thiếu ở hộp "Tải đề lên" là chỗ đã sinh ra lỗi chọn nhầm môn của
-  // cơ sở khác.
+  // HAI TẦNG CẮT, thiếu tầng nào cũng rò.
+  //
+  //  1. Theo CƠ SỞ (`campus-scope.ts`) — dùng luật chung chứ không chép lại
+  //     điều kiện lọc; bản chép thiếu ở hộp "Tải đề lên" là chỗ đã sinh ra
+  //     lỗi chọn nhầm môn của cơ sở khác.
+  //  2. Theo MÔN · KHỐI của người đang đăng nhập.
+  //
+  // Tầng 2 từng thiếu, và thiếu một cách rất khó thấy: danh sách câu hỏi bên
+  // dưới ĐÃ cắt đúng, nên nhìn qua tưởng phân quyền chạy. Nhưng hai ô lọc này
+  // vẫn liệt kê mọi môn và mọi khối của cơ sở — Trưởng nhóm môn Toán (được
+  // giao môn Toán, khối 6+7) mở ra vẫn thấy "Sinh học" và thấy khối 8, 9.
+  //
+  // Rò ở ô lọc không chỉ là chuyện thẩm mỹ: nó lộ ra trường đang dạy những
+  // môn nào, mở khối nào — và mời người dùng bấm vào một lựa chọn mà bấm xong
+  // chỉ ra danh sách rỗng, không hiểu vì sao.
+  //
+  // `filterGradesByScope` trả về NGUYÊN danh sách khi `allowedGradeIds` là
+  // null — đúng quy ước "không giao khối nào = mọi khối trong môn được giao",
+  // không phải bỏ sót.
   const scopedSubjects = useMemo(
-    () => subjectsInCampus(subjects, operatingCampus),
-    [subjects, operatingCampus],
+    () => filterSubjectsByScope(subjectsInCampus(subjects, operatingCampus), scope),
+    [subjects, operatingCampus, scope],
   );
   const scopedGrades = useMemo(
-    () => gradesInCampus(grades, operatingCampus),
-    [grades, operatingCampus],
+    () => filterGradesByScope(gradesInCampus(grades, operatingCampus), scope),
+    [grades, operatingCampus, scope],
   );
 
   const { canMutate } = useCampusGate();

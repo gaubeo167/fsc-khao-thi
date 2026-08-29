@@ -68,3 +68,47 @@ export function userTeachesSubject(
   if (!subjectId) return false;
   return ids.has(subjectId);
 }
+
+/**
+ * Phạm vi rút gọn cho hai hàm lọc dưới đây.
+ *
+ * Khai lại ở đây thay vì import `UserScope` từ `use-scope.ts` để module này
+ * KHÔNG kéo React vào — đó là toàn bộ lý do nó tồn tại (xem đầu file).
+ */
+export interface ScopeLike {
+  allowedSubjectIds: Set<string> | null;
+  allowedGradeIds: Set<string> | null;
+  isUnscoped: boolean;
+}
+
+/**
+ * Lọc danh sách MÔN cho ô chọn / ô lọc.
+ *
+ * ⚠️ Danh sách dữ liệu cắt đúng KHÔNG có nghĩa là xong. Ô chọn là một đường
+ * rò riêng: /admin/question-bank từng cắt đúng danh sách câu hỏi nhưng ô lọc
+ * vẫn liệt kê mọi môn của cơ sở, nên TBM Toán vẫn thấy "Sinh học". Cắt cả hai.
+ */
+export function filterSubjectsByScope<T extends { id: string }>(
+  items: T[],
+  scope: ScopeLike,
+): T[] {
+  if (scope.isUnscoped || !scope.allowedSubjectIds) return items;
+  const ids = scope.allowedSubjectIds;
+  return items.filter((it) => ids.has(it.id));
+}
+
+/**
+ * Lọc danh sách KHỐI cho ô chọn / ô lọc.
+ *
+ * `allowedGradeIds == null` trả về NGUYÊN danh sách — đúng quy ước "không
+ * giao khối nào = mọi khối trong môn được giao". Siết chỗ này là giáo viên
+ * chưa gán khối mất sạch ô chọn.
+ */
+export function filterGradesByScope<T extends { id: string }>(
+  items: T[],
+  scope: ScopeLike,
+): T[] {
+  if (scope.isUnscoped || scope.allowedGradeIds == null) return items;
+  const ids = scope.allowedGradeIds;
+  return items.filter((it) => ids.has(it.id));
+}

@@ -58,6 +58,7 @@ node scripts/test-firestore-timestamps.mjs # Timestamp đọc về → chuỗi I
 node scripts/test-subject-scope.mjs    # TBM chỉ thấy môn mình phụ trách (duyệt · kho đề · chọn người chấm)
 node scripts/test-blueprint-picked.mjs # khung đề lệch KHÔNG được làm chết cả trang ca thi
 node scripts/test-proctor-hours.mjs   # giờ coi thi: 1 GV coi 2 phòng cùng ca vẫn là 1 ca
+node scripts/check-scope-pickers.mjs   # bánh cóc: ô chọn Môn·Khối phải cắt theo phạm vi
 node scripts/check-design-tokens.mjs   # bánh cóc thang chữ (xem dưới)
 ```
 

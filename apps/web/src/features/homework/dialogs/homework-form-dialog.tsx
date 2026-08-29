@@ -38,6 +38,11 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { useUsersStore } from "@/features/admin/users/users-store";
 import { useAuthStore } from "@/features/auth/state/auth-store";
+import {
+  filterGradesByScope,
+  filterSubjectsByScope,
+  useUserScope,
+} from "@/features/auth/lib/use-scope";
 import { useCampusStore } from "@/features/campus/state/campus-store";
 import { useCampusScope } from "@/features/campus/lib/use-campus-scope";
 import { useGradesStore } from "@/features/grades/state/grades-store";
@@ -110,8 +115,12 @@ export function HomeworkFormDialog({ open, onOpenChange, editing }: Props) {
   // Campus-scoped subject + grade lists so a teacher creating BTVN on
   // campus A never sees subjects/grades belonging to campus B.
   const campusScope = useCampusScope();
-  const subjects = campusScope.scopeSubjects(allSubjects);
-  const grades = campusScope.scopeGrades(allGrades);
+  // Cắt thêm theo MÔN · KHỐI của người đang đăng nhập, không chỉ theo cơ sở.
+  // Thiếu vế này thì Trưởng nhóm môn Toán vẫn chọn được môn Sinh — xem ghi
+  // chú dài ở admin/question-bank/page.tsx.
+  const scope = useUserScope();
+  const subjects = filterSubjectsByScope(campusScope.scopeSubjects(allSubjects), scope);
+  const grades = filterGradesByScope(campusScope.scopeGrades(allGrades), scope);
   const allQuestions = useQuestionsStore((s) => s.questions);
   const allMaterials = useMaterialsStore((s) => s.materials);
   const createHomework = useHomeworkStore((s) => s.create);

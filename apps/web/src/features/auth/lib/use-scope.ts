@@ -51,7 +51,12 @@ export const ScopeContext = createContext<UserScope | null>(null);
 // Luật "người này phụ trách môn nào" sống ở `subject-scope.ts` — thuần, không
 // dính React, nên test được thẳng bằng node. Bày lại ở đây để chỗ gọi cũ chỉ
 // cần nhớ một đường dẫn.
-export { subjectIdsOfUser, userTeachesSubject } from "./subject-scope";
+export {
+  subjectIdsOfUser,
+  userTeachesSubject,
+  filterSubjectsByScope,
+  filterGradesByScope,
+} from "./subject-scope";
 
 export function useUserScope(): UserScope {
   const ctx = useContext(ScopeContext);
@@ -121,23 +126,7 @@ export function isInScope(
   return scope.allowedGradeIds.has(gradeId);
 }
 
-/** Convenience: filter a list of subjects to those the user can author for. */
-export function filterSubjectsByScope<T extends { id: string }>(
-  items: T[],
-  scope: UserScope,
-): T[] {
-  if (scope.isUnscoped || !scope.allowedSubjectIds) return items;
-  return items.filter((it) => scope.allowedSubjectIds!.has(it.id));
-}
 
-/** Convenience: filter a list of grades to those the user can author for. */
-export function filterGradesByScope<T extends { id: string }>(
-  items: T[],
-  scope: UserScope,
-): T[] {
-  if (scope.isUnscoped || scope.allowedGradeIds == null) return items;
-  return items.filter((it) => scope.allowedGradeIds!.has(it.id));
-}
 
 /** Specific authoring permissions — read role + optional per-user override.
  *

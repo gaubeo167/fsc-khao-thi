@@ -38,7 +38,8 @@ execFileSync(
   ],
   { cwd: "apps/web", stdio: "pipe" },
 );
-const { subjectIdsOfUser, userTeachesSubject } = await import(out);
+const { subjectIdsOfUser, userTeachesSubject, filterSubjectsByScope, filterGradesByScope } =
+  await import(out);
 
 let pass = 0,
   fail = 0;
@@ -112,6 +113,59 @@ for (const role of ["superadmin", "academic-director", "campus-admin"]) {
   check("subjectId null → false", !userTeachesSubject(u, null, SUBJECTS));
   check("subjectId rỗng → false", !userTeachesSubject(u, "", SUBJECTS));
   check("nhưng admin vẫn qua", userTeachesSubject({ role: "campus-admin" }, null, SUBJECTS));
+}
+
+/* ── 7. Lọc DANH SÁCH cho ô chọn ─────────────────────────────────────────
+ *
+ * Đây là vế từng thiếu và thiếu rất khó thấy: danh sách câu hỏi ĐÃ cắt đúng
+ * nên nhìn qua tưởng phân quyền chạy, nhưng hai ô lọc Môn/Khối vẫn liệt kê
+ * mọi môn và mọi khối của cơ sở. TBM Toán (môn Toán, khối 6+7) mở Ngân hàng
+ * câu hỏi ra vẫn thấy "Sinh học" và thấy khối 8, 9.
+ */
+{
+  const MON = [{ id: "s-toan" }, { id: "s-van" }, { id: "s-sinh" }];
+  const KHOI = [{ id: "g6" }, { id: "g7" }, { id: "g8" }, { id: "g9" }];
+  const ids = (xs) => xs.map((x) => x.id);
+
+  const tbmToan = {
+    allowedSubjectIds: new Set(["s-toan"]),
+    allowedGradeIds: new Set(["g6", "g7"]),
+    isUnscoped: false,
+    hasScope: true,
+  };
+  check(
+    "ô chọn MÔN của TBM Toán chỉ còn Toán",
+    JSON.stringify(ids(filterSubjectsByScope(MON, tbmToan))) === '["s-toan"]',
+    JSON.stringify(ids(filterSubjectsByScope(MON, tbmToan))),
+  );
+  check(
+    "ô chọn KHỐI chỉ còn 6 và 7",
+    JSON.stringify(ids(filterGradesByScope(KHOI, tbmToan))) === '["g6","g7"]',
+    JSON.stringify(ids(filterGradesByScope(KHOI, tbmToan))),
+  );
+
+  const adm = { allowedSubjectIds: null, allowedGradeIds: null, isUnscoped: true, hasScope: true };
+  check("admin vẫn thấy đủ môn", filterSubjectsByScope(MON, adm).length === 3);
+  check("admin vẫn thấy đủ khối", filterGradesByScope(KHOI, adm).length === 4);
+
+  // Không giao khối nào = mọi khối TRONG môn được giao. Đây là quy ước, không
+  // phải bỏ sót — siết chỗ này là TBM chưa gán khối mất sạch ô chọn.
+  const chuaGanKhoi = {
+    allowedSubjectIds: new Set(["s-toan"]),
+    allowedGradeIds: null,
+    isUnscoped: false,
+    hasScope: true,
+  };
+  check("chưa gán khối → ô khối giữ nguyên đủ", filterGradesByScope(KHOI, chuaGanKhoi).length === 4);
+  check("…nhưng ô môn vẫn cắt", JSON.stringify(ids(filterSubjectsByScope(MON, chuaGanKhoi))) === '["s-toan"]');
+
+  const chuaGanMon = {
+    allowedSubjectIds: new Set(),
+    allowedGradeIds: null,
+    isUnscoped: false,
+    hasScope: false,
+  };
+  check("chưa gán môn nào → ô môn rỗng, không lộ gì", filterSubjectsByScope(MON, chuaGanMon).length === 0);
 }
 
 console.log(`\n${pass} qua, ${fail} trượt`);

@@ -34,6 +34,11 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useAuthStore } from "@/features/auth/state/auth-store";
 import {
+  filterGradesByScope,
+  filterSubjectsByScope,
+  useUserScope,
+} from "@/features/auth/lib/use-scope";
+import {
   gradesInCampus,
   operatingCampusId,
   subjectsInCampus,
@@ -169,13 +174,17 @@ export function ImportQuestionsDialog({
     );
     return id ? campuses.find((c) => c.id === id) ?? null : null;
   }, [session?.role, session?.campusId, activeCampusId, campuses]);
+  // Cắt thêm theo MÔN · KHỐI của người đang đăng nhập, không chỉ theo cơ sở.
+  // Thiếu vế này thì Trưởng nhóm môn Toán vẫn chọn được môn Sinh — xem ghi
+  // chú dài ở admin/question-bank/page.tsx.
+  const scope = useUserScope();
   const subjects = useMemo(
-    () => subjectsInCampus(allSubjects, operatingCampus),
-    [allSubjects, operatingCampus],
+    () => filterSubjectsByScope(subjectsInCampus(allSubjects, operatingCampus), scope),
+    [allSubjects, operatingCampus, scope],
   );
   const grades = useMemo(
-    () => gradesInCampus(allGrades, operatingCampus),
-    [allGrades, operatingCampus],
+    () => filterGradesByScope(gradesInCampus(allGrades, operatingCampus), scope),
+    [allGrades, operatingCampus, scope],
   );
 
   const [subjectId, setSubjectId] = useState("");
