@@ -24,6 +24,7 @@
 
 import type { BloomLevel } from "@/features/competencies/data/types";
 import type { Question } from "@/features/question-bank/data/seed-questions";
+import { splitTableBlocks } from "@/features/question-bank/lib/table-block";
 
 import type { YccdMatrix, YccdPart } from "../data/types";
 
@@ -466,4 +467,72 @@ export function examTitleParts(packageName: string): {
 /** Nhãn A/B/C/D cho phương án trắc nghiệm. */
 export function optionLabel(i: number): string {
   return String.fromCharCode(65 + i);
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+ * Nội dung một câu → các khối để đổ ra giấy
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Chữ trần cho file Word: bỏ mốc nội bộ, gộp khoảng trắng.
+ *
+ * Ở đây chứ không ở `moet-docx.ts` vì đây là phép biến đổi thuần trên chuỗi —
+ * và vì `planContentBlocks` bên dưới cần nó để test được mà không phải dựng
+ * cả thư viện `docx`.
+ */
+export function plainText(s: string): string {
+  return stripAnswerArtifacts(s)
+    .replace(/\$\$([\s\S]*?)\$\$/g, "$1")
+    .replace(/\$([^$\n]+)\$/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/!\[[^\]]*\]\([^)]+\)/g, "[hình]")
+    .replace(/\[(video|audio):[^\]]+\]/g, "[$1]")
+    .replace(/\[u:([^\]]*)\]/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Một khối trong đề bài của MỘT câu. */
+export type ContentPiece =
+  | { kind: "text"; text: string }
+  | { kind: "table"; rows: string[][] };
+
+/**
+ * Nội dung một câu → thứ tự khối, kèm chỗ ghép số câu ("Câu 3. ").
+ *
+ * ── Vì sao là hàm riêng ─────────────────────────────────────────────────
+ *
+ * Số câu ghép vào mảng chữ ĐẦU TIÊN — đẩy nó thành đoạn riêng thì số câu
+ * đứng trơ một dòng, cách hẳn đề bài.
+ *
+ * Nhưng bảng là KHỐI riêng của Word, không ghép chữ vào đầu được. Câu mở đầu
+ * bằng bảng thì số câu phải in thành một dòng riêng ngay TRÊN bảng. Thiếu
+ * nhánh đó thì:
+ *
+ *   • câu chỉ có mỗi bảng → in ra MẤT HẲN số câu;
+ *   • câu mở đầu bằng bảng → số câu rơi xuống dòng chữ NẰM DƯỚI bảng.
+ *
+ * Cả hai đều là đề in ra đánh số sai, và chỉ lộ ra khi mở file Word — nên
+ * luật thứ tự nằm ở đây, thuần và khoá bằng test.
+ */
+export function planContentBlocks(raw: string, prefix = ""): ContentPiece[] {
+  const out: ContentPiece[] = [];
+  let daGhepPrefix = false;
+  for (const seg of splitTableBlocks(raw)) {
+    if (seg.kind === "table") {
+      if (!daGhepPrefix && prefix) {
+        out.push({ kind: "text", text: prefix.trim() });
+        daGhepPrefix = true;
+      }
+      out.push({ kind: "table", rows: seg.rows });
+      continue;
+    }
+    const t = plainText(seg.body);
+    if (!t && daGhepPrefix) continue;
+    out.push({ kind: "text", text: daGhepPrefix ? t : `${prefix}${t}` });
+    daGhepPrefix = true;
+  }
+  if (out.length === 0) out.push({ kind: "text", text: prefix.trim() });
+  return out;
 }

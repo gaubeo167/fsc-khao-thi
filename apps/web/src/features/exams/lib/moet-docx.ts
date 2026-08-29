@@ -11,8 +11,6 @@
 
 import type { BloomLevel } from "@/features/competencies/data/types";
 import type { Question } from "@/features/question-bank/data/seed-questions";
-import { splitTableBlocks } from "@/features/question-bank/lib/table-block";
-
 import type { ScoringPolicy, YccdMatrix, YccdPart } from "../data/types";
 
 import {
@@ -22,11 +20,12 @@ import {
   buildSpecTable,
   groupOfPart,
   optionLabel,
+  plainText,
+  planContentBlocks,
   roman,
   round2,
   examTitleParts,
   splitIntoParts,
-  stripAnswerArtifacts,
   subLetter,
 } from "./moet-export";
 
@@ -39,20 +38,6 @@ import {
  * hơn thiếu). Để dấu chấm là nói rõ "chỗ này của bạn" ngay trên giấy.
  */
 const DIEN_TAY = "..................................................";
-
-/** Chữ đưa vào Word: cắt đáp án (`stripAnswerArtifacts`) rồi bỏ cú pháp nội bộ. */
-function plainText(s: string): string {
-  return stripAnswerArtifacts(s)
-    .replace(/\$\$([\s\S]*?)\$\$/g, "$1")
-    .replace(/\$([^$\n]+)\$/g, "$1")
-    .replace(/\*\*([^*]+)\*\*/g, "$1")
-    .replace(/\*([^*]+)\*/g, "$1")
-    .replace(/!\[[^\]]*\]\([^)]+\)/g, "[hình]")
-    .replace(/\[(video|audio):[^\]]+\]/g, "[$1]")
-    .replace(/\[u:([^\]]*)\]/g, "$1")
-    .replace(/\s+/g, " ")
-    .trim();
-}
 
 export interface ExamDocMeta {
   /** "SỞ GIÁO DỤC VÀ ĐÀO TẠO THÀNH PHỐ ĐÀ NẴNG" — bỏ trống thì không in. */
@@ -191,19 +176,16 @@ export async function buildExamDocx(args: {
    * Không có nhánh này thì bảng trong đề bài in ra thành `| --- | --- |` —
    * học sinh nhận đề thấy cú pháp nội bộ thay vì cái bảng.
    *
-   * `prefix` ("Câu 3. ") ghép vào mảng chữ ĐẦU TIÊN. Đẩy nó thành đoạn riêng
-   * thì số câu đứng trơ một dòng, cách hẳn đề bài.
+   * Thứ tự khối và chỗ ghép số câu ("Câu 3. ") do `planContentBlocks` quyết —
+   * thuần và khoá bằng test ở `scripts/test-moet-export.mjs`. Đây chỉ đổ ra
+   * đối tượng của `docx`.
    */
-  const contentBlocks = (raw: string, prefix = "") => {
-    const segs = splitTableBlocks(raw);
-    let daGhepPrefix = false;
-    const outBlocks: Array<InstanceType<typeof d.Paragraph> | InstanceType<typeof d.Table>> = [];
-    for (const seg of segs) {
-      if (seg.kind === "table") {
-        outBlocks.push(
-          new d.Table({
+  const contentBlocks = (raw: string, prefix = "") =>
+    planContentBlocks(raw, prefix).map((piece) =>
+      piece.kind === "table"
+        ? new d.Table({
             width: { size: 100, type: d.WidthType.PERCENTAGE },
-            rows: seg.rows.map(
+            rows: piece.rows.map(
               (r, ri) =>
                 new d.TableRow({
                   children: r.map(
@@ -221,18 +203,9 @@ export async function buildExamDocx(args: {
                   ),
                 }),
             ),
-          }),
-        );
-        continue;
-      }
-      const t = plainText(seg.body);
-      if (!t && daGhepPrefix) continue;
-      outBlocks.push(P(daGhepPrefix ? t : `${prefix}${t}`));
-      daGhepPrefix = true;
-    }
-    if (outBlocks.length === 0) outBlocks.push(P(prefix.trim()));
-    return outBlocks;
-  };
+          })
+        : P(piece.text),
+    );
 
   const renderItems = (block: (typeof blocks)[number]) => {
     for (const it of block.items) {

@@ -18,9 +18,21 @@
  *
  * ── Vì sao sửa ở đây ────────────────────────────────────────────────────
  *
- * Mọi kho dữ liệu đều đọc qua `subscribeCollection`. Vá ở đó là một chỗ cho
+ * Phần lớn kho dữ liệu đọc qua `subscribeCollection`. Vá ở đó là một chỗ cho
  * tất cả; vá ở từng màn thì màn nào quên lại hỏng tiếp, mà lại chỉ hỏng trên
  * production.
+ *
+ * ⚠️ CHƯA PHỦ HẾT — bốn chỗ đọc thẳng, KHÔNG đi qua đây:
+ *
+ *   • `features/admin/users/users-store.ts`      (onSnapshot riêng)
+ *   • `features/exams/state/generated-store.ts`  (onSnapshot riêng)
+ *   • `features/exam-forms/state/exam-forms-store.ts` (onSnapshot riêng)
+ *   • `features/question-bank/state/questions-store.ts` — `ensureQuestions`
+ *     dùng `getDocs` rồi trộn thẳng vào CÙNG kho mà `subscribeCollection`
+ *     đã chuẩn hoá, nên một kho có thể lẫn hai loại giá trị.
+ *
+ * Hôm nay chưa lộ ra vì không màn nào hiện `updatedAt` của bốn kho đó. Thêm
+ * một chỗ hiện là "Invalid Date" quay lại — thêm màn thì bọc luôn chỗ đọc.
  *
  * Không chỗ nào trong mã gọi `.toDate()`, nên đổi sang chuỗi ISO chỉ có lợi.
  */

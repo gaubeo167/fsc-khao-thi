@@ -44,6 +44,8 @@ const {
   round2,
   stripAnswerArtifacts,
   examTitleParts,
+  planContentBlocks,
+  plainText,
 } = await import(out);
 
 let pass = 0,
@@ -384,6 +386,56 @@ const q = (id, type, over = {}) => ({ id, type, content: `Nội dung ${id}`, ...
     .find((b) => b.part.id === "ds")
     .items.reduce((s, it) => s + unitsOf(it.question), 0);
   check("số lệnh hỏi của phần Đúng–Sai vẫn là 8 (2 câu × 4 ý)", soLenhHoi === 8, String(soLenhHoi));
+}
+
+/* ── Thứ tự khối trong đề bài: số câu KHÔNG được rơi xuống dưới bảng ──────
+ *
+ * Bảng là khối riêng của Word, không ghép "Câu 3. " vào đầu được. Bản đầu
+ * tiên chỉ ghép số câu vào mảng CHỮ, nên hai kiểu đề bài dưới đây in ra sai:
+ * câu chỉ có mỗi bảng thì mất hẳn số câu, câu mở đầu bằng bảng thì số câu
+ * dính vào dòng chữ NẰM DƯỚI bảng. Chỉ lộ ra khi mở file Word.
+ */
+{
+  const BANG = "| Giai đoạn | Điểm |\n| --- | --- |\n| Phát triển | 0,25 |";
+
+  const chiBang = planContentBlocks(BANG, "Câu 3. ");
+  check(
+    "câu CHỈ có bảng vẫn in ra số câu",
+    chiBang[0]?.kind === "text" && chiBang[0]?.text === "Câu 3.",
+    JSON.stringify(chiBang.map((b) => b.kind)),
+  );
+  check("…rồi mới tới bảng", chiBang[1]?.kind === "table" && chiBang.length === 2);
+
+  const bangTruoc = planContentBlocks(`${BANG}\nHãy điền vào chỗ trống.`, "Câu 3. ");
+  check(
+    "bảng đứng đầu → số câu vẫn ở TRÊN bảng",
+    bangTruoc[0]?.kind === "text" && bangTruoc[0]?.text === "Câu 3.",
+    JSON.stringify(bangTruoc.map((b) => b.kind)),
+  );
+  check("…và chữ phía sau KHÔNG bị gắn thêm số câu lần hai", bangTruoc[2]?.text === "Hãy điền vào chỗ trống.", JSON.stringify(bangTruoc[2]));
+  check("số câu chỉ xuất hiện ĐÚNG một lần", bangTruoc.filter((b) => b.kind === "text" && b.text.includes("Câu 3.")).length === 1);
+
+  const binhThuong = planContentBlocks(`Cho bảng sau:\n${BANG}`, "Câu 3. ");
+  check(
+    "đề bài mở đầu bằng chữ: số câu vẫn ghép vào cùng dòng, không tách ra",
+    binhThuong[0]?.text === "Câu 3. Cho bảng sau:" && binhThuong[1]?.kind === "table",
+    JSON.stringify(binhThuong),
+  );
+
+  const khongBang = planContentBlocks("Tính 2 + 2.", "Câu 9. ");
+  check(
+    "đề bài không có bảng vẫn ra đúng một đoạn",
+    khongBang.length === 1 && khongBang[0]?.text === "Câu 9. Tính 2 + 2.",
+    JSON.stringify(khongBang),
+  );
+
+  const rong = planContentBlocks("", "Câu 1. ");
+  check(
+    "đề bài rỗng vẫn giữ số câu",
+    rong.length === 1 && rong[0]?.text.startsWith("Câu 1."),
+    JSON.stringify(rong),
+  );
+  check("ô bảng đi qua plainText (bỏ $…$)", plainText("$x^2$") === "x^2");
 }
 
 console.log(`\n${pass} qua, ${fail} trượt`);
