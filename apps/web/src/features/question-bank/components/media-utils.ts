@@ -133,6 +133,22 @@ export type AudioSource =
   | { kind: "playable"; src: string }
   | { kind: "unsupported"; reason: string };
 
+/**
+ * Link Drive → đường dẫn cầu nối trên máy chủ mình.
+ *
+ * Không trỏ thẳng vào Google nữa. `drive.google.com/uc?export=download` giờ
+ * chuyển hướng 303 sang `drive.usercontent.google.com`, và thứ về tới nơi
+ * rất hay là một TRANG HTML (đăng nhập Workspace, hỏi xác nhận quét virus).
+ * `<audio>` nhận HTML thì đứng ở 0:00 và không báo gì — giáo viên đã mở chia
+ * sẻ rồi vẫn không nghe được, mà không biết vì sao.
+ *
+ * Máy chủ đi lấy hộ, kiểm đúng là âm thanh rồi mới chuyển tiếp; hỏng thì trả
+ * lỗi có chữ. Xem `app/api/media/audio/route.ts`.
+ */
+export function driveAudioProxy(fileId: string): string {
+  return `/api/media/audio?drive=${encodeURIComponent(fileId)}`;
+}
+
 const DIRECT_AUDIO_EXT = /\.(mp3|m4a|aac|wav|ogg|oga|opus|flac|weba|webm)(\?.*)?$/i;
 
 export function classifyAudioUrl(url: string): AudioSource {
@@ -171,16 +187,13 @@ export function classifyAudioUrl(url: string): AudioSource {
 
   const host = u.hostname.replace(/^www\./, "");
 
-  // Google Drive: link chia sẻ là TRANG xem, phải đổi sang lối tải thẳng thì
-  // `<audio>` mới nhận được tiếng.
+  // Google Drive: link chia sẻ là TRANG xem. Đi vòng qua cầu nối của mình —
+  // trỏ thẳng vào lối tải của Google không còn ăn (xem `driveAudioProxy`).
   if (host === "drive.google.com" || host === "docs.google.com") {
     const m = u.pathname.match(/\/file\/d\/([\w-]+)/);
     const id = m ? m[1]! : u.searchParams.get("id");
     if (id) {
-      return {
-        kind: "playable",
-        src: `https://drive.google.com/uc?export=download&id=${id}`,
-      };
+      return { kind: "playable", src: driveAudioProxy(id) };
     }
     return {
       kind: "unsupported",

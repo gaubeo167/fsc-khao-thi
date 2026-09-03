@@ -144,13 +144,27 @@ check("chuỗi không phải URL → link", classifyMediaUrl("bài giảng số 
 
   const drive = au("https://drive.google.com/file/d/1AbC_dEf/view?usp=sharing");
   check("link Drive KHÔNG bị coi là hỏng", drive.kind === "playable", JSON.stringify(drive));
+  // Trỏ THẲNG vào Google không còn ăn: `uc?export=download` chuyển hướng 303
+  // sang `drive.usercontent.google.com`, và thứ về tới nơi rất hay là trang
+  // HTML (đăng nhập Workspace / hỏi quét virus). `<audio>` nhận HTML thì đứng
+  // ở 0:00 và không báo gì — đúng cái lỗi "đã mở chia sẻ vẫn không nghe được".
   check(
-    "…mà đổi sang lối tải thẳng (uc?export=download)",
-    drive.src === "https://drive.google.com/uc?export=download&id=1AbC_dEf",
+    "…mà đi vòng qua cầu nối của mình, KHÔNG trỏ thẳng vào Google",
+    drive.src === "/api/media/audio?drive=1AbC_dEf",
+    drive.src,
+  );
+  check(
+    "không còn dùng lối uc?export=download đã hỏng",
+    !drive.src.includes("uc?export=download"),
     drive.src,
   );
   const driveId = au("https://drive.google.com/open?id=XyZ123");
-  check("Drive dạng ?id= cũng nhận", driveId.src === "https://drive.google.com/uc?export=download&id=XyZ123", driveId.src);
+  check("Drive dạng ?id= cũng nhận", driveId.src === "/api/media/audio?drive=XyZ123", driveId.src);
+  check(
+    "mã file được mã hoá vào chuỗi truy vấn",
+    au("https://drive.google.com/open?id=a-b_c").src === "/api/media/audio?drive=a-b_c",
+    au("https://drive.google.com/open?id=a-b_c").src,
+  );
   check(
     "Drive không có mã file → báo rõ, không phát bừa",
     au("https://drive.google.com/drive/my-drive").kind === "unsupported",

@@ -52,7 +52,82 @@ export interface ProctorTotal {
   soPhut: number;
   /** Số ca không tính được giờ — hiện riêng để đừng ai tưởng là coi 0 giờ. */
   caThieuGio: number;
+  /**
+   * Ngày thi sớm nhất / muộn nhất TRONG KHOẢNG ĐANG XEM (ISO), `null` khi
+   * không ca nào của người này có mốc đọc được.
+   *
+   * Có để bảng tổng hợp hiện được cột "Ngày thi" mà không phải mở từng người
+   * ra xem. Trước đây ngày chỉ nằm trong phần bung ra, nên tổ văn phòng muốn
+   * biết "tháng này ai coi bao nhiêu" là phải bấm mở từng dòng một.
+   */
+  ngayDau: string | null;
+  ngayCuoi: string | null;
   shifts: ProctorShiftRow[];
+}
+
+/**
+ * Mốc ISO → `YYYY-MM-DD` theo GIỜ ĐỊA PHƯƠNG.
+ *
+ * Cắt chuỗi ISO (`.slice(0, 10)`) là sai: ca 08:00 giờ Việt Nam lưu thành
+ * `…T01:00:00Z`, cắt ra vẫn ra đúng ngày, nhưng ca 07:00 sáng lưu thành
+ * `…T00:00:00Z` của NGÀY HÔM TRƯỚC — lọc theo ngày sẽ trượt mất đúng những
+ * ca thi buổi sáng sớm.
+ */
+export function ngayLocal(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/**
+ * Cắt danh sách ca theo khoảng NGÀY THI (`YYYY-MM-DD`, bao gồm cả hai đầu).
+ *
+ * Ca THIẾU mốc thời gian được GIỮ LẠI dù có lọc hay không. Đó chính là những
+ * ca bảng này đang bảo người xem đi sửa; lọc mất chúng là giấu đúng thứ cần
+ * hiện, mà giấu thì không ai đi sửa nữa.
+ */
+export function locCaTheoNgay<T extends { startAt: string }>(
+  shifts: readonly T[],
+  tuNgay?: string | null,
+  denNgay?: string | null,
+): T[] {
+  const tu = tuNgay || null;
+  const den = denNgay || null;
+  if (!tu && !den) return [...shifts];
+  return shifts.filter((sh) => {
+    const ngay = ngayLocal(sh.startAt);
+    if (ngay == null) return true; // ca hỏng mốc — luôn giữ để còn thấy mà sửa
+    if (tu && ngay < tu) return false;
+    if (den && ngay > den) return false;
+    return true;
+  });
+}
+
+/** `2026-05-01` → `01/05/2026`. */
+function ddmmyyyy(iso: string): string {
+  const d = new Date(iso);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`;
+}
+
+/**
+ * Cột "Ngày thi" của một giáo viên: một ngày, hay một khoảng.
+ *
+ * Cùng năm thì bỏ năm ở đầu khoảng (`01/05 → 20/05/2026`) cho đỡ chật; khác
+ * năm thì ghi đủ, vì `28/12 → 03/01/2026` là đọc nhầm được.
+ */
+export function nhanNgayThi(
+  ngayDau: string | null,
+  ngayCuoi: string | null,
+): string {
+  if (!ngayDau || !ngayCuoi) return "—";
+  const a = ddmmyyyy(ngayDau);
+  const b = ddmmyyyy(ngayCuoi);
+  if (a === b) return a;
+  const cungNam = a.slice(-4) === b.slice(-4);
+  return `${cungNam ? a.slice(0, 5) : a} → ${b}`;
 }
 
 /**
@@ -125,6 +200,8 @@ export function tinhGioCoiThi(
           soCa: 0,
           soPhut: 0,
           caThieuGio: 0,
+          ngayDau: null,
+          ngayCuoi: null,
           shifts: [],
         };
         theo.set(userId, t);
@@ -143,9 +220,32 @@ export function tinhGioCoiThi(
   }
 
   for (const t of theo.values()) {
-    t.shifts.sort(
-      (a, b) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime(),
-    );
+    // Ca mới nhất lên đầu; ca KHÔNG đọc được mốc xuống cuối.
+    //
+    // Trước đây so bằng hiệu hai `getTime()`: mốc hỏng ra `NaN`, mà `NaN` thì
+    // mọi phép so đều false — hàm so trở nên mâu thuẫn và `sort` được phép
+    // xáo cả mảng, kể cả những dòng lành. Chuyển sang so hạng tường minh.
+    const moc = (x: string) => {
+      const ms = new Date(x).getTime();
+      return Number.isFinite(ms) ? ms : null;
+    };
+    t.shifts.sort((a, b) => {
+      const x = moc(a.startAt);
+      const y = moc(b.startAt);
+      if (x == null && y == null) return 0;
+      if (x == null) return 1;
+      if (y == null) return -1;
+      return y - x;
+    });
+    // Mốc ngày lấy từ ca ĐỌC ĐƯỢC mốc. Ca hỏng mốc vẫn nằm trong danh sách và
+    // vẫn đếm là một lượt, nhưng không được kéo cột "Ngày thi" về `null` —
+    // một ca hỏng không được xoá ngày của mười ca lành.
+    const ngay = t.shifts
+      .map((s) => ngayLocal(s.startAt))
+      .filter((x): x is string => x != null)
+      .sort();
+    t.ngayDau = ngay[0] ?? null;
+    t.ngayCuoi = ngay[ngay.length - 1] ?? null;
   }
 
   // Nhiều giờ nhất lên trước; bằng giờ thì nhiều ca hơn lên trước; bằng nốt

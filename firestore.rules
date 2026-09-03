@@ -418,12 +418,56 @@ service cloud.firestore {
         (data.get("campusId", null) != null &&
           data.campusId == callerCampusId());
     }
+    // Vế BẬC: TBM chỉ giao / gỡ được người chấm trong tổ chuyên môn
+    // (`teacher` · `subject-lead`). Giao việc cho Admin cơ sở hay Giám đốc
+    // chuyên môn là vượt quyền — và vượt lặng lẽ: bản ghi lưu xong, người bị
+    // giao chỉ biết khi thấy việc lạ trong hàng đợi chấm của mình.
+    //
+    // Đọc hồ sơ NGƯỜI ĐƯỢC GIAO, nên phải `exists()` trước: hồ sơ đã xoá thì
+    // `get()` nổ và cả rule hỏng. Không có hồ sơ = chỉ admin đụng được.
+    //
+    // Bậc admin giao được cho mọi NHÂN VIÊN, nhưng vẫn không giao được cho
+    // học sinh: gán học sinh làm người chấm là mở bài của bạn cùng lớp và
+    // cho sửa điểm. Đây là vế phải kiểm riêng, không nằm trong `isAdmin()`.
+    //
+    // Bản ở giao diện là `grader-rank.ts`; hai bên phải nói cùng một luật —
+    // xem `scripts/test-grader-rank.mjs`.
+    function graderRole(graderId) {
+      return exists(/databases/$(database)/documents/users/$(graderId))
+        ? get(/databases/$(database)/documents/users/$(graderId)).data.role
+        : "";
+    }
+    // Ai được ĐẶT làm người chấm — kiểm trên giá trị MỚI. Phải là hồ sơ nhân
+    // viên có thật; hồ sơ không tồn tại thì không ai đặt được, kể cả admin.
+    function graderRankOk(graderId) {
+      return isAdmin()
+        ? graderRole(graderId) in
+            ["teacher", "subject-lead", "campus-admin", "academic-director",
+             "superadmin"]
+        : graderRole(graderId) in ["teacher", "subject-lead"];
+    }
+    // Ai được ĐỘNG VÀO một phân công đã có — kiểm trên giá trị CŨ.
+    //
+    // Rộng hơn một bậc so với `graderRankOk`: admin gỡ được cả phân công trỏ
+    // vào tài khoản ĐÃ XOÁ. Siết bằng đúng luật của lượt đặt thì bản ghi mồ
+    // côi thành không ai xoá nổi — dọn rác lại phải mở rules ra sửa.
+    function graderRankGoBoOk(graderId) {
+      return isAdmin() || graderRole(graderId) in ["teacher", "subject-lead"];
+    }
     match /grading_assignments/{id} {
       allow read: if isTeacherOrAbove();
       allow create: if isGradingAssigner() &&
-        assignmentCampusOk(request.resource.data);
-      allow update, delete: if isGradingAssigner() &&
-        assignmentCampusOk(resource.data);
+        assignmentCampusOk(request.resource.data) &&
+        graderRankOk(request.resource.data.graderId);
+      // Update kiểm CẢ hai đầu: không được nhấc một phân công hợp lệ sang
+      // trỏ vào admin, và cũng không được sửa một phân công của admin.
+      allow update: if isGradingAssigner() &&
+        assignmentCampusOk(resource.data) &&
+        graderRankGoBoOk(resource.data.graderId) &&
+        graderRankOk(request.resource.data.graderId);
+      allow delete: if isGradingAssigner() &&
+        assignmentCampusOk(resource.data) &&
+        graderRankGoBoOk(resource.data.graderId);
     }
 
     // ───── /exam_forms — frozen snapshots of exam content ─────────────────

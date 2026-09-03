@@ -588,6 +588,15 @@ function AudioBlock({
   const furthest = React.useRef(0);
   /** Lượt hiện tại đã được tính chưa (tính một lần cho mỗi lần nghe lại). */
   const counted = React.useRef(false);
+  /**
+   * File tải KHÔNG được — lý do lấy từ máy chủ.
+   *
+   * Trước đây `<audio>` hỏng thì im: máy phát đứng ở 0:00, bấm không chạy,
+   * không một dòng chữ. Giáo viên tưởng mình dán sai link, học sinh tưởng
+   * máy hỏng, và nó chỉ lộ ra giữa giờ thi. Cầu nối `/api/media/audio` trả
+   * lỗi kèm câu tiếng Việt — hỏi lại nó rồi hiện ra.
+   */
+  const [loiTai, setLoiTai] = React.useState<string | null>(null);
 
   const capped = marker.maxPlays != null;
   const used = capped ? (limit ? limit.playsOf(index) : localPlays) : 0;
@@ -644,6 +653,33 @@ function AudioBlock({
   // hiện một máy phát đứng ở 0:00 không ai hiểu vì sao.
   const nguon = classifyAudioUrl(marker.src);
 
+  /** Trình duyệt báo không tải được — đi hỏi máy chủ cho ra lý do cụ thể. */
+  async function onLoadError() {
+    const src = nguon.kind === "playable" ? nguon.src : null;
+    if (!src || !src.startsWith("/api/")) {
+      setLoiTai(
+        "Không tải được file nghe. Kiểm tra lại đường dẫn, hoặc tải thẳng file lên hệ thống.",
+      );
+      return;
+    }
+    try {
+      const res = await fetch(src, { method: "HEAD" });
+      if (res.ok) {
+        setLoiTai(
+          "Tải được file nhưng trình duyệt không phát được định dạng này. Dùng .mp3 hoặc .m4a.",
+        );
+        return;
+      }
+      const chiTiet = await fetch(src).then((r) => r.json()).catch(() => null);
+      setLoiTai(
+        (chiTiet as { error?: string } | null)?.error ??
+          `Không tải được file nghe (lỗi ${res.status}).`,
+      );
+    } catch {
+      setLoiTai("Không tải được file nghe — kiểm tra kết nối mạng.");
+    }
+  }
+
   return (
     <span className="my-2 block rounded-lg border bg-violet-50/50 px-3 py-2.5 text-[13px] ring-1 ring-violet-200">
       <span className="flex items-center gap-2">
@@ -668,9 +704,10 @@ function AudioBlock({
         )}
       </span>
 
-      {nguon.kind === "unsupported" ? (
+      {nguon.kind === "unsupported" || loiTai ? (
         <span className="text-meta mt-1.5 block rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-amber-900">
-          ⚠ Không phát được file nghe này. {nguon.reason}
+          ⚠ Không phát được file nghe này.{" "}
+          {loiTai ?? (nguon.kind === "unsupported" ? nguon.reason : "")}
         </span>
       ) : (
       <audio
@@ -679,6 +716,7 @@ function AudioBlock({
         controls
         controlsList="nodownload noplaybackrate"
         onPlay={() => void onPlay()}
+        onError={() => void onLoadError()}
         onTimeUpdate={(e) => {
           const t = e.currentTarget.currentTime;
           if (t > furthest.current) furthest.current = t;
@@ -702,7 +740,7 @@ function AudioBlock({
       />
       )}
 
-      {capped && nguon.kind === "playable" && (
+      {capped && nguon.kind === "playable" && !loiTai && (
         <span className="text-meta mt-1 block text-violet-800">
           {msg ??
             (limit

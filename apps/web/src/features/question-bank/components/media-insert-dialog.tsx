@@ -16,6 +16,8 @@ import {
   uploadFile,
 } from "@/lib/storage";
 
+import { canhBaoDungLuong } from "@/lib/media/drive-audio";
+
 import { buildAudioMarker } from "../lib/audio-marker";
 import { classifyAudioUrl, classifyMediaUrl, embedHint } from "./media-utils";
 
@@ -566,9 +568,55 @@ function VideoUrlPreview({ url }: { url: string }) {
  * Link chia sẻ Drive / Dropbox được đổi sang lối tải thẳng; link không phải
  * file âm thanh thì báo ngay ở đây. Không có bước này thì người soạn chỉ biết
  * link hỏng vào lúc học sinh đang thi — mà lúc đó không sửa được nữa.
+ *
+ * Với link Drive thì THỬ TẢI luôn thay vì chỉ bảo "bấm nghe thử": máy chủ đi
+ * hỏi Google, và nếu hỏng thì nói ra hỏng vì cái gì — chưa mở chia sẻ, không
+ * tìm thấy file, hay Google trả về trang đăng nhập. Câu "không ra tiếng nghĩa
+ * là chưa mở quyền" trước đây đoán mò, mà đoán sai thì giáo viên đi sửa đúng
+ * cái không hỏng.
  */
 function AudioUrlPreview({ url }: { url: string }) {
   const nguon = classifyAudioUrl(url);
+  const src = nguon.kind === "playable" ? nguon.src : null;
+  /** `null` = chưa hỏi xong · `""` = không sao · chuỗi khác = lý do hỏng. */
+  const [loiMayChu, setLoiMayChu] = useState<string | null>(null);
+  /** Cảnh báo file quá nặng — khác lỗi: file vẫn phát được. */
+  const [canhBao, setCanhBao] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!src || !src.startsWith("/api/")) {
+      setLoiMayChu("");
+      setCanhBao(null);
+      return;
+    }
+    let huy = false;
+    setLoiMayChu(null);
+    setCanhBao(null);
+    (async () => {
+      try {
+        const res = await fetch(src, { method: "HEAD" });
+        if (huy) return;
+        if (res.ok) {
+          setLoiMayChu("");
+          // Dung lượng biết được ngay từ đây, mà biết lúc soạn thì còn sửa
+          // được; biết lúc cả phòng bấm play thì không.
+          const dai = Number(res.headers.get("content-length"));
+          setCanhBao(canhBaoDungLuong(Number.isFinite(dai) ? dai : null));
+          return;
+        }
+        const chiTiet = (await fetch(src)
+          .then((r) => r.json())
+          .catch(() => null)) as { error?: string } | null;
+        if (!huy) setLoiMayChu(chiTiet?.error ?? `Không tải được file (lỗi ${res.status}).`);
+      } catch {
+        if (!huy) setLoiMayChu("Không gọi được tới máy chủ để thử tải file.");
+      }
+    })();
+    return () => {
+      huy = true;
+    };
+  }, [src]);
+
   if (nguon.kind === "unsupported") {
     return (
       <p className="text-meta mt-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-amber-900">
@@ -576,12 +624,25 @@ function AudioUrlPreview({ url }: { url: string }) {
       </p>
     );
   }
+  if (loiMayChu) {
+    return (
+      <p className="text-meta mt-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-amber-900">
+        ⚠ {loiMayChu}
+      </p>
+    );
+  }
   return (
     <>
       <audio src={nguon.src} controls className="mt-1 w-full" />
+      {canhBao && (
+        <p className="text-meta mt-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-amber-900">
+          ⚠ {canhBao}
+        </p>
+      )}
       <p className="text-meta mt-1 text-muted-foreground">
-        Bấm nghe thử. Không ra tiếng nghĩa là file chưa mở quyền xem cho người
-        có link — sửa quyền chia sẻ, hoặc tải thẳng file lên.
+        {loiMayChu === null
+          ? "Đang thử tải file từ Google Drive…"
+          : "Bấm nghe thử. Nếu không ra tiếng thì đổi sang tải thẳng file lên — chắc ăn hơn link chia sẻ."}
       </p>
     </>
   );

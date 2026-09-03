@@ -1,5 +1,5 @@
 "use client";
-import { Clock, Plus, Save, Search, Trash2, UserCheck, X } from "lucide-react";
+import { Clock, Lock, Plus, Save, Search, Trash2, UserCheck, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,11 @@ import { userTeachesSubject } from "@/features/auth/lib/use-scope";
 import { useAuthStore } from "@/features/auth/state/auth-store";
 import type { ExamShift } from "@/features/exam-shifts/data/types";
 import { useShiftsStore } from "@/features/exam-shifts/state/shifts-store";
+import {
+  coTheGiaoCham,
+  locNguoiChamKhaDung,
+  lyDoKhongGiaoDuoc,
+} from "@/features/grading/lib/grader-rank";
 import { useGradingStore } from "@/features/grading/state/grading-store";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import { cn } from "@/lib/utils";
@@ -114,25 +119,24 @@ export function AssignGradersDialog({
   /**
    * Người được phép chấm ca này.
    *
-   * Lọc theo cơ sở, vai trò VÀ MÔN của ca thi. Thiếu vế môn thì Trưởng nhóm
-   * môn Toán mở hộp này ra thấy cả giáo viên Sinh, Văn — giao nhầm người
-   * chấm là bài chấm sai chuyên môn, mà lúc phát hiện thì điểm đã trả.
+   * Lọc theo cơ sở, MÔN của ca thi, VÀ BẬC của người đang phân công.
    *
-   * Bậc admin (`campus-admin` · `academic-director`) KHÔNG bị lọc môn:
-   * `userTeachesSubject` trả `true` cho họ, để admin vẫn tự nhận chấm được
-   * — đúng lý do họ có mặt trong danh sách này ngay từ đầu.
+   * Vế môn: thiếu nó thì Trưởng nhóm môn Toán mở hộp này ra thấy cả giáo
+   * viên Sinh, Văn — giao nhầm người chấm là bài chấm sai chuyên môn, mà lúc
+   * phát hiện thì điểm đã trả. Bậc admin KHÔNG bị lọc môn:
+   * `userTeachesSubject` trả `true` cho họ, để admin vẫn tự nhận chấm được.
+   *
+   * Vế bậc: TBM chỉ giao được cho tổ chuyên môn (`teacher` · `subject-lead`),
+   * không giao được cho admin cơ sở / giám đốc chuyên môn. Xem `grader-rank`.
    */
+  const vaiTroNguoiGiao = session?.role ?? null;
   const eligible = useMemo(() => {
-    return users.filter(
-      (u) =>
-        u.status === "active" &&
-        ["teacher", "subject-lead", "campus-admin", "academic-director"].includes(
-          u.role,
-        ) &&
-        (shift.campusId == null || u.campusId === shift.campusId) &&
-        userTeachesSubject(u, shift.subjectId, subjects),
-    );
-  }, [users, shift.campusId, shift.subjectId, subjects]);
+    return locNguoiChamKhaDung(users, {
+      vaiTroNguoiGiao,
+      campusId: shift.campusId ?? null,
+      dungMon: (u) => userTeachesSubject(u, shift.subjectId, subjects),
+    });
+  }, [users, vaiTroNguoiGiao, shift.campusId, shift.subjectId, subjects]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -183,6 +187,13 @@ export function AssignGradersDialog({
     for (const id of toAdd) {
       const u = users.find((x) => x.id === id);
       if (!u) continue;
+      // Chốt lại vế bậc ngay trước khi ghi. Danh sách bên phải đã lọc rồi,
+      // nhưng `selectedIds` có thể còn id cũ từ lần mở trước — mà rules sẽ
+      // từ chối, và từ chối giữa chừng thì nửa lưu nửa không.
+      if (!coTheGiaoCham(vaiTroNguoiGiao, u.role)) {
+        setSaveError(lyDoKhongGiaoDuoc(vaiTroNguoiGiao, u.role));
+        continue;
+      }
       assignGrader({
         shiftId: shift.id,
         graderId: id,
@@ -309,6 +320,10 @@ export function AssignGradersDialog({
                   const u = users.find((x) => x.id === id);
                   const a = shiftAssignments.find((x) => x.graderId === id);
                   const isNew = !currentIds.has(id);
+                  // Người chấm ở bậc trên người đang mở hộp — hiện ra để biết
+                  // ai đang chấm, nhưng KHOÁ nút gỡ. Gỡ phân công của cấp
+                  // trên cũng là vượt quyền, và gỡ thì mất hẳn dấu.
+                  const lyDoKhoa = lyDoKhongGiaoDuoc(vaiTroNguoiGiao, u?.role);
                   return (
                     <li
                       key={id}
@@ -342,10 +357,15 @@ export function AssignGradersDialog({
                       <button
                         type="button"
                         onClick={() => toggleSelect(id)}
-                        title="Bỏ chọn"
-                        className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                        disabled={lyDoKhoa != null}
+                        title={lyDoKhoa ?? "Bỏ chọn"}
+                        className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        {lyDoKhoa ? (
+                          <Lock className="h-3.5 w-3.5" />
+                        ) : (
+                          <Trash2 className="h-3.5 w-3.5" />
+                        )}
                       </button>
                     </li>
                   );
@@ -378,6 +398,12 @@ export function AssignGradersDialog({
             <h3 className="mb-2 text-[12px] font-bold uppercase tracking-[0.06em] text-foreground/65">
               Giáo viên khả dụng
             </h3>
+            {vaiTroNguoiGiao === "subject-lead" && (
+              <p className="text-hint mb-2 text-muted-foreground">
+                Danh sách chỉ gồm giáo viên và trưởng nhóm môn cùng môn với ca
+                thi. Bậc admin không nằm ở đây — admin tự nhận chấm nếu cần.
+              </p>
+            )}
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input

@@ -59,6 +59,9 @@ node scripts/test-subject-scope.mjs    # TBM chỉ thấy môn mình phụ trác
 node scripts/test-blueprint-picked.mjs # khung đề lệch KHÔNG được làm chết cả trang ca thi
 node scripts/test-proctor-hours.mjs   # giờ coi thi: 1 GV coi 2 phòng cùng ca vẫn là 1 ca
 node scripts/test-hide-shift.mjs      # ai được ẩn/hiện ca thi (ẩn ≠ huỷ ≠ xoá)
+node scripts/test-grader-rank.mjs     # TBM KHÔNG phân công chấm cho bậc admin (giao diện + rules)
+node scripts/test-drive-audio.mjs     # cầu nối phát file nghe trên Drive: HTML ≠ tiếng
+node scripts/test-rules-grader-rank.mjs # rules THẬT trên emulator: ai giao/gỡ được người chấm
 node scripts/check-scope-pickers.mjs   # bánh cóc: ô chọn Môn·Khối phải cắt theo phạm vi
 node scripts/check-design-tokens.mjs   # bánh cóc thang chữ (xem dưới)
 ```
