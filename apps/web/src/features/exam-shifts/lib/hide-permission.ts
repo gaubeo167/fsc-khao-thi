@@ -3,10 +3,13 @@
  *
  * ── Ẩn KHÁC xoá, và khác huỷ ────────────────────────────────────────────
  *
- *   • ẨN   — chỉ là chuyện HIỂN THỊ. Ca biến khỏi danh sách của bộ phận vận
- *            hành cho đỡ rối, còn dữ liệu nguyên vẹn: bài làm, điểm, minh
- *            chứng, báo cáo đều không đổi. Học sinh KHÔNG bị ảnh hưởng — màn
- *            "Lịch sử bài thi" và màn kết quả không hề lọc theo `archivedAt`.
+ *   • ẨN   — chỉ là chuyện HIỂN THỊ, nhưng là hiển thị của CẢ hai màn vận
+ *            hành: danh sách ca thi VÀ "Kết quả & Báo cáo". Ẩn ở một chỗ mà
+ *            còn ở chỗ kia thì chưa gọi là bớt rối — người dùng vẫn phải
+ *            cuộn qua đúng những ca đã dọn đi. Dữ liệu thì nguyên vẹn: bài
+ *            làm, điểm, minh chứng không mất, số liệu tính lại được ngay khi
+ *            bỏ ẩn. Học sinh KHÔNG bị ảnh hưởng — màn "Lịch sử bài thi" và
+ *            màn kết quả của học sinh không hề lọc theo `archivedAt`.
  *   • HUỶ  — đổi TRẠNG THÁI ca (`status = "cancelled"`), nói rằng buổi thi đó
  *            không diễn ra. Là chuyện nghiệp vụ, không phải chuyện màn hình.
  *   • XOÁ  — cấm với ca đã có bài làm. Minh chứng thi không được phép mất.
@@ -135,6 +138,32 @@ export function planBulkHide<T extends HideTarget & { id: string }>(
     else skip.push({ shift: s, reason: v.reason });
   }
   return { hide, skip };
+}
+
+/**
+ * Cắt ra những ca được HIỆN trong màn "Kết quả & Báo cáo".
+ *
+ * Cùng một luật với danh sách ca thi: ca đã ẩn thì biến khỏi mọi thứ tính từ
+ * nó — bảng ca thi, KPI, biểu đồ, file CSV/Excel xuất ra, và bảng giờ coi
+ * thi. Đếm hụt thầm lặng là cái bẫy ở đây (bảng giờ coi thi dùng để tính
+ * công), nên chỗ gọi phải NÓI RA còn bao nhiêu ca đang bị ẩn và cho bật lại
+ * — xem `includeHidden`.
+ *
+ * Không đụng gì tới màn của học sinh: kết quả và lịch sử bài thi của các em
+ * lấy thẳng từ `attempts`, không đi qua đây.
+ */
+export function shiftsVisibleInReports<
+  T extends { archivedAt?: string | null },
+>(shifts: readonly T[], opts?: { includeHidden?: boolean }): T[] {
+  if (opts?.includeHidden) return [...shifts];
+  return shifts.filter((s) => !s.archivedAt);
+}
+
+/** Số ca đang bị ẩn trong một tập — để màn báo cáo nói ra thay vì đếm hụt. */
+export function countHiddenShifts(
+  shifts: readonly { archivedAt?: string | null }[],
+): number {
+  return shifts.filter((s) => s.archivedAt).length;
 }
 
 /**

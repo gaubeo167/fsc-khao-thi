@@ -877,8 +877,10 @@ export default function ShiftsPage() {
                       </IconButton>
                       {/*
                         ẨN ≠ XOÁ. Ẩn chỉ là chuyện hiển thị của màn vận hành:
-                        bài làm, điểm, minh chứng, báo cáo giữ nguyên, và học
-                        sinh không thấy khác gì (không màn nào của học sinh lọc
+                        ca biến khỏi danh sách này VÀ khỏi màn "Kết quả & Báo
+                        cáo" (cùng một luật — `shiftsVisibleInReports`), còn
+                        bài làm, điểm, minh chứng thì giữ nguyên và học sinh
+                        không thấy khác gì (không màn nào của học sinh lọc
                         theo `archivedAt`). Trước đây hai việc này dùng CHUNG
                         một nút thùng rác, mà nút đó tự chặn khi ca đã có bài
                         làm — nên ca đã kết thúc, tức mọi ca có bài làm, không
@@ -893,7 +895,7 @@ export default function ShiftsPage() {
                       {canHideShift(session, sh).ok && (
                         <IconButton
                           size="sm"
-                          title="Ẩn khỏi danh sách — dữ liệu và báo cáo giữ nguyên"
+                          title="Ẩn khỏi danh sách — ca cũng biến khỏi Kết quả & Báo cáo, dữ liệu giữ nguyên"
                           onClick={() => {
                             if (!session) return;
                             archiveShift(
@@ -990,8 +992,9 @@ export default function ShiftsPage() {
                     <br />
                     Muốn cho gọn danh sách thì dùng nút{" "}
                     <b>Ẩn khỏi danh sách</b> (biểu tượng con mắt gạch chéo) ở
-                    ngay hàng này — ca biến khỏi danh sách mà dữ liệu và báo
-                    cáo giữ nguyên, bật lại bằng ô “Hiện cả ca đã ẩn”.
+                    ngay hàng này — ca biến khỏi danh sách này và khỏi màn{" "}
+                    <b>Kết quả &amp; Báo cáo</b>, còn dữ liệu thì giữ nguyên.
+                    Bật lại bằng ô “Hiện cả ca đã ẩn”.
                   </>
                 );
               }
@@ -1038,10 +1041,11 @@ export default function ShiftsPage() {
           xacNhanAn ? (
             <div className="space-y-2">
               <p>
-                Ca đã ẩn biến khỏi danh sách này cho đỡ rối. <strong>Dữ liệu
-                giữ nguyên</strong>: bài làm, điểm, minh chứng và báo cáo không
-                đổi, học sinh cũng không thấy khác gì. Bật “Hiện cả ca đã ẩn”
-                để xem lại và bỏ ẩn bất cứ lúc nào.
+                Ca đã ẩn biến khỏi danh sách này <strong>và khỏi màn “Kết quả
+                &amp; Báo cáo”</strong> cho đỡ rối — kể cả bảng giờ coi thi.{" "}
+                <strong>Dữ liệu giữ nguyên</strong>: bài làm, điểm, minh chứng
+                không đổi, học sinh cũng không thấy khác gì. Bật “Hiện cả ca đã
+                ẩn” để xem lại và bỏ ẩn bất cứ lúc nào.
               </p>
               {xacNhanAn.skip.length > 0 && (
                 <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-amber-900">

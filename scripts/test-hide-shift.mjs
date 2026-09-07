@@ -18,9 +18,19 @@
  *   • Siết vào → quay lại đúng bế tắc cũ.
  *
  * Và ẩn KHÔNG được đụng dữ liệu: đây chỉ là chuyện hiển thị của màn vận hành.
+ *
+ * ── Ẩn phải ăn sang màn Báo cáo ─────────────────────────────────────────
+ *
+ * Ẩn ca ở danh sách vận hành mà báo cáo của nó vẫn nằm nguyên trong "Kết quả
+ * & Báo cáo" thì chưa dọn được gì: người dùng vẫn cuộn qua đúng những ca vừa
+ * dọn đi. Nên `shiftsVisibleInReports` là luật CHUNG cho cả hai màn.
+ *
+ * Cái bẫy đi kèm: bảng "Giờ coi thi" tính công cho giáo viên cũng đọc từ tập
+ * đó. Ẩn vài ca là tổng giờ tự hụt. Vậy nên trang phải ĐẾM được số ca đang ẩn
+ * (`countHiddenShifts`) để nói ra và cho bật lại — hụt trong im lặng là hỏng.
  */
 import { execFileSync } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -38,8 +48,15 @@ execFileSync(
   ],
   { cwd: "apps/web", stdio: "pipe" },
 );
-const { canHideShift, canUnhideShift, isCampusRoot, planBulkHide, canPublishResults } =
-  await import(out);
+const {
+  canHideShift,
+  canUnhideShift,
+  isCampusRoot,
+  planBulkHide,
+  canPublishResults,
+  shiftsVisibleInReports,
+  countHiddenShifts,
+} = await import(out);
 
 let pass = 0,
   fail = 0;
@@ -141,6 +158,65 @@ const GD = { role: "academic-director", campusId: CS };
   check("…và mọi ca đều có lý do", gvPlan.skip.length === rows.length);
 
   check("danh sách rỗng → không nổ", planBulkHide(ADMIN_GOC, []).hide.length === 0);
+}
+
+/* ── 6. Ẩn ca → báo cáo của ca đó cũng biến mất ──────────────────────── */
+{
+  const rows = [
+    { id: "a", ...daXong },
+    { id: "b", ...daHuy },
+    { id: "c", ...daXong, archivedAt: gio(-1) },
+    { id: "d", ...daHuy, archivedAt: gio(-2) },
+  ];
+
+  const hien = shiftsVisibleInReports(rows);
+  check(
+    "báo cáo chỉ còn ca CHƯA ẩn",
+    hien.map((s) => s.id).join() === "a,b",
+    JSON.stringify(hien.map((s) => s.id)),
+  );
+  check("đếm đúng số ca đang ẩn", countHiddenShifts(rows) === 2);
+
+  // Bảng giờ coi thi tính công — hụt giờ mà không nói là hỏng niềm tin.
+  // Trang phải bật lại được để đối chiếu.
+  const caBat = shiftsVisibleInReports(rows, { includeHidden: true });
+  check("bật 'tính cả ca đã ẩn' → đủ 4 ca", caBat.length === 4);
+
+  // `archivedAt: null` là ca ĐANG hiện, không phải ca ẩn. Firestore trả về
+  // null chứ không bỏ trắng trường, nên nhầm chỗ này là giấu sạch báo cáo.
+  const nullRong = shiftsVisibleInReports([
+    { id: "x", ...daXong, archivedAt: null },
+    { id: "y", ...daXong },
+  ]);
+  check("archivedAt=null vẫn là ca đang hiện", nullRong.length === 2);
+  check("archivedAt=null không bị đếm là ẩn", countHiddenShifts(nullRong) === 0);
+
+  // Không được sửa mảng gốc — chỗ gọi là useMemo, đụng vào nguồn là hỏng.
+  check("không đụng mảng đầu vào", rows.length === 4);
+  check("danh sách rỗng → không nổ", shiftsVisibleInReports([]).length === 0);
+}
+
+/* ── 7. Dây nối trong trang báo cáo ──────────────────────────────────────
+ *
+ * Hàm lọc đúng mà trang quên gọi thì người dùng vẫn thấy y như cũ. Ba chỗ
+ * phải ăn cùng một tập ĐÃ LỌC: bảng ca thi, các con số tổng, và bảng giờ coi
+ * thi (`ProctoringReport`).
+ */
+{
+  const src = readFileSync(
+    "apps/web/src/app/(authenticated)/reports/page.tsx",
+    "utf8",
+  );
+  check("trang báo cáo gọi shiftsVisibleInReports", src.includes("shiftsVisibleInReports("));
+  check("…và đếm số ca đang ẩn để nói ra", src.includes("countHiddenShifts("));
+  check(
+    "bảng giờ coi thi nhận tập ĐÃ lọc, không phải tập gốc",
+    /<ProctoringReport\s+shifts=\{reportableShifts\}/.test(src),
+  );
+  check(
+    "bảng ca thi + KPI tính từ tập đã lọc",
+    /const summaries = useMemo\(\(\) => \{\s*return reportableShifts\.map/.test(src),
+  );
 }
 
 /* ── 8. Công bố điểm / đổi trạng thái: PHẢI khớp firestore.rules ─────────

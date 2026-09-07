@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   CheckCircle2,
   Eye,
+  EyeOff,
   FileSpreadsheet,
   Hourglass,
   Loader2,
@@ -259,6 +260,21 @@ export default function ReportDetailPage() {
                 {grade.code}
               </span>
             )}
+            {/*
+              Ca đã ẩn không còn trong danh sách báo cáo, nhưng đường dẫn cũ
+              (dấu trang, link dán cho nhau) vẫn mở được — ẩn là dọn màn hình
+              chứ không phải khoá quyền. Nói rõ trạng thái để người mở không
+              tưởng là báo cáo đã biến mất khỏi danh sách vì lỗi.
+            */}
+            {shift.archivedAt ? (
+              <span
+                className="inline-flex items-center gap-1 rounded border border-zinc-300 bg-zinc-50 px-1.5 py-0.5 text-hint font-semibold text-zinc-600"
+                title="Ca này đã ẩn khỏi danh sách vận hành nên không còn trong danh sách báo cáo và không tính vào các con số tổng. Dữ liệu vẫn nguyên."
+              >
+                <EyeOff className="h-3 w-3" />
+                Đã ẩn khỏi danh sách báo cáo
+              </span>
+            ) : null}
           </div>
           <h1 className="mt-1 truncate text-[18px] font-bold leading-tight">
             {shift.name}

@@ -8,6 +8,7 @@ import {
   ClipboardEdit,
   Download,
   Eye,
+  EyeOff,
   Hourglass,
   Search,
   ShieldAlert,
@@ -31,6 +32,10 @@ import {
   effectiveShiftStatus,
 } from "@/features/exam-shifts/data/types";
 import { formatScore } from "@/features/exam-shifts/lib/scoring";
+import {
+  countHiddenShifts,
+  shiftsVisibleInReports,
+} from "@/features/exam-shifts/lib/hide-permission";
 import { useShiftsStore } from "@/features/exam-shifts/state/shifts-store";
 import { useBlueprintsStore } from "@/features/exams/state/blueprints-store";
 import { usePackagesStore } from "@/features/exams/state/packages-store";
@@ -63,6 +68,9 @@ export default function ReportsPage() {
   const essayGrades = useGradingStore((s) => s.grades);
 
   const [search, setSearch] = useState("");
+  // Ca đã ẩn khỏi danh sách vận hành cũng biến khỏi đây — cùng một luật,
+  // xem `shiftsVisibleInReports`. Ô tích này để xem lại khi cần đối chiếu.
+  const [showHidden, setShowHidden] = useState(false);
   const [gradeFilter, setGradeFilter] = useState<string>("all");
   const [subjectFilter, setSubjectFilter] = useState<string>("all");
   const [classFilter, setClassFilter] = useState<string>("all");
@@ -97,7 +105,10 @@ export default function ReportsPage() {
   // Only shifts that have actually ended (or were cancelled) generate a
   // meaningful report. Scheduled + in-progress shifts go to /admin/shifts
   // for live monitoring.
-  const reportableShifts = useMemo(() => {
+  //
+  // Tập này CÒN cả ca đã ẩn — cần nó để đếm và nói ra "còn N ca đang ẩn".
+  // Phần hiện lên màn hình là `reportableShifts` ngay bên dưới.
+  const scopedShifts = useMemo(() => {
     return shifts
       .filter((s) => (campusId ? s.campusId === campusId : true))
       .filter((s) => {
@@ -120,6 +131,17 @@ export default function ReportsPage() {
       );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shifts, campusId, scope]);
+
+  // Ẩn một ca là dọn nó khỏi CẢ màn báo cáo: bảng ca thi, KPI, biểu đồ, file
+  // xuất ra và bảng giờ coi thi đều tính từ đây.
+  const hiddenCount = useMemo(
+    () => countHiddenShifts(scopedShifts),
+    [scopedShifts],
+  );
+  const reportableShifts = useMemo(
+    () => shiftsVisibleInReports(scopedShifts, { includeHidden: showHidden }),
+    [scopedShifts, showHidden],
+  );
 
   // Pre-compute per-shift summary so the list page can rank/badge.
   const summaries = useMemo(() => {
@@ -610,6 +632,34 @@ export default function ReportsPage() {
         </button>
       </div>
 
+      {/*
+        Ca đã ẩn không tính vào bất kỳ con số nào của trang này. Nói RA điều
+        đó — bảng "Giờ coi thi" dùng để tính công, tổng giờ tự nhiên hụt đi mà
+        không giải thích là mất niềm tin vào cả bảng. Chỉ hiện khi thực sự có
+        ca đang ẩn, và không hiện ở tab BTVN (bài tập không có ca thi).
+      */}
+      {hiddenCount > 0 && reportTab !== "homework" && (
+        <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl border border-dashed bg-muted/20 px-3 py-2">
+          <EyeOff className="h-3.5 w-3.5 text-muted-foreground" />
+          <p className="text-meta">
+            <strong className="font-semibold text-foreground">
+              {hiddenCount} ca thi đã ẩn
+            </strong>{" "}
+            khỏi danh sách vận hành nên không tính vào báo cáo này. Dữ liệu
+            vẫn còn nguyên — bỏ ẩn ở màn Ca kíp thi là số liệu quay lại.
+          </p>
+          <label className="ml-auto inline-flex items-center gap-1.5 text-meta font-medium">
+            <input
+              type="checkbox"
+              checked={showHidden}
+              onChange={(e) => setShowHidden(e.target.checked)}
+              className="h-3.5 w-3.5"
+            />
+            Tính cả ca đã ẩn
+          </label>
+        </div>
+      )}
+
       {reportTab === "proctoring" ? (
         <ProctoringReport shifts={reportableShifts} users={users} />
       ) : reportTab === "homework" ? (
@@ -910,7 +960,12 @@ export default function ReportsPage() {
                     return (
                       <tr
                         key={shift.id}
-                        className="hover:bg-accent/15"
+                        className={cn(
+                          "hover:bg-accent/15",
+                          // Chỉ gặp được dòng này khi đã bật "Tính cả ca đã
+                          // ẩn" — làm mờ để không lẫn với ca đang chạy.
+                          shift.archivedAt && "opacity-60",
+                        )}
                       >
                         <td className="px-3 py-2.5 font-mono text-[11px] text-muted-foreground">
                           {idx + 1}
@@ -918,6 +973,12 @@ export default function ReportsPage() {
                         <td className="px-3 py-2.5">
                           <p className="line-clamp-1 font-semibold">
                             {shift.name}
+                            {shift.archivedAt ? (
+                              <span className="ml-2 inline-flex items-center gap-1 rounded border border-zinc-300 bg-zinc-50 px-1.5 py-0.5 text-dense font-semibold text-zinc-600 align-middle">
+                                <EyeOff className="h-3 w-3" />
+                                Đã ẩn
+                              </span>
+                            ) : null}
                           </p>
                           <p className="line-clamp-1 text-[11px] text-muted-foreground">
                             {shift.id}
