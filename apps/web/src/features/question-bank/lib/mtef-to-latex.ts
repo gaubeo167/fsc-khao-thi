@@ -282,6 +282,17 @@ class MtefReader {
 
 /* ────────────────────────── cây → LaTeX ────────────────────────── */
 
+/**
+ * Một ký tự Unicode → LaTeX. Dùng chung với bộ đọc ảnh công thức
+ * (`wmf-to-svg.ts`) để hai đường ra cùng một kiểu LaTeX.
+ *
+ * Ném lỗi khi gặp mã trong vùng ký tự riêng mà ta không biết nó vẽ ra gì —
+ * chỗ gọi bắt lỗi và quay về dùng ảnh.
+ */
+export function unicodeToLatex(ch: string): string {
+  return charToTex(ch.codePointAt(0) ?? 0);
+}
+
 function charToTex(mt: number): string {
   if (PUA_INVISIBLE.has(mt)) return "";
   // Vùng ký tự riêng khác: không biết nó vẽ ra gì, không được đoán.

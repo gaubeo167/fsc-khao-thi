@@ -146,6 +146,28 @@ const { parseGeneric } = await import(
   );
 }
 
+/* ── 2b. Nhãn "Lời giải" đứng trơ một dòng ────────────────────────────────
+ *
+ * Đề thật viết đúng vậy, không có dấu hai chấm. Bản cũ đòi dấu nên cả phần
+ * giải chảy vào ĐỀ BÀI, còn ô "Giải thích đáp án" trống trơn. */
+{
+  const html =
+    `<p>Câu 9. [TH][DSN] Xét tính đúng sai của các mệnh đề sau:</p>` +
+    `<p>a) Tam giác vuông</p><p>b) Tam giác cân</p>` +
+    `<p>Lời giải</p><p>a) Đúng. b) Sai.</p>`;
+  const q = parseGeneric(htmlToMarkedText(html)).questions[0];
+  ok("đề bài KHÔNG nuốt lời giải", !!q && !/Lời giải|Đúng\./.test(q.content), JSON.stringify(q?.content));
+  ok("lời giải vào ô giải thích", !!q && /Đúng\./.test(q.explanation ?? ""), JSON.stringify(q?.explanation));
+  ok("hai ý Đúng/Sai vẫn được giữ", (q?.subQuestions ?? []).length === 2, JSON.stringify(q?.subQuestions));
+}
+{
+  // "Đáp án" trơ một dòng KHÔNG phải mở đầu lời giải (khuôn khác dùng nó làm
+  // nhãn của đáp án), nên phải giữ nguyên hành vi cũ.
+  const html = `<p>Câu 1. Thủ đô Việt Nam?</p><p>A. Hà Nội</p><p>B. Huế</p><p>Đáp án</p>`;
+  const q = parseGeneric(htmlToMarkedText(html)).questions[0];
+  ok("“Đáp án” trơ một dòng vẫn không mở lời giải", !(q?.explanation ?? "").trim(), JSON.stringify(q?.explanation));
+}
+
 /* ── 3. File .docx THẬT (bỏ qua nếu máy không có de-mau/) ─────────────── */
 const DOCX = "de-mau/K10.TO.TX1.docx";
 if (!existsSync(DOCX)) {
@@ -170,14 +192,15 @@ if (!existsSync(DOCX)) {
   const zip = await JSZip.loadAsync(buf);
   const docXml = await zip.file("word/document.xml").async("string");
   const mt = await inlineMathTypeObjects(zip, docXml);
-  ok("đọc được cả 81 công thức MathType thành LaTeX", mt.latexCount === 81, `được ${mt.latexCount}`);
-  ok("ảnh dán vẫn giữ được (14 ảnh)", mt.imageCount === 14, `được ${mt.imageCount}`);
+  ok("đọc được MỌI công thức thành LaTeX (81 MathType + 14 ảnh dán)",
+    mt.latexCount === 95, `được ${mt.latexCount}`);
+  ok("không còn công thức nào phải để dạng ảnh", mt.imageCount === 0, `còn ${mt.imageCount}`);
   ok("không bỏ sót đối tượng nào", mt.droppedCount === 0, `bỏ ${mt.droppedCount}`);
 
   const texs = [...mt.docXml.matchAll(/<w:t xml:space="preserve">\$([^$<]+)\$<\/w:t>/g)].map(
     (m) => m[1].replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">"),
   );
-  ok("LaTeX được ghi thẳng vào file Word", texs.length === 81, `${texs.length} chỗ`);
+  ok("LaTeX được ghi thẳng vào file Word", texs.length === 95, `${texs.length} chỗ`);
   let bad = 0;
   for (const t of texs) {
     try { katex.renderToString(t, { throwOnError: true }); } catch { bad += 1; }
@@ -190,6 +213,11 @@ if (!existsSync(DOCX)) {
   ok("số mũ ra ^{…}", all.includes("^{2}"));
   ok("hệ phương trình ra \\begin{cases}", all.includes("\\begin{cases}"));
   ok("khoảng ra \\left(…\\right)", all.includes("\\left(") && all.includes("\\right)"));
+  // Câu 5·6 — chỗ giáo viên báo — là ảnh DÁN, không có dữ liệu MathType; đọc
+  // lại bằng hình học của chữ trong ảnh.
+  ok("đọc được khoảng trong ảnh dán của câu 5·6",
+    all.includes("(1;3]") && all.includes("[-5;+\\infty )") && all.includes("A\\cap B"),
+    "thiếu khoảng của câu 5 hoặc 6");
   ok("chữ A B X là Latin, không phải Hy Lạp nhìn giống",
     !/[\u0391\u0392\u03a7]/.test(all), "còn chữ Hy Lạp trùng hình");
 
@@ -206,6 +234,13 @@ if (!existsSync(DOCX)) {
 
   const questions = parseGeneric(htmlToMarkedText(html)).questions;
   ok("vẫn tách đủ 11 câu", questions.length === 11, `được ${questions.length}`);
+  // Câu 9·10·11 của đề này có khối "Lời giải" — phải nằm ở ô giải thích.
+  const solved = questions.filter((q) => (q.explanation ?? "").trim()).length;
+  ok("khối Lời giải vào ô giải thích", solved === 3, `${solved} câu có giải thích`);
+  ok(
+    "không câu nào còn chữ “Lời giải” trong đề bài",
+    questions.every((q) => !/Lời giải/.test(q.content)),
+  );
   // Đây là lỗi giáo viên báo: câu 4·5·6·8 có công thức thả nổi ngoài đoạn
   // phương án nên A/B/C/D rỗng trơn.
   const empty = questions

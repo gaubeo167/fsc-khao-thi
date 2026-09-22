@@ -29,7 +29,7 @@
 import type JSZip from "jszip";
 
 import { oleToLatex } from "./mtef-to-latex";
-import { wmfToSvgDataUri } from "./wmf-to-svg";
+import { wmfToLatex, wmfToSvgDataUri } from "./wmf-to-svg";
 
 /** Mốc tạm trong văn bản. Dùng ký tự ngoặc vuông trắng để không đụng nội dung đề. */
 const marker = (k: number) => `⟦FSCMATH-${k}⟧`;
@@ -78,13 +78,14 @@ async function bytesOf(zip: JSZip, path: string): Promise<Uint8Array | null> {
   }
 }
 
+const isMetafile = (path: string) => /\.(wmf|emf)$/i.test(path);
+
 /** Ảnh bất kỳ trong gói → data URI hiển thị được (WMF/EMF dựng lại thành SVG). */
 async function imageDataUri(zip: JSZip, path: string): Promise<string | null> {
   const bytes = await bytesOf(zip, path);
   if (!bytes) return null;
-  const ext = path.split(".").pop()?.toLowerCase() ?? "";
-  if (ext === "wmf" || ext === "emf") return wmfToSvgDataUri(bytes);
-  const mime = MIME[ext];
+  if (isMetafile(path)) return wmfToSvgDataUri(bytes);
+  const mime = MIME[path.split(".").pop()?.toLowerCase() ?? ""];
   if (!mime) return null;
   return `data:${mime};base64,${Buffer.from(bytes).toString("base64")}`;
 }
@@ -134,6 +135,16 @@ export async function inlineMathTypeObjects(
     if (oleId && rels[oleId]) {
       const bin = await bytesOf(zip, rels[oleId]!);
       const tex = bin ? oleToLatex(bin) : null;
+      if (tex) {
+        replacement = `<w:t xml:space="preserve">$${escapeXml(tex)}$</w:t>`;
+        latexCount += 1;
+      }
+    }
+    // Ảnh DÁN (không có dữ liệu MathType): thử đọc lại công thức từ chính hình
+    // vẽ. Câu 5 và câu 6 của đề K10 nằm hết ở nhóm này.
+    if (replacement === null && imgId && rels[imgId] && isMetafile(rels[imgId]!)) {
+      const bytes = await bytesOf(zip, rels[imgId]!);
+      const tex = bytes ? wmfToLatex(bytes) : null;
       if (tex) {
         replacement = `<w:t xml:space="preserve">$${escapeXml(tex)}$</w:t>`;
         latexCount += 1;

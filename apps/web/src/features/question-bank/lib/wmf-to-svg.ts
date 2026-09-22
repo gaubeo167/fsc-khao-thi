@@ -25,6 +25,8 @@
 
 import { renderToSvg } from "wmf-emf-renderer";
 
+import { unicodeToLatex } from "./mtef-to-latex";
+
 /** Ảnh mammoth xuất ra cho đối tượng MathType / ảnh vẽ kiểu Windows. */
 const METAFILE_SRC_RE =
   /data:image\/(?:x-wmf|wmf|x-emf|emf|x-msmetafile);base64,([A-Za-z0-9+/=]+)/g;
@@ -163,6 +165,102 @@ export function wmfToSvgDataUri(
       });
     }
     return `data:image/svg+xml;base64,${Buffer.from(svg, "utf8").toString("base64")}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Ảnh công thức KHÔNG có dữ liệu MathType → LaTeX, đọc bằng hình học của chữ.
+ *
+ * Trong đề thật có những công thức được DÁN vào Word dưới dạng ảnh, không phải
+ * đối tượng MathType — `<w:pict>` trống trơn, không có `o:OLEObject` nào để
+ * đọc cấu trúc. Câu 5 và câu 6 của đề K10 nằm hết ở nhóm này: cả đề bài lẫn
+ * tám phương án.
+ *
+ * Nhưng bản dựng SVG có TOẠ ĐỘ và CỠ của từng ký tự, đủ để đọc lại một dòng
+ * công thức thẳng:
+ *
+ *   · ký tự nhỏ hơn chữ thân và NÂNG lên → số mũ
+ *   · ký tự nhỏ hơn chữ thân và HẠ xuống → chỉ số dưới
+ *   · ký tự to hơn chữ thân → dấu ngoặc co giãn, vẫn là chữ thân
+ *
+ * Trả `null` khi hình có nét vẽ (gạch phân số, dấu căn, trục số) hoặc chữ xếp
+ * nhiều dòng — những thứ đó không đọc được bằng một dòng thẳng, và đoán bừa
+ * trên đề thi thì tệ hơn là để nguyên ảnh.
+ */
+export function svgTextToLatex(svg: string): string | null {
+  const shapes =
+    (svg.match(/<(path|line|polyline|polygon|ellipse|circle|image)\b/g) ?? []).length +
+    Math.max(0, (svg.match(/<rect\b/g) ?? []).length - 1); // trừ khung nền
+  if (shapes > 0) return null;
+
+  const glyphs = [
+    ...svg.matchAll(
+      /<text x="([\d.-]+)" y="([\d.-]+)"[^>]*font-size="([\d.]+)"[^>]*>([^<]*)<\/text>/g,
+    ),
+  ]
+    .map((m) => ({
+      x: Number(m[1]),
+      y: Number(m[2]),
+      size: Number(m[3]),
+      text: decodeXml(m[4] ?? ""),
+    }))
+    .filter((g) => g.text.trim().length > 0);
+  if (glyphs.length === 0) return null;
+
+  // Cỡ chữ thân = cỡ của phần đông KÝ TỰ (không phải phần đông đoạn chữ: dấu
+  // ngoặc hay đứng riêng mỗi cái một đoạn nên đếm theo đoạn là lệch).
+  const weigh = <K,>(pick: (g: (typeof glyphs)[number]) => K): K => {
+    const tally = new Map<K, number>();
+    for (const g of glyphs) tally.set(pick(g), (tally.get(pick(g)) ?? 0) + g.text.length);
+    return [...tally.entries()].sort((a, b) => b[1] - a[1])[0]![0];
+  };
+  const body = weigh((g) => Math.round(g.size));
+  const bodyGlyphs = glyphs.filter((g) => Math.round(g.size) === body);
+  const baselineTally = new Map<number, number>();
+  for (const g of bodyGlyphs) {
+    const k = Math.round(g.y);
+    baselineTally.set(k, (baselineTally.get(k) ?? 0) + g.text.length);
+  }
+  const baseline = [...baselineTally.entries()].sort((a, b) => b[1] - a[1])[0]![0];
+
+  type Part = { kind: "body" | "sup" | "sub"; text: string };
+  const parts: Part[] = [];
+  for (const g of [...glyphs].sort((a, b) => a.x - b.x)) {
+    const dy = g.y - baseline;
+    const small = g.size < 0.9 * body;
+    // Chữ cỡ thân mà lệch dòng nhiều = bố cục xếp chồng (phân số, hệ, ma trận).
+    if (!small && Math.abs(dy) > 0.4 * body) return null;
+    const kind: Part["kind"] =
+      small && dy < -0.1 * body ? "sup" : small && dy > 0.1 * body ? "sub" : "body";
+    const last = parts[parts.length - 1];
+    if (last && last.kind === kind) last.text += g.text;
+    else parts.push({ kind, text: g.text });
+  }
+
+  try {
+    const tex = parts
+      .map((p) => {
+        const inner = [...p.text].map(unicodeToLatex).join("").trim();
+        if (!inner) return "";
+        return p.kind === "body" ? inner : `${p.kind === "sup" ? "^" : "_"}{${inner}}`;
+      })
+      .join("")
+      .replace(/\s+/g, " ")
+      .trim();
+    return tex || null;
+  } catch {
+    return null; // gặp mã ký tự lạ → để nguyên ảnh
+  }
+}
+
+/** Ảnh WMF/EMF → LaTeX nếu đọc được một dòng công thức thẳng, không thì `null`. */
+export function wmfToLatex(bytes: Uint8Array): string | null {
+  try {
+    const rendered = String(renderToSvg(bytes));
+    if (!rendered.includes("<svg")) return null;
+    return svgTextToLatex(fixMetafileGlyphs(rendered).svg);
   } catch {
     return null;
   }

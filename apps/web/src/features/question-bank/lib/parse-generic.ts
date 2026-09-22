@@ -106,6 +106,19 @@ const CODE_AT_START_RE = /^\s*\[\s*[A-Za-z]+\d+(?:\.\d+)+\.[DFSEdfse]\d+/;
 /** Khối lời giải: kết thúc câu hiện tại. */
 const SOLUTION_RE = /^\s*(Solution|Lời giải|Hướng dẫn giải|Giải thích|Đáp án)\s*[:.]/i;
 
+/**
+ * Nhãn lời giải đứng TRƠ một dòng, không dấu hai chấm.
+ *
+ * Đề thật viết đúng như vậy — một dòng chỉ có chữ "Lời giải". Bản cũ đòi dấu
+ * `:` nên không nhận ra, và cả phần giải chảy thẳng vào ĐỀ BÀI: câu Đúng/Sai
+ * hiện nguyên lời giải trong đề, còn ô "Giải thích đáp án" thì trống trơn.
+ *
+ * "Đáp án" cố ý KHÔNG nằm trong danh sách này: một dòng trơ chữ "Đáp án" ở
+ * khuôn khác là nhãn của đáp án, không phải mở đầu lời giải. Nó vẫn cần dấu.
+ * (Parser khuôn mã đề vốn đã coi dấu là tuỳ chọn — xem `EXPLANATION_RE`.)
+ */
+const SOLUTION_BARE_RE = /^\s*(Solution|Lời giải|Hướng dẫn giải|Giải thích)\s*$/i;
+
 /** Ý con của câu Đúng/Sai: `a) …` `b) …`. Cùng quy ước với parser mã đề. */
 const SUBITEM_RE = /^\s*([a-dA-D])\)\s*(.*)$/;
 
@@ -753,9 +766,10 @@ function parseBlock(
       }
     }
 
-    if (SOLUTION_RE.test(line)) {
+    if (SOLUTION_RE.test(line) || SOLUTION_BARE_RE.test(line)) {
       inExplanation = true;
-      explanationLines.push(line.replace(SOLUTION_RE, "").trim());
+      const rest = line.replace(SOLUTION_RE, "").replace(SOLUTION_BARE_RE, "").trim();
+      if (rest) explanationLines.push(rest);
       return;
     }
     if (inExplanation) {
