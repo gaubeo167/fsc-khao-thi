@@ -15,7 +15,64 @@
  *    không có chữ. `looksScanned` tách riêng ca này để báo đúng bệnh.
  */
 
-import { layoutPdfPage, type PdfTextItem } from "./pdf-layout";
+import { extractPdfImages } from "./pdf-images";
+import { layoutPdfPage, type PdfRule, type PdfTextItem } from "./pdf-layout";
+
+/**
+ * pdf.js gọi `ArrayBuffer.prototype.transferToFixedLength` khi dựng danh sách
+ * lệnh vẽ. Node 22 trở lên mới có; Node 20 thì lệnh vẽ hỏng IM LẶNG — trả về
+ * gần như rỗng, nên mất hết gạch chân (tức mất đáp án đúng của đề PDF). Vá
+ * đúng một hàm, chỉ khi thiếu.
+ */
+function ensureArrayBufferTransfer(): void {
+  const proto = ArrayBuffer.prototype as ArrayBuffer & {
+    transferToFixedLength?: (len?: number) => ArrayBuffer;
+  };
+  if (typeof proto.transferToFixedLength === "function") return;
+  Object.defineProperty(proto, "transferToFixedLength", {
+    value(this: ArrayBuffer, len?: number) {
+      const size = len ?? this.byteLength;
+      const out = new ArrayBuffer(size);
+      new Uint8Array(out).set(
+        new Uint8Array(this, 0, Math.min(size, this.byteLength)),
+      );
+      return out;
+    },
+    configurable: true,
+    writable: true,
+  });
+}
+
+/**
+ * Nét ngang mảnh trên trang — ứng viên gạch chân (đáp án đúng).
+ *
+ * `constructPath` của pdf.js mang theo khung bao [minX, minY, maxX, maxY];
+ * chỉ cần khung đó là đủ để biết nét nằm đâu, không phải dựng lại đường vẽ.
+ */
+async function pageRules(page: {
+  getOperatorList: () => Promise<{ fnArray: number[]; argsArray: unknown[] }>;
+}, constructPathOp: number): Promise<PdfRule[]> {
+  const out: PdfRule[] = [];
+  try {
+    const ops = await page.getOperatorList();
+    for (let i = 0; i < ops.fnArray.length; i += 1) {
+      if (ops.fnArray[i] !== constructPathOp) continue;
+      const box = (ops.argsArray[i] as unknown[])?.[2] as
+        | Record<number, number>
+        | undefined;
+      if (!box) continue;
+      const [x0, y0, x1, y1] = [box[0] ?? 0, box[1] ?? 0, box[2] ?? 0, box[3] ?? 0];
+      const w = x1 - x0;
+      const h = y1 - y0;
+      // Mảnh và nằm ngang. Đường kẻ bảng cũng lọt vào đây, nhưng bước khớp
+      // với chân chữ ở `pdf-layout.ts` loại chúng ra.
+      if (h <= 2 && w >= 4) out.push({ x0, x1, y: (y0 + y1) / 2 });
+    }
+  } catch {
+    // Không đọc được lệnh vẽ thì mất gạch chân, không làm hỏng cả lần nhập.
+  }
+  return out;
+}
 
 /**
  * Rút chữ từ PDF, giữ nguyên cách xuống dòng.
@@ -26,9 +83,12 @@ import { layoutPdfPage, type PdfTextItem } from "./pdf-layout";
 export async function extractPdfText(buf: Buffer): Promise<string> {
   // Nạp động: `unpdf` kéo theo pdfjs khá nặng, mà phần lớn lần nhập đề là
   // file Word — không việc gì bắt mọi lần gọi route phải trả giá đó.
-  const { getDocumentProxy } = await import("unpdf");
+  ensureArrayBufferTransfer();
+  const { getDocumentProxy, getResolvedPDFJS } = await import("unpdf");
+  const { OPS } = await getResolvedPDFJS();
   const pdf = await getDocumentProxy(new Uint8Array(buf));
   const pages: string[] = [];
+  const imageUris: Record<string, string> = {};
   for (let p = 1; p <= pdf.numPages; p += 1) {
     const page = await pdf.getPage(p);
     const content = await page.getTextContent();
@@ -53,9 +113,31 @@ export async function extractPdfText(buf: Buffer): Promise<string> {
         fontKey: it.fontName ?? "",
       });
     }
-    pages.push(layoutPdfPage(items));
+    // Ảnh: phương án của dạng câu "Hình vẽ nào sau đây…" chính là hình, nên
+    // thiếu chúng là câu đó rỗng. Cắm mốc vào đúng dòng rồi thay bằng thẻ ảnh.
+    const images = await extractPdfImages(
+      page as never,
+      {
+        save: OPS.save,
+        restore: OPS.restore,
+        transform: OPS.transform,
+        paintImageXObject: OPS.paintImageXObject,
+        paintInlineImageXObject: OPS.paintInlineImageXObject,
+      },
+      String(p),
+    );
+    for (const img of images) imageUris[img.marker] = img.dataUri;
+    pages.push(
+      layoutPdfPage(items, await pageRules(page, OPS.constructPath), images),
+    );
   }
-  return normalisePdfText(pages.join("\n"));
+  // Thay mốc bằng thẻ ảnh SAU khi dọn dẹp, để bước gộp khoảng trắng không
+  // đụng vào chuỗi base64 dài hàng chục nghìn ký tự.
+  let text = normalisePdfText(pages.join("\n"));
+  for (const [marker, uri] of Object.entries(imageUris)) {
+    text = text.split(marker).join(`![](${uri})`);
+  }
+  return text;
 }
 
 /**
@@ -75,7 +157,10 @@ export function normalisePdfText(raw: string): string {
     // Từ bị ngắt bởi gạch nối cuối dòng — nối lại.
     .replace(/(\p{L})-\n(\p{L})/gu, "$1$2")
     .split("\n")
-    .map((l) => l.replace(/[ \t ]+/g, " ").trim());
+    // Gộp dấu cách thừa nhưng GIỮ TAB: `pdf-layout` dùng tab để đánh dấu hai
+    // phương án nằm hai cột trên cùng một dòng; gộp mất tab là bốn phương án
+    // thành ba.
+    .map((l) => l.replace(/[ \u00a0\u2000-\u200a]+/g, " ").trim());
 
   const out: string[] = [];
   for (const line of lines) {

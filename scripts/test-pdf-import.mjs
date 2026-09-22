@@ -148,6 +148,31 @@ check(
       (q6?.options ?? []).length === 4 && q6.options.every((o) => /\d/.test(o.content)),
       JSON.stringify(q6?.options?.map((o) => o.content)),
     );
+
+    // ĐÁP ÁN ĐÚNG. Đề đánh dấu bằng GẠCH CHÂN; Word lưu thành thuộc tính của
+    // chữ, PDF chỉ còn một nét vẽ rời — khớp lại bằng toạ độ. Đối chiếu với
+    // chính bản .docx: 11/11 câu trùng đáp án.
+    const KEYS = ["B", "C", "A", "A", "C", "A", "D", "C"];
+    const got = qs.slice(0, 8).map((q) => (q.options ?? []).filter((o) => o.isCorrect).map((o) => o.label).join(","));
+    check("PDF thật: đọc được đáp án đúng của cả 8 câu trắc nghiệm",
+      got.join("") === KEYS.join(""), `${got.join("")} ≠ ${KEYS.join("")}`);
+    const tf = qs.slice(8, 10).map((q) => (q.subQuestions ?? []).map((x) => (x.correctAnswer ? "Đ" : "S")).join(""));
+    check("PDF thật: đọc được Đúng/Sai của hai câu nhiều ý",
+      tf.join("|") === "ĐSĐĐ|SĐSĐ", tf.join("|"));
+
+    // ẢNH. Phương án của dạng "Hình vẽ nào sau đây…" chính là hình.
+    const imgCount = (text.match(/!\[\]\(data:image\/png;base64,/g) ?? []).length;
+    check("PDF thật: rút được ảnh trong đề", imgCount >= 10, String(imgCount));
+    for (const i of [3, 7]) {
+      const q = qs[i];
+      check(
+        `PDF thật: câu ${i + 1} (phương án là hình) có đủ 4 phương án`,
+        (q?.options ?? []).length === 4 && q.options.every((o) => o.content.includes("data:image/png")),
+        JSON.stringify((q?.options ?? []).map((o) => o.content.slice(0, 20))),
+      );
+    }
+    check("PDF thật: không câu nào còn phương án rỗng",
+      qs.every((q) => (q.options ?? []).every((o) => o.content.trim())));
   }
 }
 

@@ -19,6 +19,10 @@
  */
 
 import {
+  U_CLOSE,
+  U_OPEN,
+} from "@/features/question-bank/lib/parse-exam-bank";
+import {
   guessSymbolFont,
   symbolCharToUnicode,
   type SymbolFont,
@@ -36,6 +40,30 @@ export interface PdfTextItem {
   width: number;
   /** Khoá font do pdf.js đặt (`g_d0_f4`…). Tên font thật không lấy được. */
   fontKey: string;
+}
+
+/**
+ * Một nét NGANG MẢNH trên trang — ứng viên gạch chân.
+ *
+ * Trong đề của trường, đáp án đúng được GẠCH CHÂN. Word lưu nó thành thuộc
+ * tính của chữ nên đọc thẳng được; PDF thì chỉ còn một nét vẽ ở toạ độ nào đó,
+ * không dính gì tới chữ. Nhưng khớp lại được: nét nằm ngay dưới chân chữ và
+ * trùng bề ngang với chữ đó thì chính là gạch chân của chữ đó.
+ */
+export interface PdfRule {
+  x0: number;
+  x1: number;
+  y: number;
+}
+
+/** Một ảnh trên trang, để cắm mốc vào đúng dòng. */
+export interface PdfImageBox {
+  marker: string;
+  x: number;
+  /** Mép DƯỚI của ảnh, cùng hệ toạ độ với chân chữ. */
+  y: number;
+  width: number;
+  height: number;
 }
 
 const SUPERSCRIPT_DIGITS: Record<string, string> = {
@@ -127,7 +155,23 @@ function bodySize(line: PdfTextItem[]): number {
   return [...tally.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 12;
 }
 
-function renderLine(line: PdfTextItem[], fonts: Map<string, SymbolFont>): string {
+/** Nét nào là gạch chân của mẩu chữ này? */
+function isUnderlineOf(rule: PdfRule, it: PdfTextItem, text: string): boolean {
+  if (!text.trim()) return false;
+  const below = it.y - rule.y;
+  // Gạch chân nằm dưới chân chữ vài phần mười em. Nới quá thì ăn cả đường kẻ
+  // bảng và dòng kẻ "Số báo danh: ......" ở đầu đề.
+  if (below < 0.02 * it.size || below > 0.35 * it.size) return false;
+  const itemEnd = it.x + it.width;
+  const overlap = Math.min(itemEnd, rule.x1) - Math.max(it.x, rule.x0);
+  return overlap > 0.4 * Math.min(it.width, rule.x1 - rule.x0);
+}
+
+function renderLine(
+  line: PdfTextItem[],
+  fonts: Map<string, SymbolFont>,
+  rules: PdfRule[],
+): string {
   const body = bodySize(line);
   const baseline = line.find((it) => Math.round(it.size * 2) / 2 === body)?.y ?? line[0]!.y;
 
@@ -149,28 +193,97 @@ function renderLine(line: PdfTextItem[], fonts: Map<string, SymbolFont>): string
     // Khoảng trắng thật giữa hai mẩu: tính theo khoảng hở, không theo ký tự.
     const gap = prevEnd == null ? 0 : it.x - prevEnd;
     const spaced = prevEnd != null && gap > 0.25 * body;
+    // Khoảng hở RỘNG = hai cột, không phải một dấu cách. Bộ tách phương án
+    // đọc "A. … B. …" trên cùng một dòng nhờ tab hoặc từ hai dấu cách trở
+    // lên; nuốt mất khoảng hở đó là bốn phương án hai cột thành ba.
+    const wideGap = prevEnd != null && gap > 1.5 * body;
     // Số mũ: nhỏ hơn chữ thân VÀ nâng cao hơn đường chân chữ.
     const isSup = it.size < 0.85 * body && it.y > baseline + 0.1 * body;
     if (isSup) {
       pendingSup += text.trim();
     } else {
       flushSup();
-      if (spaced && !/^\s/.test(text) && !/\s$/.test(out)) out += " ";
-      out += text;
+      // Cột cách nhau bằng TAB: bước chuẩn hoá gộp mọi dấu cách liền nhau về
+      // một, nên hai dấu cách không sống sót — tab thì có, và bộ tách phương
+      // án đọc tab đúng như đọc tab của Word.
+      if (spaced && !/^\s/.test(text) && !/\s$/.test(out)) out += wideGap ? "\t" : " ";
+      // Gạch chân = đáp án đúng. Bọc bằng đúng mốc mà đường Word dùng, để
+      // parser nhận ra bằng một luật chung chứ không phải hai luật song song.
+      const underlined = rules.some((r) => isUnderlineOf(r, it, text));
+      out += underlined ? `${U_OPEN}${text}${U_CLOSE}` : text;
     }
     prevEnd = it.x + it.width;
   }
   flushSup();
-  return out.replace(/[ \t]+/g, " ").trimEnd();
+  return out.replace(/ {2,}/g, " ").trimEnd();
+}
+
+/**
+ * Gắn mỗi ảnh vào dòng chữ của NÓ.
+ *
+ * Hai kiểu bày phương án bằng hình, đề nào cũng gặp cả hai:
+ *
+ *   · hình thấp, nhãn "A." nằm NGANG hàng với hình → chân chữ nằm trong vùng
+ *     cao của hình;
+ *   · hình cao xếp hai cột, nhãn nằm NGAY TRÊN hình.
+ *
+ * Nên nhận cả hai: dòng nào có chân chữ nằm trong vùng hình, hoặc ngay phía
+ * trên mép hình, thì hình thuộc về dòng đó. Không dòng nào hợp thì hình đứng
+ * riêng một dòng, giữ đúng thứ tự trên trang.
+ */
+function attachImages(
+  lines: PdfTextItem[][],
+  images: PdfImageBox[],
+): PdfTextItem[][] {
+  const out = lines.map((l) => [...l]);
+  const loose: PdfImageBox[] = [];
+  for (const img of images) {
+    const top = img.y + img.height;
+    let best = -1;
+    let bestGap = Infinity;
+    out.forEach((line, i) => {
+      const baseline = line[0]?.y ?? 0;
+      const inside = baseline >= img.y - 2 && baseline <= top;
+      const justAbove = baseline > top && baseline - top <= 16;
+      if (!inside && !justAbove) return;
+      const gap = inside ? 0 : baseline - top;
+      if (gap < bestGap) {
+        bestGap = gap;
+        best = i;
+      }
+    });
+    const item: PdfTextItem = {
+      str: img.marker,
+      x: img.x,
+      y: best >= 0 ? out[best]![0]!.y : img.y,
+      size: 12,
+      width: img.width,
+      fontKey: "",
+    };
+    if (best >= 0) out[best]!.push(item);
+    else loose.push(img);
+  }
+  for (const img of loose) {
+    out.push([
+      { str: img.marker, x: img.x, y: img.y, size: 12, width: img.width, fontKey: "" },
+    ]);
+  }
+  // Ảnh vừa chèn phải về đúng chỗ theo chiều ngang trong dòng.
+  for (const line of out) line.sort((a, b) => a.x - b.x);
+  return out.sort((a, b) => (b[0]?.y ?? 0) - (a[0]?.y ?? 0));
 }
 
 /** Các mẩu chữ của MỘT trang → văn bản đã xếp đúng hàng, đúng thứ tự. */
-export function layoutPdfPage(items: PdfTextItem[]): string {
+export function layoutPdfPage(
+  items: PdfTextItem[],
+  rules: PdfRule[] = [],
+  images: PdfImageBox[] = [],
+): string {
   const usable = items.filter((it) => it.str !== "");
-  if (usable.length === 0) return "";
+  if (usable.length === 0 && images.length === 0) return "";
   const fonts = classifySymbolFonts(usable);
-  return groupLines(usable)
-    .map((line) => renderLine(line, fonts))
+  return attachImages(groupLines(usable), images)
+    .map((line) => renderLine(line, fonts, rules))
     .filter((l) => l.trim())
     .join("\n");
 }
