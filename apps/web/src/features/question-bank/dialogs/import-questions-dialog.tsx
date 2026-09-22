@@ -131,6 +131,8 @@ type Phase =
       drafts: DraftQuestion[];
       /** Kết quả lượt AI dọn công thức, `null` khi không bật. */
       ai: AiInfo | null;
+      /** Lời nhắc từ server, vd đề dùng công thức MathType. */
+      warnings: string[];
     };
 
 interface AiInfo {
@@ -429,6 +431,7 @@ export function ImportQuestionsDialog({
         formatLabel: data.formatLabel ?? "",
         drafts: withComp,
         ai: (data.ai as AiInfo | null) ?? null,
+        warnings: (data.warnings as string[] | undefined) ?? [],
       });
     } catch (e) {
       setPhase({
@@ -791,6 +794,17 @@ export function ImportQuestionsDialog({
             </p>
           </div>
         )}
+        {/* Lời nhắc của server — hiện tại là đề soạn bằng MathType: công thức
+            được DỰNG LẠI từ ảnh nhúng, nên phải soát trước khi gửi duyệt. */}
+        {phase.kind === "review" &&
+          phase.warnings.map((w) => (
+            <div
+              key={w}
+              className="shrink-0 border-b border-amber-300 bg-amber-50 px-5 py-2"
+            >
+              <p className="text-meta font-semibold text-amber-900">{w}</p>
+            </div>
+          ))}
         {phase.kind === "review" && withCode > 0 && matched === 0 && (
           <div className="shrink-0 border-b border-amber-300 bg-amber-50 px-5 py-2.5">
             <p className="text-small font-semibold text-amber-900">

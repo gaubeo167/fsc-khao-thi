@@ -6,6 +6,7 @@ import { parseImportText } from "@/features/question-bank/lib/parse-import";
 import { verifyCaller } from "@/lib/api-auth";
 
 import { htmlToFscText } from "@/features/question-bank/lib/html-to-fsc-text";
+import { inlineWmfAsSvg } from "@/features/question-bank/lib/wmf-to-svg";
 
 import { inlineOMathAsLatex } from "./omath-to-latex";
 
@@ -133,5 +134,6 @@ async function extractFromDocx(buf: Buffer): Promise<string> {
     },
   );
 
-  return htmlToFscText(result.value ?? "");
+  // Công thức MathType (ảnh WMF) → SVG; trình duyệt không vẽ được WMF.
+  return htmlToFscText(inlineWmfAsSvg(result.value ?? "").html);
 }

@@ -44,6 +44,7 @@ import { repairFormulas } from "./ai-formulas";
 import { extractPdfText, looksScanned } from "./pdf-text";
 import { inlineOMathAsLatex } from "../parse/omath-to-latex";
 import { htmlToFscText } from "@/features/question-bank/lib/html-to-fsc-text";
+import { inlineWmfAsSvg } from "@/features/question-bank/lib/wmf-to-svg";
 
 const MAX_BYTES = 12 * 1024 * 1024;
 
@@ -85,6 +86,8 @@ export async function POST(req: Request) {
   // cho người dùng biết mà chọn tay.
   let fscText: string;
   let markedText: string;
+  /** Lời nhắc khi đề dùng công thức MathType — ghép vào `warnings` bên dưới. */
+  let mathNote: string | null = null;
   let aiInfo: {
     used: boolean;
     provider: string | null;
@@ -155,8 +158,18 @@ export async function POST(req: Request) {
         { status: 422 },
       );
     }
-    fscText = htmlToFscText(html);
-    markedText = htmlToMarkedText(html);
+    // Công thức MathType (đối tượng OLE + ảnh WMF) → SVG. Không làm bước này
+    // thì mọi công thức trong đề thành biểu tượng ảnh vỡ: trình duyệt không
+    // vẽ được WMF, mà đường OMath → $LaTeX$ ở trên không đụng tới chúng.
+    const math = inlineWmfAsSvg(html);
+    if (math.converted > 0) {
+      mathNote =
+        `Đề này dùng công thức MathType (ảnh nhúng) chứ không phải công thức Word — đã dựng lại ${math.converted} công thức.` +
+        (math.failed > 0 ? ` ${math.failed} công thức không dựng được.` : "") +
+        " Hãy soát lại công thức trước khi gửi duyệt. Muốn chắc nhất thì mở file trong Word, chuyển MathType sang Office Math rồi tải lại.";
+    }
+    fscText = htmlToFscText(math.html);
+    markedText = htmlToMarkedText(math.html);
   }
 
   const detect = detectImportFormat(fscText);
@@ -232,7 +245,7 @@ export async function POST(req: Request) {
     formatLabel: FORMAT_LABEL[detect.format],
     detect,
     questions,
-    warnings,
+    warnings: mathNote ? [mathNote, ...warnings] : warnings,
     count: questions.length,
     ai: aiInfo,
   });

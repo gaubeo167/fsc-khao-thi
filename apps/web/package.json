@@ -39,6 +39,7 @@
     "sonner": "^2.0.7",
     "tailwind-merge": "^2.5.5",
     "unpdf": "^1.7.0",
+    "wmf-emf-renderer": "^0.2.0",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "xlsx-js-style": "^1.2.0",
     "zod": "^4.4.3",

@@ -24,6 +24,7 @@
  */
 
 import type { ShortAnswerKey } from "@/lib/exam/short-answer-match";
+import { imagesToMarkdown } from "./html-to-fsc-text";
 import { isDataTable, toPipeTable } from "./table-block";
 
 export const U_OPEN = "\u27E6U\u27E7"; // ⟦U⟧
@@ -355,12 +356,10 @@ export function htmlToMarkedText(html: string): string {
   // Underline → sentinel markers (before any tag stripping).
   out = out.replace(/<u\b[^>]*>/gi, U_OPEN).replace(/<\/u>/gi, U_CLOSE);
 
-  // Images → markdown `![](data:…)` on their own line so RenderedContent
-  // shows them. (mammoth is asked to inline images as base64 data URIs.)
-  out = out.replace(
-    /<img\b[^>]*?src="([^"]+)"[^>]*?\/?>/gi,
-    (_m, src) => `\n![](${src})\n`,
-  );
+  // Images → markdown `![](data:…)` so RenderedContent shows them. (mammoth
+  // is asked to inline images as base64 data URIs.) Ảnh giữa dòng chữ giữ
+  // nguyên trong dòng — xem `imagesToMarkdown`.
+  out = imagesToMarkdown(out, (src) => `![](${src})`);
 
   // Bảng DỮ LIỆU → cú pháp gạch đứng, TRƯỚC khi mọi thẻ khác bị bẻ phẳng.
   //

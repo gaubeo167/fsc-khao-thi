@@ -7,6 +7,34 @@
  * khác nhau sau vài lần sửa.
  */
 
+const IMG_RE = /<img\b[^>]*?src="([^"]+)"[^>]*?(?:alt="([^"]*)")?[^>]*?\/?>/gi;
+
+/**
+ * `<img>` → markdown `![](src)`, dùng chung cho cả hai bộ bẻ phẳng HTML.
+ *
+ * Ảnh nằm CÙNG ĐOẠN với chữ thì giữ trong dòng; ảnh đứng riêng mới xuống
+ * dòng. Bản cũ xuống dòng cho mọi ảnh, nên một phương án như
+ * `<p>B. <img> là số chẵn.</p>` vỡ thành ba dòng: nhãn "B." còn lại một mình
+ * nên phương án rỗng, còn "là số chẵn." rơi xuống thành đề bài. Đề Toán nào
+ * có công thức hay hình chèn giữa các phương án đều mất đáp án như vậy.
+ *
+ * Ngược lại, ảnh đứng RIÊNG một đoạn phải giữ dòng riêng: Word neo công thức
+ * thả nổi ra ngoài `<p>`, gộp vào là dòng "Câu 6" không còn đứng đầu dòng và
+ * parser mất hẳn câu đó.
+ */
+export function imagesToMarkdown(
+  html: string,
+  render: (src: string, alt?: string) => string,
+): string {
+  const inlined = html.replace(/<p\b[^>]*>[\s\S]*?<\/p>/gi, (block) => {
+    if (!/<img\b/i.test(block)) return block;
+    const text = block.replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").trim();
+    if (!text) return block; // đoạn chỉ có ảnh → để vòng dưới xuống dòng
+    return block.replace(IMG_RE, (_m, src, alt) => render(src, alt));
+  });
+  return inlined.replace(IMG_RE, (_m, src, alt) => `\n${render(src, alt)}\n`);
+}
+
 /**
  * Flatten a mammoth-produced HTML string into the FSC import text
  * format:
@@ -26,10 +54,7 @@ export function htmlToFscText(html: string): string {
 
   // <img> → markdown image (preserve alt + src). dataUri-style src is
   // long but the parser only treats it as opaque content.
-  out = out.replace(
-    /<img\b[^>]*?src="([^"]+)"[^>]*?(?:alt="([^"]*)")?[^>]*?\/?>/gi,
-    (_, src, alt) => `\n![${alt ?? ""}](${src})\n`,
-  );
+  out = imagesToMarkdown(out, (src, alt) => `![${alt ?? ""}](${src})`);
 
   // Bold / italic. mammoth wraps both meta-key labels AND incidental
   // emphasis in <strong>; the FSC parser is key/value-based and
