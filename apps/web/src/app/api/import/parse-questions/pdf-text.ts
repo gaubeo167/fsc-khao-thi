@@ -15,6 +15,8 @@
  *    không có chữ. `looksScanned` tách riêng ca này để báo đúng bệnh.
  */
 
+import { layoutPdfPage, type PdfTextItem } from "./pdf-layout";
+
 /**
  * Rút chữ từ PDF, giữ nguyên cách xuống dòng.
  *
@@ -24,10 +26,36 @@
 export async function extractPdfText(buf: Buffer): Promise<string> {
   // Nạp động: `unpdf` kéo theo pdfjs khá nặng, mà phần lớn lần nhập đề là
   // file Word — không việc gì bắt mọi lần gọi route phải trả giá đó.
-  const { extractText, getDocumentProxy } = await import("unpdf");
+  const { getDocumentProxy } = await import("unpdf");
   const pdf = await getDocumentProxy(new Uint8Array(buf));
-  const { text } = await extractText(pdf, { mergePages: true });
-  return normalisePdfText(text);
+  const pages: string[] = [];
+  for (let p = 1; p <= pdf.numPages; p += 1) {
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    const items: PdfTextItem[] = [];
+    for (const raw of content.items) {
+      // `getTextContent` trộn cả mốc đánh dấu; chỉ mẩu chữ mới có `transform`.
+      const it = raw as {
+        str?: string;
+        width?: number;
+        transform?: number[];
+        fontName?: string;
+      };
+      if (typeof it.str !== "string" || !it.transform) continue;
+      items.push({
+        str: it.str,
+        x: it.transform[4] ?? 0,
+        y: it.transform[5] ?? 0,
+        // transform[0] là cỡ chữ sau khi nhân ma trận; |transform[3]| khi chữ
+        // bị lật. Lấy cái nào khác 0 để không ra cỡ 0 rồi chia cho 0.
+        size: Math.abs(it.transform[0] || it.transform[3] || 0) || 12,
+        width: it.width ?? 0,
+        fontKey: it.fontName ?? "",
+      });
+    }
+    pages.push(layoutPdfPage(items));
+  }
+  return normalisePdfText(pages.join("\n"));
 }
 
 /**

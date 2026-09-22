@@ -40,6 +40,9 @@ const bundle = (src, name) => {
 const { extractPdfText, normalisePdfText, looksScanned } = await import(
   bundle("src/app/api/import/parse-questions/pdf-text.ts", "pdf.mjs")
 );
+const { layoutPdfPage } = await import(
+  bundle("src/app/api/import/parse-questions/pdf-layout.ts", "layout.mjs")
+);
 const { parseGeneric } = await import(
   bundle("src/features/question-bank/lib/parse-generic.ts", "gen.mjs")
 );
@@ -90,6 +93,63 @@ check(
   "văn bản đủ dài → KHÔNG phải bản scan",
   !looksScanned("Câu 1. ".repeat(60)),
 );
+
+/* ── Chữ trong công thức: xếp theo TOẠ ĐỘ và đổi bảng mã font ký hiệu ────
+ *
+ * Word xuất PDF thì công thức MathType vỡ thành mẩu chữ rời, thứ tự trong file
+ * KHÔNG phải thứ tự đọc, và ký hiệu mang mã vùng riêng U+F0xx nên rút ra là
+ * ký tự vô hình. Giáo viên thấy "C.  , 1n n n   chia hết cho 2." */
+{
+  const item = (str, x, y, size, fontKey, width) => ({ str, x, y, size, width: width ?? str.length * size * 0.5, fontKey });
+  // ∀ (Symbol 0x22) + n + ∈ (Symbol 0xCE) + ℕ (MT Extra 0xA5)
+  const line = [
+    item("\uf022", 10, 100, 12, "fSym"),
+    item("n", 20, 100, 12, "fTimes"),
+    item("\uf0ce", 30, 100, 12, "fSym"),
+    item("\uf0a5", 42, 100, 12, "fMt"),
+  ];
+  const out = layoutPdfPage(line);
+  check("PDF: đổi mã Symbol → ∀ và ∈", out.includes("∀") && out.includes("∈"), JSON.stringify(out));
+  check("PDF: font chỉ dùng mã cao là MT Extra → ℕ (không phải ∞)", out.includes("ℕ"), JSON.stringify(out));
+}
+{
+  const item = (str, x, y, size, fontKey) => ({ str, x, y, size, width: str.length * size * 0.5, fontKey });
+  // Số mũ: chữ nhỏ hơn, nâng cao hơn đường chân chữ — và trong file nó nằm
+  // TRƯỚC chữ gốc, nên xếp theo thứ tự file là ra "2x".
+  const out = layoutPdfPage([
+    item("2", 26, 104, 7, "f1"),
+    item("x", 20, 100, 12, "f1"),
+    item("+1", 32, 100, 12, "f1"),
+  ]);
+  check("PDF: số mũ ghép đúng vào chữ gốc", /x²/.test(out.replace(/\s+/g, "")), JSON.stringify(out));
+}
+{
+  const item = (str, x, y, size) => ({ str, x, y, size, width: str.length * size * 0.5, fontKey: "f1" });
+  const out = layoutPdfPage([item("dòng dưới", 10, 60, 12), item("dòng trên", 10, 100, 12)]);
+  check("PDF: dòng trên xuống trước dòng dưới", out === "dòng trên\ndòng dưới", JSON.stringify(out));
+}
+
+/* ── Đề PDF THẬT có công thức MathType (bỏ qua nếu máy không có de-mau/) ── */
+{
+  const PDF = "de-mau/K10.TO.TX1.pdf";
+  if (!existsSync(PDF)) {
+    console.log("(bỏ qua phần PDF công thức — không thấy de-mau/K10.TO.TX1.pdf)");
+  } else {
+    const text = await extractPdfText(readFileSync(PDF));
+    check("PDF thật: không còn ký tự vùng riêng vô hình", !/[\uE000-\uF8FF]/.test(text));
+    check("PDF thật: đọc được ∀ ∃ ∈", /∀/.test(text) && /∃/.test(text) && /∈/.test(text));
+    check("PDF thật: đọc được ℝ và ℕ", /ℝ/.test(text) && /ℕ/.test(text));
+    check("PDF thật: số mũ ra ký tự mũ", /²/.test(text));
+    const qs = parseGeneric(text).questions;
+    check("PDF thật: tách đúng 11 câu", qs.length === 11, String(qs.length));
+    const q6 = qs[5];
+    check(
+      "PDF thật: câu 6 có đủ 4 phương án đọc được",
+      (q6?.options ?? []).length === 4 && q6.options.every((o) => /\d/.test(o.content)),
+      JSON.stringify(q6?.options?.map((o) => o.content)),
+    );
+  }
+}
 
 /* ── Đề PDF dựng sẵn đi hết đường parser ──────────────────────────────── */
 {
