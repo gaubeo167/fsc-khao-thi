@@ -230,6 +230,37 @@ function mergeBraceSystems(
   return out.filter((l) => l.length > 0);
 }
 
+/**
+ * Tách mẩu chữ NHIỀU KÝ TỰ khi có mẩu khác vẽ chèn vào giữa nó.
+ *
+ * Word gộp các glyph cùng font thành một mẩu, kể cả khi giữa chúng còn glyph
+ * của font khác. Công thức `∃x∈ℕ` ra hai mẩu: "∃ ∈" (font Symbol, trải từ
+ * x=135 tới x=156) và "x" (font nghiêng, vẽ ở x=142 — NẰM GIỮA mẩu kia). Xếp
+ * theo điểm bắt đầu thì thành "∃ ∈x", sai thứ tự đọc.
+ *
+ * Chỉ tách khi thật sự có chữ chen vào (2% số cặp trong đề thật), và ước
+ * lượng vị trí từng ký tự bằng bề rộng chia đều — đủ để xếp đúng thứ tự.
+ */
+function splitInterleaved(line: PdfTextItem[]): PdfTextItem[] {
+  const out: PdfTextItem[] = [];
+  for (const it of line) {
+    const chars = [...it.str];
+    const intruded =
+      chars.length > 1 &&
+      it.width > 0 &&
+      line.some((o) => o !== it && o.x > it.x + 0.5 && o.x < it.x + it.width - 0.5);
+    if (!intruded) {
+      out.push(it);
+      continue;
+    }
+    const step = it.width / chars.length;
+    chars.forEach((ch, i) => {
+      out.push({ ...it, str: ch, x: it.x + i * step, width: step });
+    });
+  }
+  return out;
+}
+
 /** Chia các mẩu chữ thành DÒNG theo y, rồi xếp trong dòng theo x. */
 function groupLines(items: PdfTextItem[]): PdfTextItem[][] {
   const sorted = [...items].sort((a, b) => b.y - a.y || a.x - b.x);
@@ -242,8 +273,7 @@ function groupLines(items: PdfTextItem[]): PdfTextItem[][] {
     if (line && Math.abs(line[0]!.y - it.y) <= tol) line.push(it);
     else lines.push([it]);
   }
-  for (const line of lines) line.sort((a, b) => a.x - b.x);
-  return lines;
+  return lines.map((line) => splitInterleaved(line).sort((a, b) => a.x - b.x));
 }
 
 /** Cỡ chữ THÂN của dòng: cỡ mà phần đông ký tự dùng. */
@@ -268,6 +298,119 @@ function isUnderlineOf(rule: PdfRule, it: PdfTextItem, text: string): boolean {
   return overlap > 0.4 * Math.min(it.width, rule.x1 - rule.x0);
 }
 
+/** Một ký tự của dòng, kèm chỗ nó đến từ đâu. */
+interface Glyph {
+  ch: string;
+  /** Đến từ font toán (Symbol / MT Extra) hoặc là số mũ — mốc nhận ra công thức. */
+  anchor: boolean;
+  sup: boolean;
+}
+
+/** Ký tự được phép nằm TRONG công thức dù không phải ký hiệu toán. */
+const MATH_PUNCT = new Set([
+  ..."+-−*/=<>≤≥≠≈±∓×÷^_(){}[]|,;:'\"",
+  ..."∀∃∈∉∅∪∩⊂⊆⊃⇒⇔→∞√∑∏∫°∠△⋅",
+]);
+
+const isDigit = (c: string) => c >= "0" && c <= "9";
+const isLatinLetter = (c: string) => /^[A-Za-z]$/.test(c);
+const isLetter = (c: string) => /\p{L}/u.test(c);
+
+/**
+ * Bọc các đoạn công thức trong dòng bằng `$…$`.
+ *
+ * PDF không đánh dấu đâu là công thức, nhưng nó có một dấu vết chắc chắn:
+ * ký hiệu toán được vẽ bằng font Symbol / MT Extra, còn câu văn tiếng Việt
+ * thì không. Lấy những ký hiệu đó làm MỐC rồi mở rộng sang hai bên qua các
+ * ký tự còn có thể là công thức — chữ cái ĐƠN, chữ số, dấu phép toán — và
+ * dừng lại ở từ tiếng Việt (chuỗi từ hai chữ cái trở lên) hoặc dấu kết câu.
+ *
+ * Cố ý dè dặt: không có mốc thì không bọc. Đoán bừa ranh giới công thức
+ * giữa câu văn thì tệ hơn là để nguyên chữ, vì đề thi không ai soát lại.
+ */
+function wrapMathSpans(glyphs: Glyph[]): string {
+  const n = glyphs.length;
+  // 1. Chữ cái đứng một mình là biến số (x, n, P); từ hai chữ trở lên là chữ.
+  const inWord = new Array<boolean>(n).fill(false);
+  for (let i = 0; i < n; ) {
+    if (!isLetter(glyphs[i]!.ch) || glyphs[i]!.anchor) {
+      i += 1;
+      continue;
+    }
+    let j = i;
+    while (j < n && isLetter(glyphs[j]!.ch) && !glyphs[j]!.anchor) j += 1;
+    if (j - i >= 2 || !isLatinLetter(glyphs[i]!.ch)) {
+      for (let k = i; k < j; k += 1) inWord[k] = true;
+    }
+    i = j;
+  }
+
+  const kind = glyphs.map((g, i) => {
+    if (g.anchor || g.sup) return "math" as const;
+    if (g.ch === " ") return "space" as const;
+    if (inWord[i]) return "text" as const;
+    if (isDigit(g.ch) || isLatinLetter(g.ch) || MATH_PUNCT.has(g.ch)) return "math" as const;
+    return "text" as const;
+  });
+
+  // 2. Đoạn liền nhau gồm toàn math/space, và phải có ít nhất một MỐC.
+  /** Chữ ngoài công thức: số mũ vẫn phải là ký tự mũ, `x2` không đọc được. */
+  const plain = (gs: Glyph[]) =>
+    gs.map((g) => (g.sup ? SUPERSCRIPT_DIGITS[g.ch] ?? `^${g.ch}` : g.ch)).join("");
+
+  const out: string[] = [];
+  let i = 0;
+  while (i < n) {
+    if (kind[i] === "text") {
+      out.push(plain([glyphs[i]!]));
+      i += 1;
+      continue;
+    }
+    let j = i;
+    while (j < n && kind[j] !== "text") j += 1;
+    let from = i;
+    let to = j;
+    while (from < to && kind[from] === "space") from += 1;
+    while (to > from && kind[to - 1] === "space") to -= 1;
+    const hasAnchor = glyphs.slice(from, to).some((g) => g.anchor);
+    // Một ký tự lẻ thì để nguyên: `$x$` giữa câu không giúp gì mà rối mắt.
+    if (hasAnchor && to - from >= 2) {
+      out.push(plain(glyphs.slice(i, from)));
+      const tex = glyphsToLatex(glyphs.slice(from, to));
+      out.push(tex ? `$${tex}$` : plain(glyphs.slice(from, to)));
+      out.push(plain(glyphs.slice(to, j)));
+    } else {
+      out.push(plain(glyphs.slice(i, j)));
+    }
+    i = j;
+  }
+  return out.join("");
+}
+
+/** Các ký tự của một đoạn công thức → LaTeX. Rỗng nghĩa là không chuyển được. */
+function glyphsToLatex(glyphs: Glyph[]): string {
+  let out = "";
+  let sup = "";
+  const flush = () => {
+    if (sup) out += `^{${sup}}`;
+    sup = "";
+  };
+  try {
+    for (const g of glyphs) {
+      const tex = unicodeToLatex(g.ch);
+      if (g.sup) sup += tex.trim();
+      else {
+        flush();
+        out += tex;
+      }
+    }
+  } catch {
+    return ""; // gặp ký tự chưa biết → giữ nguyên chữ
+  }
+  flush();
+  return out.replace(/\s+/g, " ").trim();
+}
+
 function renderLine(
   line: PdfTextItem[],
   fonts: Map<string, SymbolFont>,
@@ -276,17 +419,11 @@ function renderLine(
   const body = bodySize(line);
   const baseline = line.find((it) => Math.round(it.size * 2) / 2 === body)?.y ?? line[0]!.y;
 
-  let out = "";
-  let prevEnd: number | null = null;
-  let pendingSup = "";
-  const flushSup = () => {
-    if (!pendingSup) return;
-    const asDigits = [...pendingSup].every((c) => SUPERSCRIPT_DIGITS[c]);
-    out += asDigits
-      ? [...pendingSup].map((c) => SUPERSCRIPT_DIGITS[c]).join("")
-      : `^{${pendingSup}}`;
-    pendingSup = "";
+  const glyphs: Glyph[] = [];
+  const push = (text: string, anchor: boolean, sup: boolean) => {
+    for (const ch of text) glyphs.push({ ch, anchor, sup });
   };
+  let prevEnd: number | null = null;
 
   for (const it of line) {
     const text = decodeItem(it, fonts);
@@ -298,25 +435,23 @@ function renderLine(
     // đọc "A. … B. …" trên cùng một dòng nhờ tab hoặc từ hai dấu cách trở
     // lên; nuốt mất khoảng hở đó là bốn phương án hai cột thành ba.
     const wideGap = prevEnd != null && gap > 1.5 * body;
-    // Số mũ: nhỏ hơn chữ thân VÀ nâng cao hơn đường chân chữ.
     const isSup = it.size < 0.85 * body && it.y > baseline + 0.1 * body;
-    if (isSup) {
-      pendingSup += text.trim();
-    } else {
-      flushSup();
-      // Cột cách nhau bằng TAB: bước chuẩn hoá gộp mọi dấu cách liền nhau về
-      // một, nên hai dấu cách không sống sót — tab thì có, và bộ tách phương
-      // án đọc tab đúng như đọc tab của Word.
-      if (spaced && !/^\s/.test(text) && !/\s$/.test(out)) out += wideGap ? "\t" : " ";
-      // Gạch chân = đáp án đúng. Bọc bằng đúng mốc mà đường Word dùng, để
-      // parser nhận ra bằng một luật chung chứ không phải hai luật song song.
-      const underlined = rules.some((r) => isUnderlineOf(r, it, text));
-      out += underlined ? `${U_OPEN}${text}${U_CLOSE}` : text;
+    const last = glyphs[glyphs.length - 1]?.ch;
+    if (spaced && !/^\s/.test(text) && last && !/\s/.test(last)) {
+      push(wideGap ? "\t" : " ", false, false);
     }
+    // Ký hiệu toán đến từ font Symbol / MT Extra — đó là MỐC của công thức.
+    const fromMathFont = fonts.has(it.fontKey);
+    // Gạch chân = đáp án đúng. Bọc bằng đúng mốc mà đường Word dùng, để
+    // parser nhận ra bằng một luật chung chứ không phải hai luật song song.
+    const underlined = rules.some((r) => isUnderlineOf(r, it, text));
+    if (underlined) push(U_OPEN, false, false);
+    push(text, fromMathFont, isSup);
+    if (underlined) push(U_CLOSE, false, false);
     prevEnd = it.x + it.width;
   }
-  flushSup();
-  return out.replace(/ {2,}/g, " ").trimEnd();
+
+  return wrapMathSpans(glyphs).replace(/ {2,}/g, " ").trimEnd();
 }
 
 /**

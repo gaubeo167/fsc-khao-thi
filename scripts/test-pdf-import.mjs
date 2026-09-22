@@ -110,8 +110,10 @@ check(
     item("\uf0a5", 42, 100, 12, "fMt"),
   ];
   const out = layoutPdfPage(line);
-  check("PDF: đổi mã Symbol → ∀ và ∈", out.includes("∀") && out.includes("∈"), JSON.stringify(out));
-  check("PDF: font chỉ dùng mã cao là MT Extra → ℕ (không phải ∞)", out.includes("ℕ"), JSON.stringify(out));
+  // Ra thẳng LaTeX vì cả cụm được nhận là công thức (có ký hiệu làm mốc).
+  check("PDF: đổi mã Symbol → ∀ và ∈", /\\forall/.test(out) && /\\in\b/.test(out), JSON.stringify(out));
+  check("PDF: font chỉ dùng mã cao là MT Extra → ℕ (không phải ∞)",
+    /\\mathbb\{N\}/.test(out) && !/\\infty/.test(out), JSON.stringify(out));
 }
 {
   const item = (str, x, y, size, fontKey) => ({ str, x, y, size, width: str.length * size * 0.5, fontKey });
@@ -139,9 +141,10 @@ check(
     const katex = createRequire(new URL("../apps/web/package.json", import.meta.url))("katex");
     const text = await extractPdfText(readFileSync(PDF));
     check("PDF thật: không còn ký tự vùng riêng vô hình", !/[\uE000-\uF8FF]/.test(text));
-    check("PDF thật: đọc được ∀ ∃ ∈", /∀/.test(text) && /∃/.test(text) && /∈/.test(text));
-    check("PDF thật: đọc được ℝ và ℕ", /ℝ/.test(text) && /ℕ/.test(text));
-    check("PDF thật: số mũ ra ký tự mũ", /²/.test(text));
+    check("PDF thật: đọc được ∀ ∃ ∈ (thành lệnh LaTeX)",
+      /\\forall/.test(text) && /\\exists/.test(text) && /\\in /.test(text));
+    check("PDF thật: đọc được ℝ và ℕ", /\\mathbb\{R\}/.test(text) && /\\mathbb\{N\}/.test(text));
+    check("PDF thật: số mũ ra ^{…}", /\^\{2\}/.test(text));
     const qs = parseGeneric(text).questions;
     check("PDF thật: tách đúng 11 câu", qs.length === 11, String(qs.length));
     const q6 = qs[5];
@@ -171,12 +174,31 @@ check(
     // Hệ phương trình: trong PDF nó vỡ thành ba dòng rời (dòng trên của hệ,
     // câu văn mang mảnh giữa dấu ngoặc, dòng dưới của hệ).
     const cases = [...text.matchAll(/\$([^$\n]+)\$/g)].map((m) => m[1]);
-    check("PDF thật: gộp được hệ phương trình thành \\begin{cases}",
-      cases.length >= 3 && cases.every((c) => c.includes("\\begin{cases}")),
-      JSON.stringify(cases.slice(0, 3)));
+    const systems = cases.filter((c) => c.includes("\\begin{cases}"));
+    check("PDF thật: gộp được ba hệ phương trình thành \\begin{cases}",
+      systems.length === 3, String(systems.length));
     check("PDF thật: KaTeX dựng được các hệ đó", cases.every((c) => {
       try { katex.renderToString(c, { throwOnError: true }); return true; } catch { return false; }
     }));
+    // Công thức nội tuyến cũng phải thành `$…$` để bấm vào sửa được. Mốc nhận
+    // ra là ký hiệu vẽ bằng font Symbol / MT Extra; câu văn tiếng Việt không
+    // có ký hiệu nào nên không bị bọc nhầm.
+    const inline = cases.filter((c) => !c.includes("begin{cases}"));
+    check("PDF thật: công thức nội tuyến cũng thành $…$", inline.length >= 50, String(inline.length));
+    check("PDF thật: mọi công thức đều KaTeX dựng được", cases.every((c) => {
+      try { katex.renderToString(c, { throwOnError: true }); return true; } catch { return false; }
+    }));
+    // Bọc nhầm câu văn vào công thức thì KaTeX vẫn dựng được nhưng đọc ra vô
+    // nghĩa. Dấu hiệu chắc chắn nhất: chữ tiếng Việt có dấu nằm trong `$…$`.
+    check("PDF thật: không công thức nào nuốt chữ tiếng Việt",
+      cases.every((c) => !/[\u00C0-\u1EF9]/.test(c)),
+      JSON.stringify(cases.find((c) => /[\u00C0-\u1EF9]/.test(c))?.slice(0, 60)));
+    // Word gộp `∃` và `∈` vào một mẩu rồi vẽ `x` chèn vào giữa; xếp theo điểm
+    // bắt đầu thì ra "∃ ∈x".
+    check("PDF thật: chữ chen giữa mẩu ký hiệu vẫn đúng thứ tự",
+      /\\exists x/.test(text) && /\\forall x/.test(text),
+      (text.match(/\\exists[^$]{0,6}/) ?? [""])[0]);
+
     check("PDF thật: câu 7 mang hệ bất phương trình trong đề bài",
       /\\begin\{cases\}3x\+y/.test(qs[6]?.content ?? ""), JSON.stringify(qs[6]?.content?.slice(0, 90)));
     for (const i of [3, 7]) {
