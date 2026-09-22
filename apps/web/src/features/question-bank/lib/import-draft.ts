@@ -128,7 +128,7 @@ export function validateDraft(
   switch (q.type) {
     case "mcq-single":
     case "mcq-multi": {
-      const filled = q.options.filter((o) => stripToText(o.content));
+      const filled = q.options.filter((o) => hasContent(o.content));
       if (filled.length < 2) {
         issues.push({ field: "options", message: "Cần ít nhất 2 phương án" });
       }
@@ -264,6 +264,18 @@ function stripToText(s: string): string {
     .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/**
+ * Ô này có nội dung không — CHỮ hoặc ẢNH đều tính.
+ *
+ * Đề Toán có hẳn một dạng câu mà phương án CHÍNH LÀ hình: "Hình vẽ nào sau đây
+ * minh họa cho tập hợp X?" — bốn phương án là bốn trục số. Luật cũ chỉ đếm chữ
+ * nên bốn câu kiểu đó trong một đề 11 câu bị chặn với lý do "Cần ít nhất 2
+ * phương án", dù màn làm bài của học sinh vẽ ảnh trong phương án bình thường.
+ */
+function hasContent(s: string): boolean {
+  return !!stripToText(s) || /!\[[^\]]*\]\([^)]*\)/.test(s);
 }
 
 let seq = 0;

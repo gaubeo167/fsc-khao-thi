@@ -139,6 +139,35 @@ export function fixMetafileGlyphs(svg: string): {
   return { svg: out, unknown: [...unknown] };
 }
 
+/**
+ * Một ảnh WMF/EMF → data URI SVG hiển thị được, hoặc `null` khi dựng hỏng.
+ *
+ * Tách riêng để `docx-mathtype.ts` dùng lại: ở đó ảnh được lấy thẳng từ gói
+ * .docx chứ không đi qua HTML của mammoth.
+ */
+export function wmfToSvgDataUri(
+  bytes: Uint8Array,
+  unknownOut?: Set<string>,
+): string | null {
+  try {
+    const rendered = String(renderToSvg(bytes));
+    if (!rendered.includes("<svg")) return null;
+    const fixed = fixMetafileGlyphs(rendered);
+    if (unknownOut) for (const ch of fixed.unknown) unknownOut.add(ch);
+    let svg = fixed.svg;
+    const size = physicalSizePt(bytes);
+    if (size) {
+      svg = svg.replace(/<svg\b([^>]*)>/, (_m, attrs: string) => {
+        const withW = attrs.replace(/\swidth="[^"]*"/, ` width="${round2(size.w)}pt"`);
+        return `<svg${withW.replace(/\sheight="[^"]*"/, ` height="${round2(size.h)}pt"`)}>`;
+      });
+    }
+    return `data:image/svg+xml;base64,${Buffer.from(svg, "utf8").toString("base64")}`;
+  } catch {
+    return null;
+  }
+}
+
 export interface WmfInlineResult {
   html: string;
   /** Số ảnh metafile đã dựng lại được. */
@@ -161,32 +190,14 @@ export function inlineWmfAsSvg(html: string): WmfInlineResult {
   const unknown = new Set<string>();
 
   const out = html.replace(METAFILE_SRC_RE, (whole, b64: string) => {
-    try {
-      const bytes = new Uint8Array(Buffer.from(b64, "base64"));
-      const rendered = String(renderToSvg(bytes));
-      if (!rendered.includes("<svg")) throw new Error("không dựng được SVG");
-      const fixed = fixMetafileGlyphs(rendered);
-      for (const ch of fixed.unknown) unknown.add(ch);
-      let svg = fixed.svg;
-      const size = physicalSizePt(bytes);
-      if (size) {
-        svg = svg.replace(/<svg\b([^>]*)>/, (_m, attrs: string) => {
-          const withW = attrs.replace(
-            /\swidth="[^"]*"/,
-            ` width="${round2(size.w)}pt"`,
-          );
-          return `<svg${withW.replace(
-            /\sheight="[^"]*"/,
-            ` height="${round2(size.h)}pt"`,
-          )}>`;
-        });
-      }
-      converted += 1;
-      return `data:image/svg+xml;base64,${Buffer.from(svg, "utf8").toString("base64")}`;
-    } catch {
+    const bytes = new Uint8Array(Buffer.from(b64, "base64"));
+    const uri = wmfToSvgDataUri(bytes, unknown);
+    if (!uri) {
       failed += 1;
       return whole;
     }
+    converted += 1;
+    return uri;
   });
 
   return { html: out, converted, failed, unknownGlyphs: [...unknown] };

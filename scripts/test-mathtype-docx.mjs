@@ -62,6 +62,9 @@ const ok = (name, cond, extra = "") => {
 const { fixMetafileGlyphs, inlineWmfAsSvg } = await import(
   bundle("src/features/question-bank/lib/wmf-to-svg.ts", "wmf.mjs")
 );
+const { inlineMathTypeObjects, applyMathImages } = await import(
+  bundle("src/features/question-bank/lib/docx-mathtype.ts", "docxmath.mjs")
+);
 const { htmlToMarkedText } = await import(
   bundle("src/features/question-bank/lib/parse-exam-bank.ts", "marked.mjs")
 );
@@ -149,47 +152,73 @@ if (!existsSync(DOCX)) {
   console.log("\n(bỏ qua phần file thật — không thấy de-mau/K10.TO.TX1.docx)");
 } else {
   // Giải từ apps/web để bắt được cả khi npm đã kéo gói lên node_modules gốc.
-  const mammoth = createRequire(
-    new URL("../apps/web/package.json", import.meta.url),
-  )("mammoth");
-  const { value: html } = await mammoth.convertToHtml(
-    { buffer: readFileSync(DOCX) },
-    {
-      convertImage: mammoth.images.imgElement(async (image) => ({
-        src: `data:${image.contentType};base64,${await image.readAsBase64String()}`,
-      })),
-    },
+  const req = createRequire(new URL("../apps/web/package.json", import.meta.url));
+  const mammoth = req("mammoth");
+  const JSZip = req("jszip");
+  const katex = req("katex");
+  const buf = readFileSync(DOCX);
+
+  const raw = await mammoth.convertToHtml({ buffer: buf }, {
+    convertImage: mammoth.images.imgElement(async (image) => ({
+      src: `data:${image.contentType};base64,${await image.readAsBase64String()}`,
+    })),
+  });
+  ok("đề này không có công thức Word nào", !raw.value.includes("<m:oMath"));
+  ok("mammoth trả về ảnh WMF không dùng được", raw.value.includes("data:image/x-wmf"));
+
+  // ── Công thức MathType → LaTeX thật ─────────────────────────────────────
+  const zip = await JSZip.loadAsync(buf);
+  const docXml = await zip.file("word/document.xml").async("string");
+  const mt = await inlineMathTypeObjects(zip, docXml);
+  ok("đọc được cả 81 công thức MathType thành LaTeX", mt.latexCount === 81, `được ${mt.latexCount}`);
+  ok("ảnh dán vẫn giữ được (14 ảnh)", mt.imageCount === 14, `được ${mt.imageCount}`);
+  ok("không bỏ sót đối tượng nào", mt.droppedCount === 0, `bỏ ${mt.droppedCount}`);
+
+  const texs = [...mt.docXml.matchAll(/<w:t xml:space="preserve">\$([^$<]+)\$<\/w:t>/g)].map(
+    (m) => m[1].replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">"),
   );
-  ok("đề này không có công thức Word nào", !html.includes("<m:oMath"));
-  ok("mammoth trả về ảnh WMF", html.includes("data:image/x-wmf"));
+  ok("LaTeX được ghi thẳng vào file Word", texs.length === 81, `${texs.length} chỗ`);
+  let bad = 0;
+  for (const t of texs) {
+    try { katex.renderToString(t, { throwOnError: true }); } catch { bad += 1; }
+  }
+  ok("KaTeX dựng được MỌI công thức", bad === 0, `${bad} công thức KaTeX từ chối`);
+  const all = texs.join(" ");
+  ok("có ký hiệu ∀ ∃ ∈ đúng lệnh LaTeX",
+    all.includes("\\forall") && all.includes("\\exists") && all.includes("\\in "));
+  ok("có tập số ℝ ℕ", all.includes("\\mathbb{R}") && all.includes("\\mathbb{N}"));
+  ok("số mũ ra ^{…}", all.includes("^{2}"));
+  ok("hệ phương trình ra \\begin{cases}", all.includes("\\begin{cases}"));
+  ok("khoảng ra \\left(…\\right)", all.includes("\\left(") && all.includes("\\right)"));
+  ok("chữ A B X là Latin, không phải Hy Lạp nhìn giống",
+    !/[\u0391\u0392\u03a7]/.test(all), "còn chữ Hy Lạp trùng hình");
 
-  const r = inlineWmfAsSvg(html);
-  ok("dựng lại được mọi công thức", r.failed === 0, `hỏng ${r.failed}`);
-  ok("không còn ảnh WMF nào", !r.html.includes("data:image/x-wmf"));
-  ok("không gặp ký tự MT Extra lạ", r.unknownGlyphs.length === 0, r.unknownGlyphs.join(""));
+  // ── Ảnh dán: phải nằm ĐÚNG chỗ, không bị nhấc ra ngoài đoạn ─────────────
+  zip.file("word/document.xml", mt.docXml);
+  const pre = await zip.generateAsync({ type: "nodebuffer" });
+  const conv = await mammoth.convertToHtml({ buffer: pre }, {
+    convertImage: mammoth.images.imgElement(async (image) => ({
+      src: `data:${image.contentType};base64,${await image.readAsBase64String()}`,
+    })),
+  });
+  const html = applyMathImages(conv.value, mt.images);
+  ok("không còn mốc tạm nào sót lại", !html.includes("⟦FSCMATH"));
 
-  const svgs = [...r.html.matchAll(/data:image\/svg\+xml;base64,([A-Za-z0-9+/=]+)/g)]
-    .map((m) => Buffer.from(m[1], "base64").toString("utf8"));
-  const all = svgs.join("");
-  ok("có ký hiệu ∀ và ∃ đọc được", all.includes("∀") && all.includes("∃"));
-  ok("có tập số ℝ và ℕ đọc được", all.includes("ℝ") && all.includes("ℕ"));
-  ok("không lọt ký tự sai của bảng mã cũ", !all.includes("¡") && !all.includes("¥"));
-  ok(
-    "công thức mang cỡ thật (pt) lấy từ file WMF",
-    svgs.every((s) => /<svg[^>]*\swidth="[\d.]+pt"/.test(s)),
-  );
-
-  const questions = parseGeneric(htmlToMarkedText(r.html)).questions;
+  const questions = parseGeneric(htmlToMarkedText(html)).questions;
   ok("vẫn tách đủ 11 câu", questions.length === 11, `được ${questions.length}`);
-  // Câu 1, 2, 7 có phương án nằm CÙNG đoạn với công thức → phải đủ nội dung.
-  const emptyOpts = questions.filter(
-    (q, i) => [0, 1, 6].includes(i) && (q.options ?? []).some((o) => !o.content.trim()),
-  );
-  ok(
-    "câu 1 · 2 · 7 không còn phương án rỗng",
-    emptyOpts.length === 0,
-    `${emptyOpts.length} câu còn rỗng`,
-  );
+  // Đây là lỗi giáo viên báo: câu 4·5·6·8 có công thức thả nổi ngoài đoạn
+  // phương án nên A/B/C/D rỗng trơn.
+  const empty = questions
+    .map((q, i) => [i + 1, (q.options ?? []).filter((o) => !o.content.trim()).length])
+    .filter(([, n]) => n > 0);
+  ok("không câu nào còn phương án rỗng", empty.length === 0, JSON.stringify(empty));
+  const withOpts = questions.filter((q) => (q.options ?? []).length >= 2).length;
+  ok("8 câu trắc nghiệm đều có đủ phương án", withOpts === 8, `được ${withOpts}`);
+
+  // ── Lưới an toàn: ảnh WMF lọt tới HTML vẫn phải dựng được ───────────────
+  const svg = inlineWmfAsSvg(raw.value);
+  ok("dựng lại được ảnh WMF còn sót", svg.failed === 0, `hỏng ${svg.failed}`);
+  ok("không gặp ký tự MT Extra lạ", svg.unknownGlyphs.length === 0, svg.unknownGlyphs.join(""));
 }
 
 console.log(`\n${pass} pass · ${fail} fail`);

@@ -45,6 +45,10 @@ import { extractPdfText, looksScanned } from "./pdf-text";
 import { inlineOMathAsLatex } from "../parse/omath-to-latex";
 import { htmlToFscText } from "@/features/question-bank/lib/html-to-fsc-text";
 import { inlineWmfAsSvg } from "@/features/question-bank/lib/wmf-to-svg";
+import {
+  applyMathImages,
+  inlineMathTypeObjects,
+} from "@/features/question-bank/lib/docx-mathtype";
 
 const MAX_BYTES = 12 * 1024 * 1024;
 
@@ -145,9 +149,9 @@ export async function POST(req: Request) {
     fscText = text;
     markedText = text;
   } else {
-    let html: string;
+    let extracted: ExtractedHtml;
     try {
-      html = await extractHtml(buf);
+      extracted = await extractHtml(buf);
     } catch (err) {
       return NextResponse.json(
         {
@@ -158,15 +162,19 @@ export async function POST(req: Request) {
         { status: 422 },
       );
     }
-    // Công thức MathType (đối tượng OLE + ảnh WMF) → SVG. Không làm bước này
-    // thì mọi công thức trong đề thành biểu tượng ảnh vỡ: trình duyệt không
-    // vẽ được WMF, mà đường OMath → $LaTeX$ ở trên không đụng tới chúng.
-    const math = inlineWmfAsSvg(html);
-    if (math.converted > 0) {
-      mathNote =
-        `Đề này dùng công thức MathType (ảnh nhúng) chứ không phải công thức Word — đã dựng lại ${math.converted} công thức.` +
-        (math.failed > 0 ? ` ${math.failed} công thức không dựng được.` : "") +
-        " Hãy soát lại công thức trước khi gửi duyệt. Muốn chắc nhất thì mở file trong Word, chuyển MathType sang Office Math rồi tải lại.";
+    // Lưới an toàn: ảnh WMF nào lọt qua được tới HTML (Word còn khuôn nhúng
+    // khác) thì dựng nốt — trình duyệt không vẽ được WMF.
+    const math = inlineWmfAsSvg(extracted.html);
+    const asImage = extracted.mathImage + math.converted;
+    if (extracted.mathLatex > 0 || asImage > 0) {
+      const parts: string[] = [];
+      if (extracted.mathLatex > 0) {
+        parts.push(`đọc được ${extracted.mathLatex} công thức MathType thành công thức sửa tay được`);
+      }
+      if (asImage > 0) {
+        parts.push(`${asImage} công thức / ảnh giữ nguyên dạng hình`);
+      }
+      mathNote = `Đề này soạn bằng MathType: ${parts.join(", ")}. Hãy soát lại công thức trước khi gửi duyệt.`;
     }
     fscText = htmlToFscText(math.html);
     markedText = htmlToMarkedText(math.html);
@@ -265,27 +273,51 @@ function previewLines(text: string): string[] {
     .map((l) => (l.length > 120 ? `${l.slice(0, 120)}…` : l));
 }
 
+interface ExtractedHtml {
+  html: string;
+  /** Số công thức MathType đọc ra được LaTeX sửa tay được. */
+  mathLatex: number;
+  /** Số công thức / ảnh phải dùng ảnh SVG. */
+  mathImage: number;
+}
+
 /**
- * Trích HTML một lần, giữ đủ ba thứ mà hai route cũ mỗi bên chỉ giữ một
- * phần: công thức OMath (→ $LaTeX$), heading (`# Câu N`), và gạch chân
- * (đáp án đúng của khuôn mã đề).
+ * Trích HTML một lần, giữ đủ bốn thứ: công thức Word (OMath → `$LaTeX$`),
+ * công thức MathType (OLE → `$LaTeX$`, không đọc nổi thì ảnh SVG đúng vị
+ * trí), heading (`# Câu N`), và gạch chân (đáp án đúng của khuôn mã đề).
  */
-async function extractHtml(buf: Buffer): Promise<string> {
-  // OMath → $LaTeX$ trước khi mammoth nhìn thấy file. Hỏng bước này thì bỏ
-  // qua chứ không làm chết cả lần nhập — cùng lắm là mất công thức.
+async function extractHtml(buf: Buffer): Promise<ExtractedHtml> {
+  // Sửa TRONG file Word trước khi mammoth nhìn thấy. Hỏng bước này thì bỏ qua
+  // chứ không làm chết cả lần nhập — cùng lắm là mất công thức.
   let pre = buf;
+  let images: Record<string, string> = {};
+  let mathLatex = 0;
+  let mathImage = 0;
   try {
     const zip = await JSZip.loadAsync(buf);
     const docFile = zip.file("word/document.xml");
     if (docFile) {
       const docXml = await docFile.async("string");
-      if (docXml.includes("<m:oMath")) {
-        zip.file("word/document.xml", inlineOMathAsLatex(docXml));
+      const withOMath = docXml.includes("<m:oMath")
+        ? inlineOMathAsLatex(docXml)
+        : docXml;
+      // MathType nằm trong `<w:object>`/`<w:pict>` — mammoth nhấc chúng ra
+      // ngoài đoạn văn, làm dòng phương án A/B/C/D trống trơn. Thay ngay tại
+      // chỗ trong XML thì vị trí mới còn đúng.
+      const mt = await inlineMathTypeObjects(zip, withOMath);
+      images = mt.images;
+      mathLatex = mt.latexCount;
+      mathImage = mt.imageCount;
+      if (mt.docXml !== docXml) {
+        zip.file("word/document.xml", mt.docXml);
         pre = await zip.generateAsync({ type: "nodebuffer" });
       }
     }
   } catch {
     pre = buf;
+    images = {};
+    mathLatex = 0;
+    mathImage = 0;
   }
 
   const result = await mammoth.convertToHtml(
@@ -306,5 +338,5 @@ async function extractHtml(buf: Buffer): Promise<string> {
       ],
     },
   );
-  return result.value ?? "";
+  return { html: applyMathImages(result.value ?? "", images), mathLatex, mathImage };
 }
