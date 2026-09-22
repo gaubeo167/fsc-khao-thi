@@ -157,10 +157,49 @@ interface OperatorList {
   argsArray: unknown[];
 }
 
+interface ObjStore {
+  get: (name: string, callback?: (value: unknown) => void) => unknown;
+  has?: (name: string) => boolean;
+}
+
 interface PageLike {
   getOperatorList: () => Promise<OperatorList>;
-  objs: { get: (name: string) => unknown };
-  commonObjs?: { get: (name: string) => unknown };
+  objs: ObjStore;
+  commonObjs?: ObjStore;
+}
+
+/**
+ * Lấy một ảnh trong kho đối tượng của pdf.js, CHỜ nếu nó chưa sẵn sàng.
+ *
+ * `getOperatorList()` xong không có nghĩa mọi ảnh đã giải nén xong: gọi
+ * `objs.get(tên)` thẳng thì ném "Requesting object that isn't resolved yet" —
+ * đúng lý do hình của câu cuối trong đề K10 bị rơi mất. Dạng có callback thì
+ * chờ được, và luôn kèm hạn giờ: mất một hình còn hơn treo màn tải đề.
+ */
+function resolveObj(store: ObjStore | undefined, name: string, timeoutMs = 5000) {
+  return new Promise<unknown>((resolve) => {
+    if (!store) {
+      resolve(null);
+      return;
+    }
+    let settled = false;
+    const finish = (v: unknown) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(v);
+    };
+    const timer = setTimeout(() => finish(null), timeoutMs);
+    try {
+      if (store.has?.(name)) {
+        finish(store.get(name));
+        return;
+      }
+      store.get(name, finish);
+    } catch {
+      finish(null);
+    }
+  });
 }
 
 /** Mã lệnh pdf.js cần dùng, truyền vào để không phải nạp `OPS` ở đây. */
@@ -217,15 +256,8 @@ export async function extractPdfImages(
     else {
       const name = args[0];
       if (typeof name !== "string") continue;
-      try {
-        obj = page.objs.get(name);
-      } catch {
-        try {
-          obj = page.commonObjs?.get(name) ?? null;
-        } catch {
-          obj = null;
-        }
-      }
+      obj = await resolveObj(page.objs, name);
+      if (!obj) obj = await resolveObj(page.commonObjs, name);
     }
     if (!obj || typeof obj !== "object") continue;
 

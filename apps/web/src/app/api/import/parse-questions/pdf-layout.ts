@@ -496,7 +496,26 @@ function attachImages(
       width: img.width,
       fontKey: "",
     };
-    if (best >= 0) out[best]!.push(item);
+    // Hình ĐÈ LÊN chữ của dòng đó là hình thả nổi (Word neo nó cạnh đoạn
+    // văn), không phải hình nằm trong dòng. Chèn vào giữa thì nó cắt đôi câu
+    // — hình Venn của câu cuối rơi đúng vào giữa `n(X)=35, n(A)=20`. Cho nó
+    // đứng riêng một dòng ngay dưới.
+    // Chồng ĐÁNG KỂ, không phải chạm mép: nhãn "A." thường thừa ra vài điểm
+    // vào chỗ hình, chấp nhận được; còn cả một dòng công thức nằm vắt qua
+    // hình thì mới là hình thả nổi.
+    const overlapWith = (it: PdfTextItem) =>
+      Math.min(it.x + it.width, img.x + img.width) - Math.max(it.x, img.x);
+    const overlapsText =
+      best >= 0 &&
+      out[best]!.some(
+        (it) =>
+          // Mẩu KHOẢNG TRẮNG không phải chữ: Word hay đặt một dấu cách rộng
+          // ngay chỗ hình, tính vào là hình nào cũng thành "thả nổi".
+          it.str.trim() !== "" &&
+          overlapWith(it) > 0.25 * Math.min(it.width, img.width),
+      );
+    if (best >= 0 && !overlapsText) out[best]!.push(item);
+    else if (best >= 0) out.splice(best + 1, 0, [{ ...item, y: out[best]![0]!.y - 0.01 }]);
     else loose.push(img);
   }
   for (const img of loose) {

@@ -167,9 +167,20 @@ check(
 
     // ẢNH. Phương án của dạng "Hình vẽ nào sau đây…" chính là hình.
     const imgCount = (text.match(/!\[\]\(data:image\/png;base64,/g) ?? []).length;
-    // 9 chứ không phải 10: hình minh hoạ miền nghiệm bị PDF cắt làm đôi, hai
+    // 10 chứ không phải 11: hình minh hoạ miền nghiệm bị PDF cắt làm đôi, hai
     // dải xếp khít nhau được ghép lại thành một.
-    check("PDF thật: rút được ảnh, hình bị cắt đôi đã ghép lại", imgCount === 9, String(imgCount));
+    check("PDF thật: rút được ảnh, hình bị cắt đôi đã ghép lại", imgCount === 10, String(imgCount));
+    // Hình thả nổi (Word neo cạnh đoạn văn) phải đứng riêng một dòng, không
+    // chèn vào giữa câu: hình Venn của câu cuối từng rơi vào giữa công thức
+    // `n(X)=35, n(A)=20`, cắt đôi nó.
+    check("PDF thật: hình thả nổi không cắt đôi công thức",
+      !/\$[^$\n]*!\[\]\(data:image/.test(text));
+    check("PDF thật: câu cuối có hình trong lời giải",
+      /data:image/.test(qs[10]?.explanation ?? ""),
+      JSON.stringify((qs[10]?.explanation ?? "").slice(0, 60)));
+    check("PDF thật: câu trả lời ngắn đọc được đáp án <Key=…>",
+      (qs[10]?.acceptedAnswers ?? []).length > 0,
+      JSON.stringify(qs[10]?.acceptedAnswers));
 
     // Hệ phương trình: trong PDF nó vỡ thành ba dòng rời (dòng trên của hệ,
     // câu văn mang mảnh giữa dấu ngoặc, dòng dưới của hệ).
