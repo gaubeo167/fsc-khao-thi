@@ -16,6 +16,7 @@
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -135,6 +136,7 @@ check(
   if (!existsSync(PDF)) {
     console.log("(bỏ qua phần PDF công thức — không thấy de-mau/K10.TO.TX1.pdf)");
   } else {
+    const katex = createRequire(new URL("../apps/web/package.json", import.meta.url))("katex");
     const text = await extractPdfText(readFileSync(PDF));
     check("PDF thật: không còn ký tự vùng riêng vô hình", !/[\uE000-\uF8FF]/.test(text));
     check("PDF thật: đọc được ∀ ∃ ∈", /∀/.test(text) && /∃/.test(text) && /∈/.test(text));
@@ -162,7 +164,21 @@ check(
 
     // ẢNH. Phương án của dạng "Hình vẽ nào sau đây…" chính là hình.
     const imgCount = (text.match(/!\[\]\(data:image\/png;base64,/g) ?? []).length;
-    check("PDF thật: rút được ảnh trong đề", imgCount >= 10, String(imgCount));
+    // 9 chứ không phải 10: hình minh hoạ miền nghiệm bị PDF cắt làm đôi, hai
+    // dải xếp khít nhau được ghép lại thành một.
+    check("PDF thật: rút được ảnh, hình bị cắt đôi đã ghép lại", imgCount === 9, String(imgCount));
+
+    // Hệ phương trình: trong PDF nó vỡ thành ba dòng rời (dòng trên của hệ,
+    // câu văn mang mảnh giữa dấu ngoặc, dòng dưới của hệ).
+    const cases = [...text.matchAll(/\$([^$\n]+)\$/g)].map((m) => m[1]);
+    check("PDF thật: gộp được hệ phương trình thành \\begin{cases}",
+      cases.length >= 3 && cases.every((c) => c.includes("\\begin{cases}")),
+      JSON.stringify(cases.slice(0, 3)));
+    check("PDF thật: KaTeX dựng được các hệ đó", cases.every((c) => {
+      try { katex.renderToString(c, { throwOnError: true }); return true; } catch { return false; }
+    }));
+    check("PDF thật: câu 7 mang hệ bất phương trình trong đề bài",
+      /\\begin\{cases\}3x\+y/.test(qs[6]?.content ?? ""), JSON.stringify(qs[6]?.content?.slice(0, 90)));
     for (const i of [3, 7]) {
       const q = qs[i];
       check(

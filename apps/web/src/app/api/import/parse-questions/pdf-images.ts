@@ -86,44 +86,58 @@ function encodePng(
   ]);
 }
 
-/** Dữ liệu ảnh pdf.js trả về → PNG, hoặc `null` khi không dựng nổi. */
-function toPng(obj: {
+/** Điểm ảnh đã chuẩn hoá về RGB — dạng chung để ghép và mã hoá. */
+interface Raster {
+  width: number;
+  height: number;
+  rgb: Uint8Array;
+}
+
+/** Dữ liệu ảnh pdf.js trả về → RGB, hoặc `null` khi không dựng nổi. */
+function toRaster(obj: {
   width?: number;
   height?: number;
   kind?: number;
   data?: Uint8Array | Uint8ClampedArray;
-}): string | null {
+}): Raster | null {
   const { width, height, kind, data } = obj;
   if (!width || !height || !data) return null;
   if (width * height > MAX_PIXELS) return null;
-  const pixels = data instanceof Uint8Array ? data : new Uint8Array(data);
+  const px = data instanceof Uint8Array ? data : new Uint8Array(data);
+  const rgb = new Uint8Array(width * height * 3);
 
-  let png: Buffer;
-  if (kind === 3 && pixels.length >= width * height * 4) {
-    png = encodePng(width, height, pixels, 4);
-  } else if (kind === 2 && pixels.length >= width * height * 3) {
-    png = encodePng(width, height, pixels, 3);
+  if (kind === 2 && px.length >= width * height * 3) {
+    rgb.set(px.subarray(0, rgb.length));
+  } else if (kind === 3 && px.length >= width * height * 4) {
+    // Có kênh trong suốt: chồng lên nền TRẮNG, vì đề in ra là nền trắng.
+    for (let i = 0, j = 0; i < width * height; i += 1, j += 3) {
+      const a = px[i * 4 + 3]! / 255;
+      rgb[j] = Math.round(px[i * 4]! * a + 255 * (1 - a));
+      rgb[j + 1] = Math.round(px[i * 4 + 1]! * a + 255 * (1 - a));
+      rgb[j + 2] = Math.round(px[i * 4 + 2]! * a + 255 * (1 - a));
+    }
   } else if (kind === 1) {
-    // Ảnh 1 bit: mỗi byte gói 8 điểm, bit 1 = TRẮNG trong quy ước của pdf.js.
-    const rgb = new Uint8Array(width * height * 3);
+    // Ảnh 1 bit: mỗi byte gói 8 điểm, bit 1 = trắng theo quy ước của pdf.js.
     const rowBytes = (width + 7) >> 3;
     for (let y = 0; y < height; y += 1) {
       for (let x = 0; x < width; x += 1) {
-        const bit = (pixels[y * rowBytes + (x >> 3)]! >> (7 - (x & 7))) & 1;
-        const v = bit ? 255 : 0;
+        const v = (px[y * rowBytes + (x >> 3)]! >> (7 - (x & 7))) & 1 ? 255 : 0;
         const i = (y * width + x) * 3;
         rgb[i] = v;
         rgb[i + 1] = v;
         rgb[i + 2] = v;
       }
     }
-    png = encodePng(width, height, rgb, 3);
   } else {
     return null;
   }
-  if (png.length > MAX_PNG_BYTES) return null;
-  return `data:image/png;base64,${png.toString("base64")}`;
+  return { width, height, rgb };
 }
+
+const rasterToUri = (r: Raster): string | null => {
+  const png = encodePng(r.width, r.height, r.rgb, 3);
+  return png.length > MAX_PNG_BYTES ? null : `data:image/png;base64,${png.toString("base64")}`;
+};
 
 /* ─────────────────────── đọc lệnh vẽ của trang ─────────────────────── */
 
@@ -175,7 +189,8 @@ export async function extractPdfImages(
     return [];
   }
 
-  const out: PdfImage[] = [];
+  /** Ảnh thô kèm chỗ đứng, chưa mã hoá — còn phải ghép hình bị cắt. */
+  const found: Array<{ raster: Raster; x: number; y: number; w: number; h: number }> = [];
   let ctm: Matrix = [1, 0, 0, 1, 0, 0];
   const stack: Matrix[] = [];
 
@@ -214,16 +229,68 @@ export async function extractPdfImages(
     }
     if (!obj || typeof obj !== "object") continue;
 
-    const uri = toPng(obj as Parameters<typeof toPng>[0]);
-    if (!uri) continue;
-    out.push({
-      marker: `⟦PDFIMG-${keyPrefix}-${out.length}⟧`,
-      dataUri: uri,
+    const raster = toRaster(obj as Parameters<typeof toRaster>[0]);
+    if (!raster) continue;
+    found.push({
+      raster,
       x: ctm[4],
       y: ctm[5],
-      width: Math.abs(ctm[0]),
-      height: Math.abs(ctm[3]),
+      w: Math.abs(ctm[0]),
+      h: Math.abs(ctm[3]),
     });
+  }
+
+  return stitchColumns(found).flatMap((piece, i) => {
+    const uri = rasterToUri(piece.raster);
+    return uri
+      ? [{
+          marker: `⟦PDFIMG-${keyPrefix}-${i}⟧`,
+          dataUri: uri,
+          x: piece.x,
+          y: piece.y,
+          width: piece.w,
+          height: piece.h,
+        }]
+      : [];
+  });
+}
+
+/** Gần bằng nhau, tính theo điểm in — sai số nhỏ là do làm tròn ma trận. */
+const near = (a: number, b: number, tol = 1.5) => Math.abs(a - b) <= tol;
+
+/**
+ * Ghép những ảnh vốn LÀ MỘT HÌNH nhưng bị cắt ngang.
+ *
+ * Word/PDF hay cắt một hình cao thành nhiều dải xếp khít nhau: cùng mép trái,
+ * cùng bề ngang, mép dưới dải trên trùng mép trên dải dưới. Để rời thì trong
+ * đề chúng thành hai ảnh, và chữ xen vào giữa — giáo viên thấy "hình bị cắt
+ * đôi".
+ */
+function stitchColumns<T extends { raster: Raster; x: number; y: number; w: number; h: number }>(
+  items: T[],
+): Array<{ raster: Raster; x: number; y: number; w: number; h: number }> {
+  // Xếp từ trên xuống để dải trên đứng trước dải dưới.
+  const sorted = [...items].sort((a, b) => b.y + b.h - (a.y + a.h));
+  const out: Array<{ raster: Raster; x: number; y: number; w: number; h: number }> = [];
+  for (const it of sorted) {
+    const prev = out[out.length - 1];
+    const stackable =
+      prev &&
+      near(prev.x, it.x) &&
+      near(prev.w, it.w) &&
+      prev.raster.width === it.raster.width &&
+      near(prev.y, it.y + it.h); // mép dưới dải trên = mép trên dải dưới
+    if (!stackable) {
+      out.push({ ...it });
+      continue;
+    }
+    const height = prev.raster.height + it.raster.height;
+    const rgb = new Uint8Array(prev.raster.width * height * 3);
+    rgb.set(prev.raster.rgb, 0);
+    rgb.set(it.raster.rgb, prev.raster.rgb.length);
+    prev.raster = { width: prev.raster.width, height, rgb };
+    prev.y = it.y;
+    prev.h += it.h;
   }
   return out;
 }

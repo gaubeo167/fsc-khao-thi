@@ -22,6 +22,7 @@ import {
   U_CLOSE,
   U_OPEN,
 } from "@/features/question-bank/lib/parse-exam-bank";
+import { unicodeToLatex } from "@/features/question-bank/lib/mtef-to-latex";
 import {
   guessSymbolFont,
   symbolCharToUnicode,
@@ -127,6 +128,106 @@ function decodeItem(it: PdfTextItem, fonts: Map<string, SymbolFont>): string {
     out += symbolCharToUnicode(ch.codePointAt(0)!, font) ?? "";
   }
   return out;
+}
+
+/**
+ * Mẩu chữ này có phải MỘT MẢNH của dấu ngoặc nhọn kéo dài không?
+ *
+ * Hệ phương trình trong Word là một khối; sang PDF nó vỡ ra: dấu ngoặc nhọn
+ * thành hai ba mảnh xếp dọc (font Symbol, mã 0xEC/0xED/0xEE — sau khi đổi mã
+ * thành `{`, `|`, `}`), mỗi dòng của hệ nằm trên một đường chân chữ riêng.
+ */
+function isFencePiece(it: PdfTextItem, fonts: Map<string, SymbolFont>): boolean {
+  if (fonts.get(it.fontKey) !== "symbol") return false;
+  const t = decodeItem(it, fonts).trim();
+  return t.length === 1 && (t === "{" || t === "}" || t === "|");
+}
+
+/** Một dòng của hệ → LaTeX. */
+function rowToLatex(items: PdfTextItem[], fonts: Map<string, SymbolFont>): string {
+  const body = bodySize(items);
+  const baseline = items[0]?.y ?? 0;
+  let out = "";
+  for (const it of [...items].sort((a, b) => a.x - b.x)) {
+    const text = decodeItem(it, fonts);
+    if (!text.trim()) continue;
+    const sup = it.size < 0.85 * body && it.y > baseline + 0.1 * body;
+    let tex = "";
+    try {
+      tex = [...text.trim()].map(unicodeToLatex).join("");
+    } catch {
+      return "";
+    }
+    out += sup ? `^{${tex}}` : tex;
+  }
+  return out.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Gộp hệ phương trình bị vỡ thành `$\begin{cases}…\end{cases}$`.
+ *
+ * Trong PDF, một hệ hai dòng hiện ra thành ba dòng chữ rời: dòng trên của hệ,
+ * dòng văn xuôi mang mảnh giữa của dấu ngoặc, dòng dưới của hệ. Đọc thẳng thì
+ * ra "…hệ bất phương trình | ?" rồi "{ x ≥ y−3" nằm lạc một dòng khác.
+ *
+ * Nhận ra bằng hình học: các mảnh ngoặc xếp dọc CÙNG MỘT CỘT trên những dòng
+ * liền nhau; mọi thứ bên phải cột đó là các dòng của hệ; dòng nào còn chữ ở
+ * BÊN TRÁI cột thì đó là câu văn chứa hệ.
+ */
+function mergeBraceSystems(
+  lines: PdfTextItem[][],
+  fonts: Map<string, SymbolFont>,
+): PdfTextItem[][] {
+  const fenceAt = lines.map((line) => line.filter((it) => isFencePiece(it, fonts)));
+  const used = new Set<number>();
+  const out: PdfTextItem[][] = lines.map((l) => [...l]);
+
+  for (let i = 0; i < lines.length; i += 1) {
+    if (used.has(i)) continue;
+    for (const first of fenceAt[i] ?? []) {
+      // Gom các mảnh cùng cột trên những dòng liền ngay dưới.
+      const group = [{ line: i, item: first }];
+      for (let j = i + 1; j < lines.length; j += 1) {
+        const hit = (fenceAt[j] ?? []).find((f) => Math.abs(f.x - first.x) <= 3);
+        if (!hit) break;
+        group.push({ line: j, item: hit });
+      }
+      if (group.length < 2) continue;
+
+      const colX = first.x;
+      // Dòng nào còn chữ BÊN TRÁI cột ngoặc thì đó là câu văn chứa hệ; phần
+      // bên phải của chính dòng đó là câu viết tiếp, KHÔNG phải một dòng hệ.
+      const host = group.find((g) =>
+        out[g.line]!.some((it) => it !== g.item && it.x < colX),
+      );
+      if (!host) continue;
+
+      const rows: string[] = [];
+      for (const g of group) {
+        if (g.line === host.line) continue;
+        const right = out[g.line]!.filter((it) => it !== g.item && it.x > colX);
+        const tex = rowToLatex(right, fonts);
+        // "( )" là nhãn (1) của hệ, không phải một dòng — bỏ những mẩu không
+        // có chữ hay số nào.
+        if (tex && /[0-9A-Za-z]/.test(tex)) rows.push(tex);
+      }
+      if (rows.length < 2) continue;
+
+      const cases = `$\\begin{cases}${rows.join(" \\\\ ")}\\end{cases}$`;
+      for (const g of group) {
+        const line = out[g.line]!;
+        if (g.line === host.line) {
+          const at = line.indexOf(g.item);
+          line[at] = { ...g.item, str: cases, fontKey: "" };
+        } else {
+          out[g.line] = line.filter((it) => it.x < colX && it !== g.item);
+        }
+        used.add(g.line);
+      }
+      break;
+    }
+  }
+  return out.filter((l) => l.length > 0);
 }
 
 /** Chia các mẩu chữ thành DÒNG theo y, rồi xếp trong dòng theo x. */
@@ -282,7 +383,7 @@ export function layoutPdfPage(
   const usable = items.filter((it) => it.str !== "");
   if (usable.length === 0 && images.length === 0) return "";
   const fonts = classifySymbolFonts(usable);
-  return attachImages(groupLines(usable), images)
+  return attachImages(mergeBraceSystems(groupLines(usable), fonts), images)
     .map((line) => renderLine(line, fonts, rules))
     .filter((l) => l.trim())
     .join("\n");
