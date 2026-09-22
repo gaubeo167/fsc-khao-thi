@@ -33,7 +33,7 @@ execFileSync(
   ],
   { cwd: "apps/web", stdio: "pipe" },
 );
-const { isPlausible } = await import(out);
+const { isPlausible, maskImages, restoreImages } = await import(out);
 
 let pass = 0,
   fail = 0;
@@ -130,6 +130,29 @@ const GOC = [
     isPlausible(khongMoc, "Trang bìa đề thi\nSở Giáo dục và Đào tạo"),
   );
   check("không có mốc câu nhưng bị cắt cụt → VỨT", !isPlausible(khongMoc, "Trang bìa"));
+}
+
+/* ── Ảnh KHÔNG được gửi cho AI ─────────────────────────────────────────
+ *
+ * Từ khi đường PDF rút được ảnh, mỗi ảnh là một data URI dài hàng chục nghìn
+ * ký tự nằm trọn MỘT DÒNG. Bộ cắt đoạn chỉ cắt ở ranh giới dòng, nên cả tấm
+ * ảnh đi vào một lượt gọi: model không chép nổi, đoạn đó bị vứt, mà mỗi lượt
+ * vẫn mất hàng chục giây. Đề 9 ảnh là màn tải đề quay vòng vài phút.
+ */
+{
+  const anh = `![](data:image/png;base64,${"A".repeat(40000)})`;
+  const goc = `Câu 1. Hình nào sau đây?\nA. ${anh}\nB. hai`;
+  const { masked, images } = maskImages(goc);
+  check("ảnh bị thay bằng mốc ngắn", masked.length < 200, String(masked.length));
+  check("giữ lại đủ ảnh", images.length === 1);
+  check("không còn data URI nào gửi đi", !masked.includes("data:image"));
+  check("chữ quanh ảnh giữ nguyên", masked.includes("Câu 1. Hình nào sau đây?") && masked.includes("B. hai"));
+  check("trả ảnh về đúng chỗ", restoreImages(masked, images) === goc);
+  // AI có thể đổi khoảng trắng quanh mốc; miễn còn mốc thì ảnh vẫn về.
+  check(
+    "AI thêm khoảng trắng quanh mốc → ảnh vẫn về",
+    restoreImages(masked.replace("⟦IMG0⟧", " ⟦IMG0⟧ "), images).includes(anh),
+  );
 }
 
 console.log(`\n${pass} pass · ${fail} fail`);

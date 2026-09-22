@@ -64,8 +64,14 @@ export interface AiFormulaResult {
  * bỏ qua. Nhập đề là việc chính, dọn công thức là việc thêm — để việc thêm
  * làm chết việc chính là đánh đổi sai.
  */
-export async function repairFormulas(text: string): Promise<AiFormulaResult> {
-  const chunks = splitChunks(text, CHUNK_CHARS);
+export async function repairFormulas(raw: string): Promise<AiFormulaResult> {
+  // Giấu ảnh trước khi gửi. Mỗi ảnh là một data URI dài hàng CHỤC NGHÌN ký tự
+  // nằm trọn trên một dòng, mà bộ cắt đoạn chỉ cắt ở ranh giới dòng — nên cả
+  // tấm ảnh đi thẳng vào một lượt gọi. Hậu quả: model không chép nổi, đoạn đó
+  // bị bỏ, mà mỗi lượt vẫn mất hàng chục giây và một đống token. Đề có 9 ảnh
+  // là màn tải đề quay vòng vài phút rồi chẳng dọn được gì.
+  const { masked, images } = maskImages(raw);
+  const chunks = splitChunks(masked, CHUNK_CHARS);
   let repaired = 0;
   let skipped = 0;
   let provider: string | null = null;
@@ -104,7 +110,36 @@ export async function repairFormulas(text: string): Promise<AiFormulaResult> {
     }
   }
 
-  return { text: out.join("\n"), repaired, skipped, provider };
+  return { text: restoreImages(out.join("\n"), images), repaired, skipped, provider };
+}
+
+/** `![](data:…)` — ảnh nhúng, thứ KHÔNG được gửi cho AI. */
+const EMBEDDED_IMAGE_RE = /!\[[^\]]*\]\(data:[^)]*\)/g;
+
+const imageToken = (i: number) => `⟦IMG${i}⟧`;
+
+/**
+ * Thay ảnh bằng mốc ngắn, giữ lại bản gốc để trả về sau.
+ *
+ * Xuất ra để `scripts/test-ai-formulas.mjs` khoá được: một tấm ảnh lọt vào
+ * lượt gọi AI là màn tải đề quay vòng vài phút rồi chẳng dọn được gì.
+ */
+export function maskImages(text: string): { masked: string; images: string[] } {
+  const images: string[] = [];
+  const masked = text.replace(EMBEDDED_IMAGE_RE, (m) => {
+    images.push(m);
+    return imageToken(images.length - 1);
+  });
+  return { masked, images };
+}
+
+/** Trả ảnh về đúng mốc của nó. Mốc nào AI làm mất thì ảnh đó mất — đành chịu. */
+export function restoreImages(text: string, images: string[]): string {
+  let out = text;
+  images.forEach((img, i) => {
+    out = out.split(imageToken(i)).join(img);
+  });
+  return out;
 }
 
 /** Cắt theo RANH GIỚI DÒNG, không cắt giữa dòng — cắt giữa dòng là chẻ đôi câu. */
