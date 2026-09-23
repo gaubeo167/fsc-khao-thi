@@ -304,10 +304,28 @@ check(
   "HS không hiểu vì sao mất bài, giám thị cũng không có gì để trả lời",
 );
 
+// Lưới bật/tắt đã chuyển sang components/anti-cheat-editor.tsx để ca kíp thi
+// và bài kiểm tra cài giống hệt nhau. Ràng buộc không đổi: chỉ khoá boolean
+// mới được render thành ô tick.
 check(
   "lưới bật/tắt anti-cheat chỉ nhận khoá boolean",
-  /BooleanAntiCheatKey/.test(read("apps/web/src/features/exam-shifts/dialogs/shift-wizard.tsx")),
+  /BooleanAntiCheatKey/.test(
+    read("apps/web/src/features/exam-shifts/components/anti-cheat-editor.tsx"),
+  ),
   "thêm tuỳ chọn không phải boolean sẽ render ra ô tick câm",
+);
+
+// Hai màn phải dùng CHUNG lưới đó. Chép lại một bản riêng cho bài kiểm tra là
+// giáo viên bật một biện pháp ở màn này mà màn kia không có.
+check(
+  "cả ca kíp thi và bài kiểm tra đều dùng chung lưới anti-cheat",
+  /AntiCheatEditor/.test(
+    read("apps/web/src/features/exam-shifts/dialogs/shift-wizard.tsx"),
+  ) &&
+    /AntiCheatEditor/.test(
+      read("apps/web/src/features/exam-shifts/dialogs/quick-test-dialog.tsx"),
+    ),
+  "hai màn lệch cấu hình chống gian lận",
 );
 
 /* ───────── 5. Không có cờ anti-cheat giả ───────── */

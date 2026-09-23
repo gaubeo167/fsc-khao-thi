@@ -25,7 +25,18 @@
  *   · thời lượng → ghi thẳng `durationMinutes` lên bản ghi
  */
 
-import { CalendarClock, FileUp, ListChecks, ShieldCheck, Users } from "lucide-react";
+import {
+  CalendarClock,
+  Check,
+  ClipboardList,
+  FileUp,
+  GraduationCap,
+  ListChecks,
+  Scale,
+  ShieldCheck,
+  Timer,
+  Users,
+} from "lucide-react";
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -56,10 +67,19 @@ import { useGradesStore } from "@/features/grades/state/grades-store";
 import { QUESTION_TYPES, type QuestionType } from "@/features/question-bank/data/question-types";
 import { useQuestionsStore } from "@/features/question-bank/state/questions-store";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
-import { rosterForClasses } from "@/lib/roster";
+import { useTeachingStore } from "@/features/teaching/state/teaching-store";
+import { rosterForClasses, studentsOfClass, type RosterStudent } from "@/lib/roster";
 import { cn } from "@/lib/utils";
 
-import { DEFAULT_ANTI_CHEAT, type AntiCheatConfig } from "../data/types";
+import { AntiCheatEditor, countAntiCheatOn } from "../components/anti-cheat-editor";
+import { QuickScoringEditor } from "../components/quick-scoring-editor";
+import {
+  DEFAULT_ANTI_CHEAT,
+  DEFAULT_SCORING,
+  type AntiCheatConfig,
+  type ScoringConfig,
+} from "../data/types";
+import { formatScore, sumManualPerQuestion } from "../lib/scoring";
 import { useShiftsStore } from "../state/shifts-store";
 
 const QuestionPickerDialog = dynamic(
@@ -114,10 +134,16 @@ export function QuickTestDialog({ open, onOpenChange }: Props) {
   const allClasses = useGradesStore((s) => s.classes);
   const allUsers = useUsersStore((s) => s.users);
   const allQuestions = useQuestionsStore((s) => s.questions);
+  const assignments = useTeachingStore((s) => s.assignments);
   const createShift = useShiftsStore((s) => s.create);
   const saveForm = useExamFormsStore((s) => s.saveForm);
 
   const campusId = session?.campusId ?? activeCampusId ?? null;
+  // Hồ sơ của chính mình — mang `gradeIds` / `classIds` phụ trách.
+  const me = useMemo(
+    () => (session ? allUsers.find((u) => u.id === session.userId) : null),
+    [session, allUsers],
+  );
 
   const [name, setName] = useState("");
   const [subjectId, setSubjectId] = useState("");
@@ -128,7 +154,7 @@ export function QuickTestDialog({ open, onOpenChange }: Props) {
   const [win, setWin] = useState(defaultWindow);
   const [durationMinutes, setDurationMinutes] = useState(45);
   const [lateJoinMinutes, setLateJoinMinutes] = useState(10);
-  const [maxScore, setMaxScore] = useState(10);
+  const [scoring, setScoring] = useState<ScoringConfig>({ ...DEFAULT_SCORING });
   const [variantCount, setVariantCount] = useState(1);
   const [proctored, setProctored] = useState(true);
   const [antiCheatOn, setAntiCheatOn] = useState(true);
@@ -150,7 +176,7 @@ export function QuickTestDialog({ open, onOpenChange }: Props) {
     setWin(defaultWindow());
     setDurationMinutes(45);
     setLateJoinMinutes(10);
-    setMaxScore(10);
+    setScoring({ ...DEFAULT_SCORING });
     setVariantCount(1);
     setProctored(true);
     setAntiCheatOn(true);
@@ -165,25 +191,78 @@ export function QuickTestDialog({ open, onOpenChange }: Props) {
     () => filterGradesByScope(campusScope.scopeGrades(allGrades), scope),
     [allGrades, campusScope, scope],
   );
-  const classes = useMemo(
-    () =>
-      allClasses.filter(
-        (c) =>
-          (!gradeId || c.gradeId === gradeId) &&
-          (campusId ? c.campusId === campusId : true),
-      ),
-    [allClasses, gradeId, campusId],
-  );
+  /**
+   * Lớp hiện ra sau khi chọn khối, và CHỈ những lớp giáo viên được phân công.
+   *
+   * "Phân công" ở đây gồm bốn đường, đúng như màn "Lớp của tôi":
+   *   1. dạy môn đang chọn ở lớp đó (bảng phân công môn × lớp)
+   *   2. chủ nhiệm lớp
+   *   3. phụ trách cả khối (`user.gradeIds`)
+   *   4. phụ trách lớp (`user.classIds`)
+   *
+   * Lấy đủ bốn đường vì trường dùng cả bốn; chỉ đọc bảng phân công là giáo
+   * viên chủ nhiệm không giao được bài cho chính lớp mình. Cấp quản lý
+   * (`scope.isUnscoped`) thấy mọi lớp trong cơ sở.
+   */
+  const classes = useMemo(() => {
+    const inScope = allClasses.filter(
+      (c) =>
+        (!gradeId || c.gradeId === gradeId) &&
+        (campusId ? c.campusId === campusId : true),
+    );
+    if (scope.isUnscoped || !session) return inScope;
+    const gradeIdSet = new Set(me?.gradeIds ?? []);
+    const classIdSet = new Set(me?.classIds ?? []);
+    return inScope.filter(
+      (c) =>
+        assignments.some(
+          (a) =>
+            a.classId === c.id &&
+            a.teacherId === session.userId &&
+            (!subjectId || a.subjectId === subjectId),
+        ) ||
+        c.homeroomTeacherId === session.userId ||
+        gradeIdSet.has(c.gradeId) ||
+        classIdSet.has(c.id),
+    );
+  }, [allClasses, gradeId, campusId, scope, session, me, assignments, subjectId]);
 
+  // Đổi môn có thể làm hẹp danh sách lớp được phân công — bỏ lại lớp không
+  // còn nằm trong danh sách, nếu không bài kiểm tra giao cho lớp mà màn hình
+  // không còn hiện.
+  useEffect(() => {
+    const visible = new Set(classes.map((c) => c.id));
+    setClassIds((prev) =>
+      prev.every((id) => visible.has(id)) ? prev : prev.filter((id) => visible.has(id)),
+    );
+  }, [classes]);
+
+  /** Chọn lớp xong mới có danh sách học sinh, tách theo từng lớp. */
   const roster = useMemo(
     () => rosterForClasses(classIds, allClasses, allUsers),
     [classIds, allClasses, allUsers],
   );
 
-  // Chọn lớp là tích sẵn cả lớp; giáo viên bỏ tích từng em sau.
+  // Bỏ lại học sinh của lớp vừa bỏ tích. Việc TÍCH SẴN nằm ở handler chọn
+  // lớp chứ không ở đây: chạy theo `roster` thì mỗi lần dựng lại danh sách là
+  // tích lại những em giáo viên vừa cố ý bỏ.
   useEffect(() => {
-    setStudentIds(roster.flatMap((r) => r.students.map((s) => s.id)));
+    const all = new Set(roster.flatMap((r) => r.students.map((s) => s.id)));
+    setStudentIds((prev) =>
+      prev.every((id) => all.has(id)) ? prev : prev.filter((id) => all.has(id)),
+    );
   }, [roster]);
+
+  const toggleStudent = (sid: string) =>
+    setStudentIds((prev) =>
+      prev.includes(sid) ? prev.filter((x) => x !== sid) : [...prev, sid],
+    );
+  const toggleClassStudents = (ids: string[], on: boolean) =>
+    setStudentIds((prev) =>
+      on
+        ? [...new Set([...prev, ...ids])]
+        : prev.filter((x) => !ids.includes(x)),
+    );
 
   const picked = useMemo(
     () =>
@@ -207,9 +286,40 @@ export function QuickTestDialog({ open, onOpenChange }: Props) {
       out.push("Giờ đóng phải sau giờ mở");
     }
     if (durationMinutes < 1) out.push("Thời gian làm bài phải lớn hơn 0");
-    if (maxScore <= 0) out.push("Thang điểm phải lớn hơn 0");
+    if (scoring.maxScore <= 0) out.push("Thang điểm phải lớn hơn 0");
+    // Hai cách chia điểm này tự gõ tổng, nên lệch là chấm ra thang khác thang
+    // giáo viên nghĩ — chặn ngay, đừng để phát hiện lúc trả điểm.
+    if (scoring.mode === "by-part") {
+      const sum = (scoring.parts ?? []).reduce((a, p) => a + (p.points || 0), 0);
+      if (Math.abs(sum - scoring.maxScore) > 0.001) {
+        out.push(
+          `Tổng điểm các phần (${formatScore(sum)}) phải bằng thang điểm (${formatScore(scoring.maxScore)})`,
+        );
+      }
+    }
+    if (scoring.mode === "manual") {
+      const sum = sumManualPerQuestion(scoring, questionIds);
+      if (Math.abs(sum - scoring.maxScore) > 0.001) {
+        out.push(
+          `Tổng điểm từng câu (${formatScore(sum)}) phải bằng thang điểm (${formatScore(scoring.maxScore)})`,
+        );
+      }
+    }
     return out;
-  }, [subjectId, classIds, studentIds, questionIds, picked, win, durationMinutes, maxScore]);
+  }, [subjectId, classIds, studentIds, questionIds, picked, win, durationMinutes, scoring]);
+
+  /** Tích lớp là tích sẵn cả lớp; bỏ tích lớp là bỏ luôn học sinh lớp đó. */
+  function toggleClass(cid: string, on: boolean) {
+    setClassIds((prev) =>
+      on ? [...prev, cid] : prev.filter((x) => x !== cid),
+    );
+    const cls = allClasses.find((c) => c.id === cid);
+    if (!cls) return;
+    const ids = studentsOfClass(cls, allUsers).map((st) => st.id);
+    setStudentIds((prev) =>
+      on ? [...new Set([...prev, ...ids])] : prev.filter((x) => !ids.includes(x)),
+    );
+  }
 
   async function handleSubmit() {
     if (!session || problems.length > 0) return;
@@ -243,7 +353,7 @@ export function QuickTestDialog({ open, onOpenChange }: Props) {
             proctorIds: proctored ? [session.userId] : [],
           },
         ],
-        scoring: { maxScore, mode: "even" },
+        scoring,
         orderStrategy: "as-authored",
         showSectionHeadings: false,
         antiCheat: antiCheatOn
@@ -272,7 +382,7 @@ export function QuickTestDialog({ open, onOpenChange }: Props) {
         campusId,
         questions: picked,
         variantCount,
-        scoring: { maxScore, mode: "even" },
+        scoring,
         durationMinutes,
         actorUid: session.userId,
         formId: `form_${shift.id}_${Date.now().toString(36)}`,
@@ -293,7 +403,7 @@ export function QuickTestDialog({ open, onOpenChange }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[92vh] max-w-4xl flex-col overflow-hidden p-0">
+      <DialogContent className="flex max-h-[92vh] max-w-6xl flex-col overflow-hidden p-0">
         <DialogHeader className="shrink-0 border-b px-5 py-3">
           <DialogTitle>Tạo bài kiểm tra</DialogTitle>
           <DialogDescription className="text-hint">
@@ -302,7 +412,9 @@ export function QuickTestDialog({ open, onOpenChange }: Props) {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px]">
+            <div className="min-w-0 space-y-4 px-5 py-4">
           <Section icon={<Users className="h-4 w-4" />} title="1. Lớp và môn">
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Tên bài kiểm tra">
@@ -340,9 +452,15 @@ export function QuickTestDialog({ open, onOpenChange }: Props) {
               </Field>
               <Field label="Lớp được giao *">
                 <div className="flex flex-wrap gap-1.5">
-                  {classes.length === 0 ? (
+                  {!gradeId ? (
                     <span className="text-meta text-muted-foreground">
                       Chọn khối để hiện danh sách lớp.
+                    </span>
+                  ) : classes.length === 0 ? (
+                    <span className="text-meta text-muted-foreground">
+                      Bạn chưa được phân công lớp nào ở khối này
+                      {subjectId ? " với môn đã chọn" : ""}. Liên hệ quản trị
+                      nếu phân công chưa đúng.
                     </span>
                   ) : (
                     classes.map((c) => {
@@ -351,11 +469,7 @@ export function QuickTestDialog({ open, onOpenChange }: Props) {
                         <button
                           key={c.id}
                           type="button"
-                          onClick={() =>
-                            setClassIds((prev) =>
-                              on ? prev.filter((x) => x !== c.id) : [...prev, c.id],
-                            )
-                          }
+                          onClick={() => toggleClass(c.id, !on)}
                           className={cn(
                             "rounded-md border px-2.5 py-1 text-meta font-semibold",
                             on
@@ -371,10 +485,13 @@ export function QuickTestDialog({ open, onOpenChange }: Props) {
                 </div>
               </Field>
             </div>
-            {studentIds.length > 0 && (
-              <p className="text-meta mt-2 text-muted-foreground">
-                {studentIds.length} học sinh sẽ nhận bài kiểm tra này.
-              </p>
+            {classIds.length > 0 && (
+              <RosterPanel
+                roster={roster}
+                selectedIds={studentIds}
+                onToggleStudent={toggleStudent}
+                onToggleClass={toggleClassStudents}
+              />
             )}
           </Section>
 
@@ -442,7 +559,7 @@ export function QuickTestDialog({ open, onOpenChange }: Props) {
             )}
           </Section>
 
-          <Section icon={<CalendarClock className="h-4 w-4" />} title="3. Thời gian và điểm">
+          <Section icon={<CalendarClock className="h-4 w-4" />} title="3. Thời gian làm bài">
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Mở lúc *">
                 <Input
@@ -477,15 +594,16 @@ export function QuickTestDialog({ open, onOpenChange }: Props) {
                   onChange={(e) => setLateJoinMinutes(Number(e.target.value))}
                 />
               </Field>
-              <Field label="Thang điểm *" hint="Điểm chia đều cho các câu.">
-                <Input
-                  type="number"
-                  min={1}
-                  step="0.5"
-                  value={maxScore}
-                  onChange={(e) => setMaxScore(Number(e.target.value))}
-                />
-              </Field>
+            </div>
+          </Section>
+
+          <Section icon={<Scale className="h-4 w-4" />} title="4. Thang điểm">
+            <QuickScoringEditor
+              scoring={scoring}
+              pool={picked}
+              onChange={setScoring}
+            />
+            <div className="mt-3">
               <Field
                 label="Số mã đề"
                 hint="Nhiều mã đề thì mỗi mã một thứ tự câu khác nhau."
@@ -502,7 +620,7 @@ export function QuickTestDialog({ open, onOpenChange }: Props) {
             </div>
           </Section>
 
-          <Section icon={<ShieldCheck className="h-4 w-4" />} title="4. Giám sát và chống gian lận">
+          <Section icon={<ShieldCheck className="h-4 w-4" />} title="5. Giám sát và chống gian lận">
             <div className="space-y-2">
               <Toggle
                 checked={proctored}
@@ -517,24 +635,106 @@ export function QuickTestDialog({ open, onOpenChange }: Props) {
                 hint="Toàn màn hình, chặn chuyển tab, chặn sao chép — tự nộp bài khi quá số lần cho phép."
               />
               {antiCheatOn && (
-                <div className="grid gap-1.5 rounded-lg border bg-surface-2/40 p-3 sm:grid-cols-2">
-                  {ANTI_CHEAT_FLAGS.map((f) => (
-                    <label key={f.key} className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4"
-                        checked={Boolean(antiCheat[f.key])}
-                        onChange={(e) =>
-                          setAntiCheat((prev) => ({ ...prev, [f.key]: e.target.checked }))
-                        }
-                      />
-                      <span className="text-small">{f.label}</span>
-                    </label>
-                  ))}
+                <div className="rounded-lg border bg-surface-2/40 p-3">
+                  <AntiCheatEditor
+                    value={antiCheat}
+                    onChange={setAntiCheat}
+                    title="Biện pháp áp dụng"
+                  />
                 </div>
               )}
             </div>
           </Section>
+            </div>
+
+            <aside className="border-t bg-muted/15 px-5 py-4 lg:border-l lg:border-t-0">
+              <div className="lg:sticky lg:top-0">
+                <div className="mb-3 flex items-center gap-2">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <ClipboardList className="h-4 w-4" />
+                  </span>
+                  <div>
+                    <p className="text-body font-semibold">Tổng quan bài kiểm tra</p>
+                    <p className="text-hint text-muted-foreground">
+                      Cập nhật theo lựa chọn
+                    </p>
+                  </div>
+                </div>
+                <ul className="space-y-2.5">
+                  <SummaryItem
+                    icon={ListChecks}
+                    label="Môn"
+                    value={subjects.find((x) => x.id === subjectId)?.name ?? "—"}
+                  />
+                  <SummaryItem
+                    icon={GraduationCap}
+                    label="Khối"
+                    value={grades.find((g) => g.id === gradeId)?.name ?? "—"}
+                  />
+                  <SummaryItem
+                    icon={Users}
+                    label="Lớp"
+                    value={
+                      roster.length === 0
+                        ? "—"
+                        : roster.map((r) => r.className).join(", ")
+                    }
+                  />
+                  <SummaryItem
+                    icon={Users}
+                    label="HS được giao"
+                    value={`${studentIds.length} HS`}
+                  />
+                  <SummaryItem
+                    icon={ListChecks}
+                    label="Số câu hỏi"
+                    value={`${questionIds.length} câu · ${variantCount} mã đề`}
+                  />
+                  <SummaryItem
+                    icon={Timer}
+                    label="Thời gian làm bài"
+                    value={`${durationMinutes} phút`}
+                  />
+                  <SummaryItem
+                    icon={CalendarClock}
+                    label="Mở lúc"
+                    value={
+                      win.start
+                        ? new Date(win.start).toLocaleString("vi-VN")
+                        : "—"
+                    }
+                  />
+                  <SummaryItem
+                    icon={CalendarClock}
+                    label="Đóng lúc"
+                    value={
+                      win.end ? new Date(win.end).toLocaleString("vi-VN") : "—"
+                    }
+                    highlight
+                  />
+                  <SummaryItem
+                    icon={Scale}
+                    label="Thang điểm"
+                    value={`${formatScore(scoring.maxScore)} đ · ${SCORING_MODE_LABEL[scoring.mode]}`}
+                  />
+                  <SummaryItem
+                    icon={ShieldCheck}
+                    label="Giám sát"
+                    value={proctored ? "Có phòng giám sát" : "Không giám sát"}
+                  />
+                  <SummaryItem
+                    icon={ShieldCheck}
+                    label="Chống gian lận"
+                    value={
+                      antiCheatOn
+                        ? `${countAntiCheatOn(antiCheat).on}/${countAntiCheatOn(antiCheat).total} biện pháp đã bật`
+                        : "Tắt"
+                    }
+                  />
+                </ul>
+              </div>
+            </aside>
+          </div>
         </div>
 
         <footer className="flex shrink-0 flex-wrap items-center gap-2 border-t px-5 py-3">
@@ -587,15 +787,149 @@ export function QuickTestDialog({ open, onOpenChange }: Props) {
   );
 }
 
-/** Cờ chống gian lận có phần cưỡng chế THẬT ở màn làm bài. */
-const ANTI_CHEAT_FLAGS: Array<{ key: keyof AntiCheatConfig; label: string }> = [
-  { key: "requireFullscreen", label: "Bắt buộc toàn màn hình" },
-  { key: "blockTabSwitch", label: "Chặn chuyển tab" },
-  { key: "blockCopyPaste", label: "Chặn sao chép / dán" },
-  { key: "blockRightClick", label: "Chặn chuột phải" },
-  { key: "oneTimeStart", label: "Chỉ được vào làm một lần" },
-  { key: "randomizeOptions", label: "Đảo thứ tự phương án" },
-];
+/**
+ * Danh sách học sinh, hiện ra SAU khi chọn lớp.
+ *
+ * Trước đây màn này chỉ nói "N học sinh sẽ nhận bài kiểm tra". Giáo viên
+ * không kiểm được N gồm những ai, mà danh sách lớp trong hệ thống có thể
+ * thiếu hoặc thừa em — nên phải nhìn thấy tên, và bỏ tích được từng em
+ * (em chuyển lớp, em nghỉ dài).
+ */
+function RosterPanel({
+  roster,
+  selectedIds,
+  onToggleStudent,
+  onToggleClass,
+}: {
+  roster: Array<{ classId: string; className: string; students: RosterStudent[] }>;
+  selectedIds: string[];
+  onToggleStudent: (sid: string) => void;
+  onToggleClass: (ids: string[], on: boolean) => void;
+}) {
+  const total = roster.reduce((n, g) => n + g.students.length, 0);
+  return (
+    <div className="mt-3 space-y-2 rounded-lg border bg-surface-2/40 p-3">
+      <p className="text-small font-semibold">
+        Học sinh được giao{" "}
+        <span className="text-muted-foreground font-normal">
+          ({selectedIds.length}/{total})
+        </span>
+      </p>
+      {roster.map((group) => {
+        const ids = group.students.map((s) => s.id);
+        const onCount = ids.filter((id) => selectedIds.includes(id)).length;
+        return (
+          <div key={group.classId} className="rounded-md border bg-card p-2.5">
+            <div className="mb-1.5 flex flex-wrap items-center gap-2">
+              <p className="text-small flex-1 font-semibold">
+                {group.className}
+                <span className="text-meta ml-2 font-normal text-muted-foreground">
+                  {onCount}/{ids.length} HS
+                </span>
+              </p>
+              <button
+                type="button"
+                className="text-meta rounded-md border px-2 py-0.5 font-medium disabled:opacity-50"
+                disabled={ids.length === 0 || onCount === ids.length}
+                onClick={() => onToggleClass(ids, true)}
+              >
+                Chọn cả lớp
+              </button>
+              <button
+                type="button"
+                className="text-meta rounded-md border px-2 py-0.5 font-medium disabled:opacity-50"
+                disabled={onCount === 0}
+                onClick={() => onToggleClass(ids, false)}
+              >
+                Bỏ chọn
+              </button>
+            </div>
+            {group.students.length === 0 ? (
+              <p className="text-meta text-muted-foreground">
+                Lớp này chưa có học sinh nào trong hệ thống.
+              </p>
+            ) : (
+              <div className="grid gap-1 sm:grid-cols-2">
+                {group.students.map((s) => {
+                  const on = selectedIds.includes(s.id);
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => onToggleStudent(s.id)}
+                      className={cn(
+                        "text-small flex items-center gap-2 rounded-md border px-2 py-1 text-left",
+                        on
+                          ? "border-primary bg-primary/5"
+                          : "border-border bg-background",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border",
+                          on
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-border bg-background",
+                        )}
+                      >
+                        {on ? <Check className="h-3 w-3" strokeWidth={3} /> : null}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate">{s.name}</span>
+                      {s.code && (
+                        <span className="text-meta shrink-0 font-mono text-muted-foreground">
+                          {s.code}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+const SCORING_MODE_LABEL: Record<ScoringConfig["mode"], string> = {
+  even: "chia đều",
+  "by-part": "theo phần",
+  "by-difficulty": "theo độ khó",
+  manual: "thủ công",
+};
+
+/** Một dòng trong bảng tổng quan — cùng hình dạng với màn giao BTVN. */
+function SummaryItem({
+  icon: Icon,
+  label,
+  value,
+  highlight,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+  highlight?: boolean;
+}) {
+  return (
+    <li className="flex items-center gap-2">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted/40 text-foreground/60">
+        <Icon className="h-3.5 w-3.5" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-hint text-muted-foreground">{label}</p>
+        <p
+          className={cn(
+            "text-small truncate font-medium",
+            highlight ? "text-rose-700" : "text-foreground",
+          )}
+        >
+          {value}
+        </p>
+      </div>
+    </li>
+  );
+}
 
 function Section({
   icon,

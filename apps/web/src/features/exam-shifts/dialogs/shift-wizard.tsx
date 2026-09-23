@@ -97,6 +97,7 @@ import {
   formatScore,
   sumManualPerQuestion,
 } from "../lib/scoring";
+import { AntiCheatEditor, countAntiCheatOn } from "../components/anti-cheat-editor";
 import { ScorePartsEditor } from "../components/score-parts-editor";
 import { ScoringPolicyEditor } from "@/features/exams/components/scoring-policy-editor";
 import { DEFAULT_DS_GRADUATED } from "@/features/exams/data/types";
@@ -3379,130 +3380,6 @@ function ProctorPicker({
 
 /* ───────── Step 5 — Cấu hình anti-cheat + xác nhận ───────── */
 
-/**
- * Chỉ những khoá KIỂU BOOLEAN của AntiCheatConfig mới lên lưới bật/tắt.
- * `keyof AntiCheatConfig` sẽ kéo theo cả `fullscreenExitLimit` (số) và làm
- * `checked` của <input type="checkbox"> sai kiểu. Ràng ở đây để lần sau thêm
- * một tuỳ chọn không phải boolean thì TypeScript báo ngay, thay vì render ra
- * một ô tick câm.
- */
-type BooleanAntiCheatKey = {
-  [K in keyof AntiCheatConfig]-?: AntiCheatConfig[K] extends boolean
-    ? K
-    : never;
-}[keyof AntiCheatConfig];
-
-/**
- * Ô chọn hạn mức vi phạm → tự nộp bài. Dùng chung cho cả chuyển tab và thoát
- * toàn màn hình vì hai chính sách giống hệt nhau về hình dạng; chỉ khác danh
- * từ và câu cảnh báo. Nhân đôi khối JSX này là cách chắc chắn để hai bên lệch
- * nhau sau vài lần sửa.
- */
-function AutoSubmitLimit({
-  title,
-  hint,
-  noun,
-  value,
-  onChange,
-  canhBaoMotLan,
-}: {
-  title: string;
-  hint: string;
-  /** "Rời" / "Thoát" — ghép thành nhãn nút "Rời 1 lần". */
-  noun: string;
-  value: number;
-  onChange(v: number): void;
-  canhBaoMotLan: string;
-}) {
-  const OPTS = [
-    { v: 0, label: "Không tự nộp", hint: "chỉ chặn màn hình + ghi vi phạm" },
-    { v: 1, label: `${noun} 1 lần`, hint: "nộp ngay lần đầu" },
-    { v: 2, label: `${noun} 2 lần`, hint: "cảnh báo rồi mới nộp" },
-    { v: 3, label: `${noun} 3 lần`, hint: "hai lần cảnh báo" },
-  ];
-  return (
-    <div className="mt-3 rounded-lg border-2 border-rose-200 bg-card p-3">
-      <p className="text-small font-semibold text-foreground">{title}</p>
-      <p className="mt-0.5 text-hint text-muted-foreground">{hint}</p>
-      <div className="mt-2 flex flex-wrap gap-1.5">
-        {OPTS.map((opt) => (
-          <button
-            key={opt.v}
-            type="button"
-            title={opt.hint}
-            onClick={() => onChange(opt.v)}
-            className={cn(
-              "rounded-md border-2 px-2.5 py-1 text-meta font-semibold transition",
-              value === opt.v
-                ? opt.v === 0
-                  ? "border-emerald-300 bg-emerald-50 text-emerald-900"
-                  : "border-rose-300 bg-rose-50 text-rose-900"
-                : "border-border bg-card text-muted-foreground hover:bg-accent/20",
-            )}
-          >
-            {opt.label}
-          </button>
-        ))}
-      </div>
-      {value === 1 && (
-        <p className="mt-2 rounded-md border border-rose-300 bg-rose-50 px-2.5 py-1.5 text-hint font-semibold text-rose-900">
-          {canhBaoMotLan} Cân nhắc &ldquo;{noun} 2 lần&rdquo;.
-        </p>
-      )}
-    </div>
-  );
-}
-
-const ANTI_CHEAT_FLAGS: Array<{
-  key: BooleanAntiCheatKey;
-  label: string;
-  description: string;
-  tone: "high" | "med" | "low";
-}> = [
-  {
-    key: "randomizeQuestions",
-    label: "Đảo thứ tự câu hỏi",
-    description: "Mỗi học sinh nhận thứ tự câu khác nhau.",
-    tone: "low",
-  },
-  {
-    key: "randomizeOptions",
-    label: "Đảo thứ tự phương án (MCQ)",
-    description: "Đảo A/B/C/D để giảm copy đáp án giữa các máy.",
-    tone: "low",
-  },
-  {
-    key: "requireFullscreen",
-    label: "Bắt buộc fullscreen",
-    description: "Thoát fullscreen sẽ chặn màn hình + ghi vi phạm.",
-    tone: "med",
-  },
-  {
-    key: "blockTabSwitch",
-    label: "Chặn chuyển tab / cửa sổ",
-    description: "Phát hiện Alt-Tab, đếm lần vi phạm.",
-    tone: "med",
-  },
-  {
-    key: "blockCopyPaste",
-    label: "Chặn copy / paste",
-    description: "Disable Ctrl-C / Ctrl-V trong đề thi.",
-    tone: "med",
-  },
-  {
-    key: "blockRightClick",
-    label: "Chặn chuột phải",
-    description: "Tránh học sinh inspect element.",
-    tone: "low",
-  },
-  {
-    key: "oneTimeStart",
-    label: "Vào thi 1 lần duy nhất",
-    description: "Không cho pause/resume — phải làm liền mạch.",
-    tone: "med",
-  },
-];
-
 function Step5Config({
   state,
   setState,
@@ -3625,93 +3502,13 @@ function Step5Config({
         </div>
       </section>
 
-      {/* Anti-cheat */}
+      {/* Anti-cheat — dùng chung với màn tạo bài kiểm tra, xem
+          components/anti-cheat-editor.tsx */}
       <section className="rounded-xl border bg-surface-2/40 p-4">
-        <p className="mb-3 inline-flex items-center gap-1.5 text-[13px] font-semibold text-foreground/85">
-          🛡️ Cấu hình Anti-cheat
-        </p>
-        <ul className="grid gap-2 sm:grid-cols-2">
-          {ANTI_CHEAT_FLAGS.map((flag) => {
-            const checked = state.antiCheat[flag.key];
-            const toneClass =
-              flag.tone === "high"
-                ? "border-rose-200"
-                : flag.tone === "med"
-                  ? "border-amber-200"
-                  : "border-emerald-200";
-            return (
-              <li key={flag.key}>
-                <label
-                  className={cn(
-                    "flex cursor-pointer items-start gap-2.5 rounded-lg border-2 bg-card p-2.5 transition-colors",
-                    checked ? toneClass : "border-border hover:bg-accent/20",
-                  )}
-                >
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={(e) =>
-                      setState((s) => ({
-                        ...s,
-                        antiCheat: {
-                          ...s.antiCheat,
-                          [flag.key]: e.target.checked,
-                        },
-                      }))
-                    }
-                    className="mt-0.5 h-4 w-4 accent-[var(--color-primary)]"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[13px] font-semibold text-foreground">
-                      {flag.label}
-                    </p>
-                    <p className="text-[11px] text-muted-foreground">
-                      {flag.description}
-                    </p>
-                  </div>
-                </label>
-              </li>
-            );
-          })}
-        </ul>
-
-        {/* Hạn mức → tự nộp bài. Tách khỏi lưới bật/tắt vì đây là con số, và
-            vì đây là hai tuỳ chọn DUY NHẤT ở màn này có thể huỷ bài thi của
-            HS — đáng được đặt riêng và nói rõ hậu quả.
-
-            Hai hạn mức đếm RIÊNG: Ctrl+Tab làm rớt fullscreen cùng lúc với
-            ẩn tab nên một hành vi sinh hai vi phạm. Gộp chung một hạn mức thì
-            mức 2 bị tiêu hết chỉ bằng một lần chuyển tab. */}
-        {state.antiCheat.blockTabSwitch && (
-          <AutoSubmitLimit
-            title="Tự nộp bài khi HS rời khỏi bài thi"
-            hint="Chuyển tab, chuyển cửa sổ, sang ứng dụng khác. Trình duyệt không cho chặn Ctrl+Tab hay Alt+Tab, nên đây là hậu quả khi HS rời đi, không phải ngăn rời đi."
-            noun="Rời"
-            value={state.antiCheat.tabSwitchLimit ?? 0}
-            onChange={(v) =>
-              setState((s) => ({
-                ...s,
-                antiCheat: { ...s.antiCheat, tabSwitchLimit: v },
-              }))
-            }
-            canhBaoMotLan="⚠ Không có lần cảnh báo nào. Một thông báo bật lên, một cú vuốt trackpad nhỡ tay là HS mất bài, không khôi phục được."
-          />
-        )}
-        {state.antiCheat.requireFullscreen && (
-          <AutoSubmitLimit
-            title="Tự nộp bài khi HS thoát toàn màn hình"
-            hint="Trình duyệt không cho trang web chặn Esc / F11, nên đây là hậu quả khi HS thoát, không phải ngăn thoát."
-            noun="Thoát"
-            value={state.antiCheat.fullscreenExitLimit ?? 0}
-            onChange={(v) =>
-              setState((s) => ({
-                ...s,
-                antiCheat: { ...s.antiCheat, fullscreenExitLimit: v },
-              }))
-            }
-            canhBaoMotLan="⚠ Không có lần cảnh báo nào. Một cú Esc nhỡ tay, khoá màn hình, hay rút màn hình ngoài là HS mất bài, không khôi phục được."
-          />
-        )}
+        <AntiCheatEditor
+          value={state.antiCheat}
+          onChange={(antiCheat) => setState((s) => ({ ...s, antiCheat }))}
+        />
       </section>
 
       {/* Summary */}
@@ -3749,10 +3546,8 @@ function Step5Config({
             {state.rooms.reduce((s, r) => s + r.proctorIds.length, 0)} giám thị
           </Row>
           <Row label="Anti-cheat">
-            {
-              Object.values(state.antiCheat).filter(Boolean).length
-            }{" "}
-            /{Object.keys(state.antiCheat).length} biện pháp đã bật
+            {countAntiCheatOn(state.antiCheat).on} /
+            {countAntiCheatOn(state.antiCheat).total} biện pháp đã bật
           </Row>
         </dl>
       </section>
