@@ -119,8 +119,15 @@ const SOLUTION_RE = /^\s*(Solution|Lời giải|Hướng dẫn giải|Giải th�
  */
 const SOLUTION_BARE_RE = /^\s*(Solution|Lời giải|Hướng dẫn giải|Giải thích)\s*$/i;
 
-/** Ý con của câu Đúng/Sai: `a) …` `b) …`. Cùng quy ước với parser mã đề. */
-const SUBITEM_RE = /^\s*([a-dA-D])\)\s*(.*)$/;
+/**
+ * Ý con của câu Đúng/Sai: `a) …` `b) …` `a. …` `b. …`.
+ *
+ * Nhận CẢ dấu chấm, vì đề thật viết cả hai kiểu và người soạn không có lý do
+ * gì phải nhớ hệ thống thích kiểu nào. Chỉ dùng khi câu ĐÃ được biết là dạng
+ * Đúng/Sai nhiều ý (nhãn `[DSN]` hoặc mã `.F`), nên không đụng gì tới phương
+ * án A. B. C. D. của câu trắc nghiệm.
+ */
+const SUBITEM_RE = /^\s*([a-dA-D])[).]\s*(.*)$/;
 
 /** Đáp án trả lời ngắn: `<Key=42>` hoặc `<Key=42|50%|gợi ý>`. */
 const KEY_RE = /<Key\s*=\s*([^>]*)>/i;
@@ -395,7 +402,10 @@ function splitOptions(
     }
     return hits;
   };
-  let hits = scan("(?:^\\s*|\\t\\s*|\\s{2,})([A-H])\\s*[.:)]\\s*");
+  // Nhãn viết THƯỜNG cũng nhận: đề thật viết cả "A." lẫn "a.", người soạn
+  // không có lý do gì phải nhớ hệ thống thích kiểu nào. Nhãn được viết hoa
+  // lại ngay khi ghi nhận nên phần sau không đổi gì.
+  let hits = scan("(?:^\\s*|\\t\\s*|\\s{2,})([A-Ha-h])\\s*[.:)]\\s*");
   {
     // Bản chặt đòi tab hoặc từ 2 dấu cách trở lên giữa các phương án. Hai
     // nguồn thường gặp KHÔNG có khoảng cách đó:
@@ -410,7 +420,7 @@ function splitOptions(
     // nhận là nhãn phải ra ĐÚNG DÃY A, B, C… liền mạch từ A. Một dãy liền
     // mạch trong cùng một dòng là bằng chứng đây là danh sách phương án
     // thật; chữ cái lẻ trong câu văn gần như không bao giờ xếp được như vậy.
-    const loose = scan("(?:^\\s*|\\t\\s*|\\s+)([A-H])\\s*[.:)]\\s*");
+    const loose = scan("(?:^\\s*|\\t\\s*|\\s+)([A-Ha-h])\\s*[.:)]\\s*");
     const seq = loose.every((h, i) => h.label === String.fromCharCode(65 + i));
     // Hai cửa vào, mỗi cửa cho một nguồn, và cả hai đều đóng với câu văn:
     //

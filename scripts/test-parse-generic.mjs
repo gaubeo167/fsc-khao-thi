@@ -695,5 +695,48 @@ const Uc = "⟦/U⟧";
   check("chữ cái đơn không bị nhận nhầm là tiêu đề phần", (r.questions[0]?.options ?? []).length === 4);
 }
 
+/* ── Nhãn viết THƯỜNG và dấu CHẤM ───────────────────────────────────────
+ *
+ * Đề thật viết cả "A." lẫn "a.", cả "a)" lẫn "a.". Bản trước chỉ nhận chữ
+ * HOA cho phương án và chỉ nhận dấu `)` cho ý Đúng/Sai, nên một đề tiếng Anh
+ * đúng mẫu vẫn báo "Chưa nhận ra dạng câu hỏi" và không tách được ý nào.
+ */
+{
+  const than = "Câu 1. [NB][TN] Thủ đô Việt Nam?\na. Hà Nội\nb. Huế\nc. Đà Nẵng\nd. Cần Thơ";
+  const ngoac = than.replace(/([a-d])\./g, "$1)");
+  for (const [ten, de] of [["a.", than], ["a)", ngoac]]) {
+    const q = parseGeneric(de).questions[0];
+    check(`phương án viết thường "${ten}" vẫn đủ 4`, (q?.options ?? []).length === 4,
+      JSON.stringify((q?.options ?? []).map((o) => o.content)));
+    check(`phương án viết thường "${ten}" giữ đúng nhãn A-D`,
+      (q?.options ?? []).map((o) => o.label).join("") === "ABCD",
+      JSON.stringify((q?.options ?? []).map((o) => o.label)));
+  }
+}
+{
+  // Câu Đúng/Sai nhiều ý, kiểu đề tiếng Anh: "Câu 4:" + ý "a."
+  const de = [
+    "Câu 4: [TH][DSN] Listen and decide if the statements below are true (T) or false (F).",
+    "a. Students play football every Thursday afternoon.",
+    "b. The headmaster hates songs.",
+    "c. There is a singing contest each month.",
+    "d. Only girls join in flower arranging competition.",
+  ].join("\n");
+  const q = parseGeneric(de).questions[0];
+  check("ý Đúng/Sai đánh bằng dấu chấm vẫn tách đủ 4",
+    (q?.subQuestions ?? []).length === 4, JSON.stringify(q?.subQuestions));
+  check("ý Đúng/Sai KHÔNG bị nhận nhầm thành phương án",
+    (q?.options ?? []).length === 0, JSON.stringify(q?.options));
+  check("đề bài dừng đúng trước ý a", !/Students play football/.test(q?.content ?? ""),
+    JSON.stringify(q?.content));
+}
+{
+  // Chốt chặn cũ phải còn nguyên: chữ cái lẻ giữa câu văn không thành phương án.
+  const de = "Câu 1. [NB][TN] Thuyết tương đối do A. Einstein đề xuất năm nào?\nA. 1905\nB. 1915\nC. 1925\nD. 1935";
+  const q = parseGeneric(de).questions[0];
+  check("“theo A. Einstein” giữa câu vẫn không thành phương án",
+    (q?.options ?? []).length === 4, JSON.stringify((q?.options ?? []).map((o) => o.content)));
+}
+
 console.log(`\n${pass} pass · ${fail} fail`);
 process.exit(fail === 0 ? 0 : 1);

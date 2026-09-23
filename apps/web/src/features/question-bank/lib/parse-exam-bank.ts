@@ -84,7 +84,8 @@ const LEADING_CAU_RE = /^Câu\s*\d+\s*[.:)]?\s*/i;
 // A bracket that looks like an attempt at a code but doesn't match.
 const BAD_CODE_RE = /^\[\s*[A-Za-z0-9.\s]+\]/;
 const OPTION_RE = /^([A-Z])[.)]\s*(.*)$/; // A. …  /  B) …
-const SUBITEM_RE = /^([a-d])\)\s*(.*)$/; // a) …
+// `a) …` và `a. …` — đề thật viết cả hai kiểu. Chỉ dùng cho câu mã `.F`.
+const SUBITEM_RE = /^([a-d])[).]\s*(.*)$/;
 const KEY_RE = /<Key\s*=\s*([^>]*)>/i;
 /** Mở đầu phần lời giải viết dưới câu hỏi (hay gặp nhất ở câu tự luận).
  *  Mọi dòng sau đó thuộc về lời giải, tới khi gặp câu kế tiếp. */
