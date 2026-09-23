@@ -64,6 +64,7 @@ import { useCampusStore } from "@/features/campus/state/campus-store";
 import { useExamFormsStore } from "@/features/exam-forms/state/exam-forms-store";
 import { materializeQuickForm } from "@/features/exam-forms/lib/materialize";
 import { useGradesStore } from "@/features/grades/state/grades-store";
+import { RenderedContent } from "@/features/question-bank/components/rendered-content";
 import { QUESTION_TYPES, type QuestionType } from "@/features/question-bank/data/question-types";
 import { useQuestionsStore } from "@/features/question-bank/state/questions-store";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
@@ -541,9 +542,11 @@ export function QuickTestDialog({ open, onOpenChange }: Props) {
                     <span className="text-meta font-semibold text-muted-foreground">
                       {i + 1}.
                     </span>
-                    <span className="text-small line-clamp-2 flex-1">
-                      {q.content.replace(/!\[[^\]]*\]\([^)]*\)/g, "🖼 ").slice(0, 160)}
-                    </span>
+                    <RenderedContent
+                      content={q.content}
+                      hideUnderlineMarks
+                      className="text-small line-clamp-2 min-w-0 flex-1"
+                    />
                     <button
                       type="button"
                       className="text-meta text-destructive"

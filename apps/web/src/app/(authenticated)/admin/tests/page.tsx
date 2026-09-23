@@ -12,13 +12,28 @@
  * chung màn hình với ca thi.
  */
 
-import { Activity, BarChart3, ClipboardList, EyeOff, Plus, RotateCcw } from "lucide-react";
+import {
+  Activity,
+  BarChart3,
+  CalendarClock,
+  CheckCircle2,
+  ClipboardList,
+  EyeOff,
+  ListChecks,
+  Plus,
+  RotateCcw,
+  Search,
+  Timer,
+} from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { KpiCard } from "@/components/ui/kpi-card";
+import { Select } from "@/components/ui/select";
 import { useAuthStore } from "@/features/auth/state/auth-store";
 import { useCampusGate } from "@/features/campus/hooks/use-campus-gate";
 import { useCampusStore } from "@/features/campus/state/campus-store";
@@ -30,6 +45,11 @@ import {
 } from "@/features/exam-shifts/data/types";
 import { useShiftsStore } from "@/features/exam-shifts/state/shifts-store";
 import { useGradesStore } from "@/features/grades/state/grades-store";
+import {
+  filterGradesByScope,
+  filterSubjectsByScope,
+  useUserScope,
+} from "@/features/auth/lib/use-scope";
 import { PageHeader } from "@/features/shell/components/page-header";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import { cn } from "@/lib/utils";
@@ -63,20 +83,76 @@ export default function AdminTestsPage() {
   const restore = useShiftsStore((s) => s.restore);
   const subjects = useSubjectsStore((s) => s.subjects);
   const classes = useGradesStore((s) => s.classes);
+  const grades = useGradesStore((s) => s.grades);
   const { canMutate } = useCampusGate();
 
   const [creating, setCreating] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<ShiftStatus | "all">("all");
+  const [subjectFilter, setSubjectFilter] = useState("all");
+  const [gradeFilter, setGradeFilter] = useState("all");
+  const userScope = useUserScope();
 
   const campusId = session?.role === "superadmin" ? activeCampusId : session?.campusId ?? null;
 
+  // Ô chọn Môn · Khối cắt theo phạm vi của người đang xem — TBM không thấy
+  // môn mình không phụ trách.
+  const scopedSubjects = useMemo(
+    () => filterSubjectsByScope(subjects, userScope),
+    [subjects, userScope],
+  );
+  const scopedGrades = useMemo(
+    () => filterGradesByScope(grades, userScope),
+    [grades, userScope],
+  );
+
+  /** Tập bài kiểm tra trong phạm vi — thẻ thống kê đếm trên tập này. */
+  const scope = useMemo(
+    () =>
+      shifts
+        .filter((s) => isQuickTest(s))
+        .filter((s) => (campusId ? s.campusId === campusId : true))
+        .filter((s) => (showArchived ? true : !s.archivedAt)),
+    [shifts, campusId, showArchived],
+  );
+
+  const kpis = useMemo(() => {
+    const byStatus = (st: ShiftStatus) =>
+      scope.filter((s) => effectiveShiftStatus(s) === st).length;
+    return {
+      total: scope.length,
+      inProgress: byStatus("in-progress"),
+      scheduled: byStatus("scheduled"),
+      completed: byStatus("completed"),
+      students: scope.reduce(
+        (n, s) => n + s.rooms.reduce((m, r) => m + r.studentIds.length, 0),
+        0,
+      ),
+    };
+  }, [scope]);
+
   const rows = useMemo(() => {
-    return shifts
-      .filter((s) => isQuickTest(s))
-      .filter((s) => (campusId ? s.campusId === campusId : true))
-      .filter((s) => (showArchived ? true : !s.archivedAt))
-      .sort((a, b) => b.startAt.localeCompare(a.startAt));
-  }, [shifts, campusId, showArchived]);
+    let out = scope;
+    if (statusFilter !== "all") {
+      out = out.filter((s) => effectiveShiftStatus(s) === statusFilter);
+    }
+    if (subjectFilter !== "all") out = out.filter((s) => s.subjectId === subjectFilter);
+    if (gradeFilter !== "all") out = out.filter((s) => s.gradeId === gradeFilter);
+    const q = search.trim().toLowerCase();
+    if (q) {
+      out = out.filter((s) =>
+        `${s.name} ${s.ownerName ?? ""} ${s.id}`.toLowerCase().includes(q),
+      );
+    }
+    return [...out].sort((a, b) => b.startAt.localeCompare(a.startAt));
+  }, [scope, statusFilter, subjectFilter, gradeFilter, search]);
+
+  const dirty =
+    statusFilter !== "all" ||
+    subjectFilter !== "all" ||
+    gradeFilter !== "all" ||
+    search.trim() !== "";
 
   const nameOfClasses = (s: ExamShift) =>
     s.classIds
@@ -96,22 +172,121 @@ export default function AdminTestsPage() {
         }
       />
 
-      <label className="mb-3 inline-flex items-center gap-2">
-        <input
-          type="checkbox"
-          className="h-4 w-4"
-          checked={showArchived}
-          onChange={(e) => setShowArchived(e.target.checked)}
+      {/* Thẻ thống kê — cùng khuôn với màn giao BTVN */}
+      <section className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <KpiCard
+          label="Tổng bài kiểm tra"
+          value={kpis.total.toLocaleString("vi-VN")}
+          icon={ClipboardList}
+          tone="blue"
         />
-        <span className="text-meta text-muted-foreground">Hiển thị bài đã ẩn</span>
-      </label>
+        <KpiCard
+          label="Đang làm"
+          value={kpis.inProgress.toLocaleString("vi-VN")}
+          icon={Timer}
+          tone="green"
+        />
+        <KpiCard
+          label="Sắp mở"
+          value={kpis.scheduled.toLocaleString("vi-VN")}
+          icon={CalendarClock}
+          tone="orange"
+        />
+        <KpiCard
+          label="Đã đóng"
+          value={kpis.completed.toLocaleString("vi-VN")}
+          icon={CheckCircle2}
+          tone="violet"
+        />
+      </section>
+
+      {/* Bộ lọc */}
+      <div className="mb-3 flex flex-wrap items-center gap-2.5 rounded-xl border bg-card p-3">
+        <div className="relative min-w-[220px] flex-1">
+          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Tìm theo tên bài / giáo viên / mã…"
+            className="h-9 pl-8"
+          />
+        </div>
+        <Select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value as ShiftStatus | "all")}
+          className="h-9 min-w-[140px]"
+        >
+          <option value="all">Trạng thái: Tất cả</option>
+          <option value="scheduled">Sắp mở</option>
+          <option value="in-progress">Đang làm</option>
+          <option value="completed">Đã đóng</option>
+          <option value="cancelled">Đã huỷ</option>
+        </Select>
+        <Select
+          value={subjectFilter}
+          onChange={(e) => setSubjectFilter(e.target.value)}
+          className="h-9 min-w-[140px]"
+        >
+          <option value="all">Môn: Tất cả</option>
+          {scopedSubjects.map((x) => (
+            <option key={x.id} value={x.id}>
+              {x.name}
+            </option>
+          ))}
+        </Select>
+        <Select
+          value={gradeFilter}
+          onChange={(e) => setGradeFilter(e.target.value)}
+          className="h-9 min-w-[110px]"
+        >
+          <option value="all">Khối: Tất cả</option>
+          {scopedGrades.map((g) => (
+            <option key={g.id} value={g.id}>
+              {g.name}
+            </option>
+          ))}
+        </Select>
+        <label className="text-meta inline-flex items-center gap-1.5 font-medium text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={showArchived}
+            onChange={(e) => setShowArchived(e.target.checked)}
+            className="h-3.5 w-3.5"
+          />
+          Hiển thị bài đã ẩn
+        </label>
+        {dirty && (
+          <button
+            type="button"
+            onClick={() => {
+              setStatusFilter("all");
+              setSubjectFilter("all");
+              setGradeFilter("all");
+              setSearch("");
+            }}
+            className="text-meta rounded-md border px-2.5 py-1 font-medium text-muted-foreground hover:bg-accent"
+          >
+            Xoá lọc
+          </button>
+        )}
+      </div>
 
       {rows.length === 0 ? (
         <div className="rounded-xl border bg-card px-6 py-12 text-center">
           <ClipboardList className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-          <p className="text-body font-semibold">Chưa có bài kiểm tra nào</p>
+          <p className="text-body font-semibold">
+            {scope.length === 0
+              ? "Chưa có bài kiểm tra nào"
+              : "Không có bài nào khớp bộ lọc"}
+          </p>
           <p className="text-meta mt-1 text-muted-foreground">
-            Bấm <b>Tạo bài kiểm tra</b> để ra đề từ kho câu hỏi của bạn.
+            {scope.length === 0 ? (
+              <>
+                Bấm <b>Tạo bài kiểm tra</b> để ra đề từ kho câu hỏi của bạn.
+              </>
+            ) : (
+              "Thử xoá lọc để xem toàn bộ."
+            )}
           </p>
         </div>
       ) : (

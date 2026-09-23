@@ -20,6 +20,7 @@ import { Scale } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
 import { ScoringPolicyEditor } from "@/features/exams/components/scoring-policy-editor";
+import { RenderedContent } from "@/features/question-bank/components/rendered-content";
 import { DEFAULT_DS_GRADUATED } from "@/features/exams/data/types";
 import type { Question } from "@/features/question-bank/data/seed-questions";
 import { cn } from "@/lib/utils";
@@ -141,22 +142,21 @@ export function QuickScoringEditor({
             const on = scoring.mode === m.v;
             return (
               <li key={m.v}>
-                <label
+                {/* Nút thật chứ không phải <label> bọc radio ẩn: radio ẩn nhận
+                    focus thì trình duyệt tự cuộn nó vào giữa màn, làm cả hộp
+                    thoại nhảy vọt lên mỗi lần đổi cách chia điểm. */}
+                <button
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => setMode(m.v)}
                   className={cn(
-                    "block cursor-pointer rounded-lg border-2 bg-card p-2.5 transition",
+                    "block w-full rounded-lg border-2 bg-card p-2.5 text-left transition",
                     on ? "border-primary bg-primary/5" : "border-border hover:bg-accent/20",
                   )}
                 >
-                  <input
-                    type="radio"
-                    name="quickScoringMode"
-                    className="sr-only"
-                    checked={on}
-                    onChange={() => setMode(m.v)}
-                  />
                   <p className="text-small font-semibold">{m.label}</p>
                   <p className="text-hint mt-0.5 text-muted-foreground">{m.hint}</p>
-                </label>
+                </button>
               </li>
             );
           })}
@@ -250,9 +250,11 @@ export function QuickScoringEditor({
                 <span className="text-meta w-6 shrink-0 font-semibold text-muted-foreground">
                   {i + 1}.
                 </span>
-                <span className="text-small line-clamp-1 min-w-0 flex-1">
-                  {q.content.replace(/!\[[^\]]*\]\([^)]*\)/g, "🖼 ").slice(0, 90)}
-                </span>
+                <RenderedContent
+                  content={q.content}
+                  hideUnderlineMarks
+                  className="text-small line-clamp-1 min-w-0 flex-1"
+                />
                 <Input
                   type="number"
                   min={0}

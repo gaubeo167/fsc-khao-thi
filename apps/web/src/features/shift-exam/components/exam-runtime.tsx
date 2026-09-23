@@ -485,6 +485,17 @@ export function ExamRuntime({
   const violationTotal =
     violations.tabSwitches + violations.fullscreenExits + violations.pasteAttempts;
 
+  // Biện pháp chống gian lận ĐANG ràng buộc học sinh trong lúc làm bài. Chỉ
+  // liệt kê thứ đổi hành vi của HS — đảo câu / đảo đáp án là chuyện của đề,
+  // nói ra ở đây cũng không giúp gì cho người đang làm bài.
+  const antiCheatLines = [
+    shift.antiCheat.requireFullscreen && "Yêu cầu fullscreen",
+    shift.antiCheat.blockTabSwitch && "Chặn đổi tab",
+    shift.antiCheat.blockCopyPaste && "Chặn copy/paste",
+    shift.antiCheat.blockRightClick && "Chặn chuột phải",
+    shift.antiCheat.oneTimeStart && "Chỉ vào thi 1 lần",
+  ].filter((x): x is string => typeof x === "string");
+
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_280px]">
       {/* Main panel */}
@@ -704,18 +715,21 @@ export function ExamRuntime({
           </ul>
         </div>
 
-        <div className="rounded-xl border bg-card p-3 text-[12px]">
-          <div className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-[0.06em] text-foreground/65">
-            <Shield className="h-3 w-3" /> Anti-cheat đang bật
+        {/* Không bật biện pháp nào thì KHÔNG hiện khung này. Trước đây khung
+            luôn hiện kèm danh sách rỗng, nên bài kiểm tra tắt sạch chống gian
+            lận vẫn doạ học sinh "Anti-cheat đang bật" mà không nói gì thêm. */}
+        {antiCheatLines.length > 0 && (
+          <div className="rounded-xl border bg-card p-3 text-[12px]">
+            <div className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-[0.06em] text-foreground/65">
+              <Shield className="h-3 w-3" /> Anti-cheat đang bật
+            </div>
+            <ul className="mt-2 space-y-0.5 text-[11px] text-muted-foreground">
+              {antiCheatLines.map((line) => (
+                <li key={line}>• {line}</li>
+              ))}
+            </ul>
           </div>
-          <ul className="mt-2 space-y-0.5 text-[11px] text-muted-foreground">
-            {shift.antiCheat.requireFullscreen && <li>• Yêu cầu fullscreen</li>}
-            {shift.antiCheat.blockTabSwitch && <li>• Chặn đổi tab</li>}
-            {shift.antiCheat.blockCopyPaste && <li>• Chặn copy/paste</li>}
-            {shift.antiCheat.blockRightClick && <li>• Chặn chuột phải</li>}
-            {shift.antiCheat.oneTimeStart && <li>• Chỉ vào thi 1 lần</li>}
-          </ul>
-        </div>
+        )}
       </aside>
 
       {/* Proctor message toast — blocks input until acknowledged. */}

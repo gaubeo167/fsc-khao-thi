@@ -328,6 +328,25 @@ check(
   "hai màn lệch cấu hình chống gian lận",
 );
 
+/*
+ * Tắt sạch chống gian lận thì màn làm bài KHÔNG được doạ học sinh.
+ *
+ * Bài kiểm tra cho giáo viên tắt toàn bộ biện pháp. Khung "Anti-cheat đang
+ * bật" ở cột phải trước đây hiện vô điều kiện, nên lúc đó nó hiện đúng một
+ * dòng tiêu đề với danh sách rỗng: học sinh đọc ra "đang bị giám sát" mà
+ * không biết bị giám sát cái gì, còn giáo viên thì tưởng mình chưa tắt được.
+ */
+check(
+  "khung anti-cheat ở màn làm bài có điều kiện, không hiện khung rỗng",
+  /antiCheatLines\.length > 0 && \(/.test(runtime),
+  "tắt hết biện pháp mà HS vẫn thấy 'Anti-cheat đang bật' với danh sách rỗng",
+);
+check(
+  "danh sách biện pháp dựng từ cấu hình của ca, không viết cứng",
+  /antiCheatLines\.map\(/.test(runtime),
+  "thêm biện pháp mới mà quên sửa danh sách là HS không được báo",
+);
+
 /* ───────── 5. Không có cờ anti-cheat giả ───────── */
 
 // `requireWebcam` / `faceDetection` từng là cờ bật được trong wizard, hiện
