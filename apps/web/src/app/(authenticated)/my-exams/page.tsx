@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { Select } from "@/components/ui/select";
 import { useAuthStore } from "@/features/auth/state/auth-store";
-import type { ShiftStatus } from "@/features/exam-shifts/data/types";
+import { isQuickTest, type ShiftStatus } from "@/features/exam-shifts/data/types";
 import { PageHeader } from "@/features/shell/components/page-header";
 import { StudentShiftCard } from "@/features/student/components/student-shift-card";
 import { useMyShifts } from "@/features/student/hooks/use-my-shifts";
@@ -46,7 +46,13 @@ export default function MyExamsPage() {
   const [filter, setFilter] = useState<FilterValue>(initialFilter);
   const [search, setSearch] = useState("");
   const [subjectFilter, setSubjectFilter] = useState<string>("all");
-  const myShifts = useMyShifts();
+  const allMine = useMyShifts();
+  // Bài kiểm tra của giáo viên có màn riêng (/my-tests). Lịch thi chỉ là ca thi
+  // chính thức của trường — trộn chung thì học sinh không biết cái nào quan trọng.
+  const myShifts = useMemo(
+    () => allMine.filter((m) => !isQuickTest(m.shift)),
+    [allMine],
+  );
   const subjects = useSubjectsStore((s) => s.subjects);
 
   // 30s tick so countdowns and status badges stay fresh.

@@ -145,9 +145,21 @@ interface AiInfo {
 export function ImportQuestionsDialog({
   open,
   onOpenChange,
+  defaultKho = "campus",
+  onSaved,
 }: {
   open: boolean;
   onOpenChange(v: boolean): void;
+  /** Kho chọn sẵn ở chân hộp thoại. Bài kiểm tra mặc định vào kho cá nhân. */
+  defaultKho?: "personal" | "campus";
+  /**
+   * Id các câu vừa ghi vào kho.
+   *
+   * Màn tải đề của Ngân hàng câu hỏi không cần tới; màn tạo BÀI KIỂM TRA thì
+   * có — giáo viên tải một file Word là câu vào kho cá nhân VÀ gắn thẳng vào
+   * bài kiểm tra, không phải đi tìm lại từng câu.
+   */
+  onSaved?: (questionIds: string[]) => void;
 }) {
   const session = useAuthStore((s) => s.session);
   const activeCampusId = useCampusStore((s) => s.activeCampusId);
@@ -194,7 +206,7 @@ export function ImportQuestionsDialog({
   /** Mục lục = CHỖ CẤT câu hỏi trong kho, khác với chuyên đề YCCĐ. */
   const [tocNodeId, setTocNodeId] = useState("");
   /** Kho cá nhân (chỉ mình thấy) hay kho campus (cả trường dùng chung). */
-  const [kho, setKho] = useState<"personal" | "campus">("campus");
+  const [kho, setKho] = useState<"personal" | "campus">(defaultKho);
   /** Nhờ AI dựng lại công thức bị vỡ khi rút chữ từ PDF. Mặc định TẮT. */
   const [useAi, setUseAi] = useState(false);
   /**
@@ -446,6 +458,7 @@ export function ImportQuestionsDialog({
     setSaving(true);
     try {
       const campusId = session.campusId ?? activeCampusId ?? null;
+      const savedIds: string[] = [];
       let written = 0;
       drafts.forEach((d, i) => {
         // Gửi duyệt: chỉ ghi câu đã đủ. Lưu nháp: ghi tất cả những câu ghi
@@ -466,7 +479,7 @@ export function ImportQuestionsDialog({
             target === "draft" ? "draft" : kho === "personal" ? "approved" : "pending",
         });
         if (q) {
-          createQuestion(q);
+          savedIds.push(createQuestion(q).id);
           written += 1;
         }
       });
@@ -477,7 +490,10 @@ export function ImportQuestionsDialog({
             ? `Đã lưu ${written} câu.`
             : `Đã lưu ${written}/${drafts.length} câu. Số còn lại chưa chọn được dạng câu hỏi nên không ghi được.`,
       });
-      if (written > 0) onOpenChange(false);
+      if (written > 0) {
+        onSaved?.(savedIds);
+        onOpenChange(false);
+      }
     } finally {
       setSaving(false);
     }

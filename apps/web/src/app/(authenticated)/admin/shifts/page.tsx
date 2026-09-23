@@ -49,6 +49,7 @@ import {
   effectiveShiftStatus,
   type ExamShift,
   type ShiftStatus,
+  isQuickTest,
 } from "@/features/exam-shifts/data/types";
 import { useShiftsStore } from "@/features/exam-shifts/state/shifts-store";
 import { buildLockedMessage, shiftInUse } from "@/lib/in-use";
@@ -176,6 +177,10 @@ export default function ShiftsPage() {
 
   const scoped = useMemo(() => {
     return shifts.filter((s) => {
+      // Bài kiểm tra giáo viên tự ra có màn riêng (/admin/tests). Cùng là bản
+      // ghi ca thi, nhưng để lẫn ở đây thì màn ca thi của trường bị lấp bởi
+      // hàng chục bài 15 phút.
+      if (isQuickTest(s)) return false;
       if (campusId && s.campusId !== campusId) return false;
       // Subject/grade scope — teachers only see shifts in their
       // assigned môn/khối. Admin roles (`isUnscoped`) see everything.

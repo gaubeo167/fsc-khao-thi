@@ -333,7 +333,9 @@ export function ShiftWizard({
         subjectId: editing.subjectId,
         classIds: editing.classIds,
         selectedStudentIds: existingStudentIds,
-        packageId: editing.packageId,
+        // Ca thi luôn có gói đề; trường thành tuỳ chọn là vì BÀI KIỂM TRA
+        // không đi qua gói đề (xem `ShiftKind`), trình tạo ca thi thì không.
+        packageId: editing.packageId ?? "",
         startAt: toDatetimeLocal(new Date(editing.startAt)),
         endAt: toDatetimeLocal(new Date(editing.endAt)),
         lateJoinMinutes: editing.lateJoinMinutes,

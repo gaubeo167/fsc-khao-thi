@@ -177,6 +177,88 @@ export function materializeExamForm(input: MaterializeInput): ExamForm {
   return form;
 }
 
+/** Đóng băng đề cho BÀI KIỂM TRA — đầu vào là danh sách câu, không phải gói đề. */
+export interface QuickMaterializeInput {
+  shiftId: string;
+  campusId: string | null;
+  /** Câu hỏi theo ĐÚNG thứ tự giáo viên đã chọn. */
+  questions: Question[];
+  /** Số mã đề. 1 = mọi học sinh cùng một thứ tự. */
+  variantCount: number;
+  scoring: ScoringConfig;
+  durationMinutes: number;
+  actorUid: string;
+  formId: string;
+  now?: string;
+}
+
+/**
+ * Đóng băng đề cho bài kiểm tra giáo viên tự ra.
+ *
+ * Khác `materializeExamForm` đúng một chỗ: nguồn câu hỏi. Ca thi rút câu theo
+ * ma trận của gói đề; bài kiểm tra lấy thẳng danh sách câu giáo viên đã chọn.
+ * Mọi thứ còn lại — ảnh chụp câu hỏi, điểm từng câu, cách chấm đóng băng, mã
+ * băm toàn vẹn — dùng CHUNG hàm với ca thi, để một bài kiểm tra chấm ra điểm
+ * y hệt một ca thi cùng nội dung.
+ *
+ * Nhiều mã đề thì đảo thứ tự câu ở từng mã. Đảo ở đây chứ không đảo lúc làm
+ * bài: đề đã đóng băng thì hai học sinh cùng mã đề luôn thấy cùng một thứ tự,
+ * và chấm lại sau này vẫn ra đúng đề cũ.
+ */
+export function materializeQuickForm(input: QuickMaterializeInput): ExamForm {
+  const { shiftId, campusId, questions, scoring, actorUid, formId } = input;
+  if (input.variantCount < 1) throw new Error("variantCount must be ≥ 1");
+  if (questions.length === 0) {
+    throw new Error("materializeQuickForm: bài kiểm tra chưa có câu hỏi nào");
+  }
+  const now = input.now ?? new Date().toISOString();
+
+  const variants: ExamFormVariant[] = Array.from(
+    { length: input.variantCount },
+    (_, vIdx) => {
+      const ordered = vIdx === 0 ? questions : shuffled(questions);
+      const snapshots = ordered.map((q) => freezeQuestion(q, now));
+      return {
+        variantId: `${formId}-v${String(vIdx + 1).padStart(3, "0")}`,
+        name: `Đề ${String(vIdx + 1).padStart(3, "0")}`,
+        questions: snapshots,
+        perQuestion: computePerQuestionScoring(snapshots, scoring),
+      };
+    },
+  );
+
+  const form: ExamForm = {
+    id: formId,
+    shiftId,
+    campusId,
+    maxScore: scoring.maxScore,
+    scoringPolicy: policyFromScoringConfig(scoring),
+    durationMinutes: input.durationMinutes,
+    variants,
+    // Thứ tự câu đã chốt ngay khi đóng băng, nên lúc làm bài không đảo nữa.
+    orderStrategy: "as-authored",
+    showSectionHeadings: false,
+    integrityHash: "",
+    materializedAt: now,
+    materializedBy: actorUid,
+    lifecycle: "active",
+    createdAt: now,
+    updatedAt: now,
+  };
+  form.integrityHash = computeIntegrityHash(form);
+  return form;
+}
+
+/** Đảo thứ tự, không đụng mảng gốc (Fisher–Yates). */
+function shuffled<T>(items: readonly T[]): T[] {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j]!, out[i]!];
+  }
+  return out;
+}
+
 /**
  * Clone a live Question into a QuestionSnapshot. We spread the entire
  * Question object — keeping the discriminated `type` tag so the

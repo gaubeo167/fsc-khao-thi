@@ -44,6 +44,8 @@ const ViewQuestionDialog = dynamic(
 );
 import { cn } from "@/lib/utils";
 
+import type { QuestionType } from "@/features/question-bank/data/question-types";
+
 import { HOMEWORK_QUESTION_TYPES } from "../data/types";
 
 interface Props {
@@ -60,6 +62,13 @@ interface Props {
   subjectId: string;
   gradeId?: string | null;
   campusId: string | null;
+  /**
+   * Dạng câu được phép chọn. Mặc định là các dạng máy chấm được (BTVN).
+   *
+   * Bài kiểm tra dùng lại đúng bộ chọn này nhưng cho phép cả câu tự luận,
+   * vì nó đi qua màn chấm tay như ca thi.
+   */
+  allowedTypes?: ReadonlySet<QuestionType>;
 }
 
 type KhoView = "campus" | "personal";
@@ -80,7 +89,9 @@ export function QuestionPickerDialog({
   subjectId,
   gradeId,
   campusId,
+  allowedTypes,
 }: Props) {
+  const types = allowedTypes ?? HOMEWORK_QUESTION_TYPES;
   const session = useAuthStore((s) => s.session);
   const allQuestions = useQuestionsStore((s) => s.questions);
   const tocNodes = useSubjectsStore((s) => s.tocNodes);
@@ -131,7 +142,7 @@ export function QuestionPickerDialog({
     return allQuestions
       .filter((q) => {
         if (q.archivedAt) return false;
-        if (!HOMEWORK_QUESTION_TYPES.has(q.type)) return false;
+        if (!types.has(q.type)) return false;
         if (subjectId && q.subjectId !== subjectId) return false;
         if (gradeId && q.gradeId && q.gradeId !== gradeId) return false;
         if (campusId && q.campusId && q.campusId !== campusId) return false;
@@ -200,8 +211,10 @@ export function QuestionPickerDialog({
               </DialogTitle>
               <DialogDescription className="mt-0.5">
                 {subject ? `Đang lọc môn ${subject.name}` : "Hãy chọn môn trước"}
-                {gradeId ? ` · khối liên quan` : ""} · chỉ hiển thị câu hỏi
-                tự chấm được
+                {gradeId ? ` · khối liên quan` : ""}
+                {/* Bài kiểm tra mở rộng sang cả câu chấm tay, nên chỉ nói
+                    "tự chấm được" khi đúng là đang lọc như vậy. */}
+                {allowedTypes ? "" : " · chỉ hiển thị câu hỏi tự chấm được"}
               </DialogDescription>
             </div>
           </div>
@@ -248,7 +261,7 @@ export function QuestionPickerDialog({
               className="h-9"
             >
               <option value="all">Tất cả</option>
-              {[...HOMEWORK_QUESTION_TYPES].map((t) => {
+              {[...types].map((t) => {
                 const meta = findQuestionType(t as Question["type"]);
                 return (
                   <option key={t} value={t}>

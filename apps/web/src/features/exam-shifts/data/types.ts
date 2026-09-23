@@ -59,6 +59,12 @@ export function effectiveShiftStatus(
   return "in-progress";
 }
 
+/** Ca thi chính thức, hay bài kiểm tra do giáo viên tự ra. */
+export type ShiftKind = "exam" | "test";
+
+/** Bản ghi này là bài kiểm tra? (Không ghi `kind` = ca thi, như dữ liệu cũ.) */
+export const isQuickTest = (s: { kind?: ShiftKind }): boolean => s.kind === "test";
+
 export interface ShiftRoom {
   id: string;
   /** Free-form name as labelled in the building, e.g. "Phòng 201". */
@@ -283,13 +289,41 @@ export interface ExamShift {
   id: string;
   name: string;
 
+  /**
+   * Ca thi CHÍNH THỨC hay BÀI KIỂM TRA giáo viên tự ra.
+   *
+   * Không có trường này = ca thi, đúng như mọi ca đã tạo từ trước.
+   *
+   * Hai thứ dùng chung một bản ghi vì chúng cần y hệt nhau ở phía sau: đồng
+   * hồ, chống gian lận, ghi vi phạm, phòng giám sát, chấm tự luận, báo cáo.
+   * Khác nhau ở đường TẠO ra: ca thi đi qua khung đề → gói đề đã duyệt; bài
+   * kiểm tra lấy thẳng câu từ kho của giáo viên. Tách thành hai thực thể là
+   * nhân đôi toàn bộ phần phía sau, và mỗi lần sửa lỗi phải sửa hai nơi.
+   */
+  kind?: ShiftKind;
+
   // Step 1 — Đối tượng
   gradeId: string;
   subjectId: string;
   classIds: string[];
 
   // Step 2 — Bộ đề
-  packageId: string;
+  /** Gói đề. Bài kiểm tra không đi qua gói đề nên để trống. */
+  packageId?: string;
+  /**
+   * Câu hỏi lấy thẳng từ kho — CHỈ dùng cho bài kiểm tra.
+   *
+   * Nội dung học sinh làm vẫn là bản ĐÓNG BĂNG trong `exam_forms`; danh sách
+   * này chỉ để mở lại màn sửa và để phòng giám sát biết đề có bao nhiêu câu.
+   */
+  questionIds?: string[];
+  /**
+   * Thời gian làm bài (phút) — chỉ bài kiểm tra mới ghi.
+   *
+   * Ca thi thường không có trường này: thời lượng nằm ở gói đề / khung đề và
+   * được đóng băng vào đề khi tạo ca.
+   */
+  durationMinutes?: number;
 
   // Step 3 — Lịch thi
   /** Absolute time student CAN start (ISO). */

@@ -64,7 +64,14 @@ export type QuestionSnapshot = Question & {
  *     maximal randomness, but sections/headings are meaningless so none
  *     are shown.
  */
-export type ExamOrderStrategy = "by-section" | "shuffle-all";
+/**
+ * Thứ tự câu trong một mã đề, ghi lại tại lúc ĐÓNG BĂNG.
+ *
+ * `as-authored` = giữ đúng thứ tự giáo viên đã chọn; bài kiểm tra tự ra dùng
+ * giá trị này. Ghi "shuffle-all" cho nó là ghi sai vào bản đóng băng, mà bản
+ * đóng băng là thứ dùng để chấm lại về sau.
+ */
+export type ExamOrderStrategy = "by-section" | "shuffle-all" | "as-authored";
 
 export interface ExamFormVariant {
   /** UUID for this variant within the form. Used by attempts to pin
@@ -91,10 +98,16 @@ export interface ExamForm {
   /** Owning shift. Reverse lookup: query exam_forms where shiftId == X
    *  AND lifecycle == "active". */
   shiftId: string;
-  /** Frozen pointer to the package this form was materialized from. */
-  packageId: string;
-  /** Frozen pointer to the blueprint. */
-  blueprintId: string;
+  /**
+   * Frozen pointer to the package this form was materialized from.
+   *
+   * Bài kiểm tra do giáo viên tự ra KHÔNG đi qua gói đề nên không có hai
+   * trường này (xem `ShiftKind`). Mọi chỗ đọc chúng đều tra bằng `.find()`
+   * rồi xử lý `undefined`, nên đề cũ không đổi gì.
+   */
+  packageId?: string;
+  /** Frozen pointer to the blueprint. Bài kiểm tra không có. */
+  blueprintId?: string;
   /** Campus this form belongs to — copied from shift for tenant isolation
    *  and rules-friendliness. */
   campusId: string | null;

@@ -16,6 +16,7 @@ import { useMemo, useState } from "react";
 
 import { Input } from "@/components/ui/input";
 import { useAuthStore } from "@/features/auth/state/auth-store";
+import { shiftQuestionPoolIds } from "@/features/exam-shifts/lib/question-pool";
 import { useShiftsStore } from "@/features/exam-shifts/state/shifts-store";
 import { useBlueprintsStore } from "@/features/exams/state/blueprints-store";
 import { usePackagesStore } from "@/features/exams/state/packages-store";
@@ -78,10 +79,12 @@ export default function GradingQueuePage() {
       if (!myShiftIds.has(shift.id)) continue;
       const pkg = packages.find((p) => p.id === shift.packageId);
       const bp = pkg ? blueprints.find((b) => b.id === pkg.blueprintId) : null;
-      if (!bp) continue;
       // Per-shift grading deadline (epoch ms), shared by all graders.
       const shiftDeadline = shift.gradingDeadlineMs ?? null;
-      const pickedIds = new Set(bp.topics.flatMap((t) => t.pickedQuestionIds));
+      // Bài kiểm tra không có khung đề nhưng vẫn có thể chứa câu tự luận —
+      // bỏ qua ca không có khung là bài tự luận nằm chờ mãi không ai chấm.
+      const pickedIds = new Set(shiftQuestionPoolIds(shift, bp));
+      if (pickedIds.size === 0) continue;
       const manualQs = allQuestions.filter(
         (q) => pickedIds.has(q.id) && isManualGradingType(q.type),
       );

@@ -318,7 +318,9 @@ export default function MonitorPage() {
         (a, r) => a + r.easyCount + r.mediumCount + r.hardCount,
         0,
       )
-    : 0;
+    : // Bài kiểm tra giáo viên tạo nhanh không có gói đề/ma trận — số câu nằm
+      // thẳng trên ca. Thiếu nhánh này thì cột tiến độ chia cho 0.
+      (shift?.questionIds?.length ?? 0);
 
   const startMs = shift ? new Date(shift.startAt).getTime() : 0;
   const endMs = shift ? new Date(shift.endAt).getTime() : 0;

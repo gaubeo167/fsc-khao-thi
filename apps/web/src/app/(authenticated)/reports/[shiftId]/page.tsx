@@ -26,6 +26,7 @@ import { useAuthStore } from "@/features/auth/state/auth-store";
 import { useCampusStore } from "@/features/campus/state/campus-store";
 import { DEFAULT_SCORING } from "@/features/exam-shifts/data/types";
 import { formatScore } from "@/features/exam-shifts/lib/scoring";
+import { shiftQuestionPoolIds } from "@/features/exam-shifts/lib/question-pool";
 import { useShiftsStore } from "@/features/exam-shifts/state/shifts-store";
 import { useBlueprintsStore } from "@/features/exams/state/blueprints-store";
 import { usePackagesStore } from "@/features/exams/state/packages-store";
@@ -76,7 +77,7 @@ export default function ReportDetailPage() {
     // Resolve pool + eligibility.
     const pkg = packages.find((p) => p.id === shift.packageId);
     const bp = pkg ? blueprints.find((b) => b.id === pkg.blueprintId) : null;
-    const poolIds = bp ? bp.topics.flatMap((t) => t.pickedQuestionIds) : [];
+    const poolIds = shiftQuestionPoolIds(shift, bp);
     const pool = poolIds
       .map((id) => allQuestions.find((q) => q.id === id))
       .filter((q): q is NonNullable<typeof q> => !!q);
