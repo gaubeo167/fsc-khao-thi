@@ -1,4 +1,5 @@
 import { dsRatio } from "@/lib/exam/ds-score";
+import { normaliseForCompare } from "@/lib/exam/short-answer-match";
 import { keyText, matchShortAnswer } from "@/lib/exam/short-answer-match";
 import type { Question } from "@/features/question-bank/data/seed-questions";
 
@@ -14,9 +15,10 @@ export interface GradeResult {
   studentText: string;
 }
 
-/** Normalize for fill-blank / short-answer comparison. */
+/** Normalize for fill-blank / short-answer comparison. Dùng chung luật với
+ *  bộ chấm thật: dấu nháy cong của Word phải khớp dấu nháy thẳng của HS. */
 function norm(s: string): string {
-  return s.trim().toLowerCase();
+  return normaliseForCompare(s);
 }
 
 /** Format student's MCQ-multi Set as a stable, comma-joined letter list. */

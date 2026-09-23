@@ -17,7 +17,7 @@ import type { Question } from "@/features/question-bank/data/seed-questions";
 import type { Answer } from "@/features/shift-exam/state/attempts-store";
 
 import { dsRatio } from "./ds-score";
-import { matchShortAnswer } from "./short-answer-match";
+import { matchShortAnswer, normaliseForCompare } from "./short-answer-match";
 
 export function gradeQuestion(
   q: Question,
@@ -56,9 +56,11 @@ export function gradeQuestion(
     }
     case "fill-blank": {
       if (a.kind !== "fill-blank") return { points: 0, correct: false };
+      // Cùng luật chuẩn hoá với câu trả lời ngắn — đáp án soạn trong Word
+      // mang dấu nháy cong, học sinh gõ dấu nháy thẳng.
       const allOk = q.blanks.every((b, i) => {
-        const guess = (a.blanks[i] ?? "").trim().toLowerCase();
-        return b.acceptedAnswers.map((s) => s.trim().toLowerCase()).includes(guess);
+        const guess = normaliseForCompare(a.blanks[i] ?? "");
+        return b.acceptedAnswers.map(normaliseForCompare).includes(guess);
       });
       return allOk ? { points: 1, correct: true } : { points: 0, correct: false };
     }

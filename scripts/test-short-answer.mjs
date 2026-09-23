@@ -82,6 +82,52 @@ eq('mảng chuỗi cũ, nhiều đáp án', r("Hanoi", ["Hà Nội", "Hanoi"]), 
 eq('đáp án rỗng → 0', r("gì đó", []), 0);
 eq('HS bỏ trống → 0', r("", ["Hà Nội"]), 0);
 
+console.log("\n── Dấu câu kiểu chữ: Word đổi \' thành \u2019 ──");
+//
+// Ca thi thật SHIFT-0055 (Tiếng Anh THCS khối 6): đáp án soạn trong Word nên
+// mang dấu nháy CONG (\u2019), học sinh gõ bàn phím ra dấu nháy THẲNG (\u0027).
+// Hai chuỗi nhìn y hệt nhau, chấm ra 0 điểm, và chấm lại bao nhiêu lần cũng
+// vẫn 0 vì đáp án không hề sai — chỉ khác một glyph.
+//
+// iOS/Android còn tự đổi dấu nháy của CHÍNH HỌC SINH thành cong, nên lỗi này
+// đi cả hai chiều.
+const NHAY_CONG = "She doesn\u2019t play badminton every afternoon.";
+const NHAY_THANG = "She doesn't play badminton every afternoon.";
+eq("HS gõ nháy thẳng · đáp án nháy cong", r(NHAY_THANG, [NHAY_CONG]), 1);
+eq("HS gõ nháy cong · đáp án nháy thẳng", r(NHAY_CONG, [NHAY_THANG]), 1);
+eq("nháy đơn kiểu \u02bc cũng vậy", r(NHAY_THANG, ["She doesn\u02bct play badminton every afternoon."]), 1);
+eq("nháy kép cong \u201c\u201d = nháy kép thẳng", r('He said "hi"', ["He said \u201chi\u201d"]), 1);
+eq("gạch ngang dài – = gạch nối -", r("mother-in-law", ["mother\u2013in\u2013law"]), 1);
+eq("dấu trừ \u2212 trong số cũng quy về -", r("-5", ["\u22125"]), 1);
+eq("ba chấm … = ...", r("Wait...", ["Wait\u2026"]), 1);
+// Chuẩn hoá KHÔNG được làm hai câu khác nghĩa thành một.
+eq("vẫn phân biệt nội dung khác nhau", r("She plays badminton.", [NHAY_CONG]), 0);
+eq("vẫn phân biệt hoa/thường khi bật caseSensitive", r(NHAY_THANG, [NHAY_CONG.toUpperCase()], true), 0);
+
+// Câu ĐIỀN KHUYẾT phải chấm theo đúng luật đó — cùng một đề Word, cùng một
+// dấu nháy cong, mà hai dạng câu chấm khác nhau thì không giải thích được.
+console.log("\n── Điền khuyết dùng chung luật chuẩn hoá ──");
+{
+  const outG = join(mkdtempSync(join(tmpdir(), "fsc-fb-")), "g.mjs");
+  execFileSync(
+    "npx",
+    ["esbuild", "src/lib/exam/grade.ts", "--bundle", "--format=esm",
+     "--platform=node", "--alias:@=./src", `--outfile=${outG}`],
+    { cwd: "apps/web", stdio: "pipe" },
+  );
+  const { gradeQuestion } = await import(outG);
+  const q = {
+    id: "FB1",
+    type: "fill-blank",
+    content: "___ play badminton.",
+    blanks: [{ id: "b1", acceptedAnswers: ["doesn\u2019t"] }],
+  };
+  const res = gradeQuestion(q, { kind: "fill-blank", blanks: ["doesn't"] });
+  eq("điền khuyết: HS nháy thẳng · đáp án nháy cong", res?.points ?? 0, 1);
+  const sai = gradeQuestion(q, { kind: "fill-blank", blanks: ["does"] });
+  eq("điền khuyết: vẫn chấm sai khi trả lời sai", sai?.points ?? 0, 0);
+}
+
 console.log("\n── parseVnNumber: chỉ số mới quy về số ──");
 eq('"abc" không phải số', parseVnNumber("abc") === null ? 1 : 0, 1);
 eq('"1,5" = 1.5', parseVnNumber("1,5"), 1.5);

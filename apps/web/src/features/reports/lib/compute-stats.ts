@@ -6,7 +6,10 @@
  */
 
 import type { ExamShift } from "@/features/exam-shifts/data/types";
-import { matchShortAnswer } from "@/lib/exam/short-answer-match";
+import {
+  matchShortAnswer,
+  normaliseForCompare,
+} from "@/lib/exam/short-answer-match";
 import { DEFAULT_SCORING } from "@/features/exam-shifts/data/types";
 import {
   computePerQuestionScores,
@@ -52,10 +55,10 @@ export function isAnswerCorrect(q: Question, a: Answer | undefined): boolean {
     case "fill-blank": {
       if (a.kind !== "fill-blank") return false;
       return q.blanks.every((b, i) => {
-        const guess = (a.blanks[i] ?? "").trim().toLowerCase();
-        return b.acceptedAnswers
-          .map((s) => s.trim().toLowerCase())
-          .includes(guess);
+        // Cùng luật chuẩn hoá với bộ chấm, nếu không cột "% đúng" của báo
+        // cáo lệch với điểm học sinh thật sự nhận.
+        const guess = normaliseForCompare(a.blanks[i] ?? "");
+        return b.acceptedAnswers.map(normaliseForCompare).includes(guess);
       });
     }
     case "matching":

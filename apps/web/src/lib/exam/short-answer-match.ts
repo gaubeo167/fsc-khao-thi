@@ -52,9 +52,52 @@ function keyGrade(k: ShortAnswerKey): number {
   return Math.min(100, Math.max(0, g));
 }
 
-/** Gộp khoảng trắng thừa; luôn áp dụng trước mọi phép so. */
+/**
+ * Dấu câu KIỂU CHỮ quy về dấu bàn phím.
+ *
+ * Ca thi thật SHIFT-0055 (Tiếng Anh THCS): đáp án soạn trong Word nên mang
+ * dấu nháy cong `\u2019`, học sinh gõ bàn phím ra dấu nháy thẳng `\u0027`.
+ * Hai chuỗi hiện lên màn hình y hệt nhau, chấm ra 0 điểm, và chấm lại bao
+ * nhiêu lần cũng vẫn 0 — vì đáp án không sai, chỉ khác một glyph. Giáo viên
+ * không có cách nào nhìn ra, kể cả khi đặt hai dòng cạnh nhau.
+ *
+ * Lỗi đi CẢ HAI CHIỀU: Word và Google Docs tự đổi dấu của giáo viên, còn bàn
+ * phím iOS/Android tự đổi dấu của chính học sinh.
+ *
+ * Chỉ quy những dấu mà người đọc thấy là MỘT: các kiểu nháy đơn, nháy kép,
+ * gạch ngang và ba chấm. Không đụng chữ, không bỏ dấu tiếng Việt, không đổi
+ * hoa thường — những thứ đó làm đổi nghĩa câu trả lời.
+ */
+const PUNCT_MAP: Record<string, string> = {
+  // nháy đơn
+  "\u2018": "'", "\u2019": "'", "\u201a": "'", "\u201b": "'",
+  "\u02bc": "'", "\u02b9": "'", "\u00b4": "'", "\u2032": "'",
+  // nháy kép
+  "\u201c": '"', "\u201d": '"', "\u201e": '"', "\u201f": '"',
+  "\u00ab": '"', "\u00bb": '"', "\u2033": '"',
+  // gạch ngang các kiểu + dấu trừ toán học
+  "\u2010": "-", "\u2011": "-", "\u2012": "-", "\u2013": "-",
+  "\u2014": "-", "\u2015": "-", "\u2212": "-",
+};
+
+function normalisePunct(s: string): string {
+  let out = "";
+  for (const ch of s) out += PUNCT_MAP[ch] ?? ch;
+  // Ba chấm là MỘT ký tự đổi thành BA, nên làm riêng sau vòng trên.
+  return out.replace(/\u2026/g, "...");
+}
+
+/** Gộp khoảng trắng thừa + quy dấu câu; luôn áp dụng trước mọi phép so. */
 function squash(s: string): string {
-  return s.trim().replace(/\s+/g, " ");
+  return normalisePunct(s).trim().replace(/\s+/g, " ");
+}
+
+/**
+ * Chuẩn hoá dùng cho các chỗ so chuỗi KHÁC (câu điền khuyết), để câu điền
+ * khuyết và câu trả lời ngắn không chấm theo hai luật khác nhau.
+ */
+export function normaliseForCompare(s: string): string {
+  return squash(s).toLowerCase();
 }
 
 /**
