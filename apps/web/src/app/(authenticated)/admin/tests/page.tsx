@@ -67,6 +67,15 @@ const STATUS_LABEL: Record<ShiftStatus, string> = {
   cancelled: "Đã huỷ",
 };
 
+/** Màu trạng thái — cùng bảng màu với màn Ca kíp thi để đọc quen mắt. */
+const STATUS_TONE: Record<ShiftStatus, string> = {
+  draft: "bg-slate-100 text-slate-700 border-slate-200",
+  scheduled: "bg-blue-100 text-blue-800 border-blue-200",
+  "in-progress": "bg-emerald-100 text-emerald-800 border-emerald-200",
+  completed: "bg-violet-100 text-violet-700 border-violet-200",
+  cancelled: "bg-rose-100 text-rose-700 border-rose-200",
+};
+
 const QuickTestDialog = dynamic(
   () =>
     import("@/features/exam-shifts/dialogs/quick-test-dialog").then(
@@ -323,7 +332,12 @@ export default function AdminTestsPage() {
                       {new Date(s.endAt).toLocaleString("vi-VN")}
                     </p>
                   </div>
-                  <span className="text-meta rounded-md border px-2 py-1 font-semibold">
+                  <span
+                    className={cn(
+                      "text-eyebrow rounded-md border px-2 py-1 font-semibold",
+                      STATUS_TONE[status],
+                    )}
+                  >
                     {STATUS_LABEL[status]}
                   </span>
                 </div>

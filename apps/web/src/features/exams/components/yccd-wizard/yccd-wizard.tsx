@@ -2237,11 +2237,12 @@ function StepStructure({
                   <input
                     type="number"
                     min={0}
-                    max={1}
-                    step={0.05}
+                    step={0.25}
                     value={dsTable[k] ?? 0}
                     onChange={(e) =>
-                      setDsTable({ ...dsTable, [k]: Math.max(0, Math.min(1, Number(e.target.value) || 0)) })
+                      // Bảng đọc theo tỉ lệ với dòng cuối, nên câu 2 điểm gõ
+                      // 0,5/1/1,5/2 là hợp lệ — không chặn trần 1 nữa.
+                      setDsTable({ ...dsTable, [k]: Math.max(0, Number(e.target.value) || 0) })
                     }
                     className="h-7 w-16 rounded border bg-card px-1 text-center"
                   />

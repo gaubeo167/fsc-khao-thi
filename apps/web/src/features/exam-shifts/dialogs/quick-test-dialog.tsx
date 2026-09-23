@@ -609,15 +609,15 @@ export function QuickTestDialog({ open, onOpenChange }: Props) {
             <div className="mt-3">
               <Field
                 label="Số mã đề"
-                hint="Nhiều mã đề thì mỗi mã một thứ tự câu khác nhau."
+                hint="Vẫn là bộ câu hỏi đó, chỉ đảo thứ tự thành nhiều bản. Hai bạn ngồi cạnh nhau có thể nhận hai mã khác nhau, nên câu 1 của bạn này không phải câu 1 của bạn kia."
               >
                 <Select
                   value={String(variantCount)}
                   onChange={(e) => setVariantCount(Number(e.target.value))}
                 >
-                  <option value="1">1 — mọi học sinh cùng thứ tự</option>
-                  <option value="2">2 mã đề</option>
-                  <option value="4">4 mã đề</option>
+                  <option value="1">1 mã — mọi học sinh cùng thứ tự</option>
+                  <option value="2">2 mã đề — chia đôi lớp</option>
+                  <option value="4">4 mã đề — hạn chế nhìn bài nhất</option>
                 </Select>
               </Field>
             </div>

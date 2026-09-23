@@ -63,9 +63,23 @@ export function scoreDs(
   }
 
   // graduated
+  //
+  // Bảng lũy tiến đọc theo TỈ LỆ VỚI DÒNG CUỐI, không phải phần 0..1 cứng:
+  // 0,25 / 0,5 / 0,75 / 1 và 0,5 / 1 / 1,5 / 2 là cùng một cách chấm, chỉ
+  // khác đơn vị giáo viên gõ vào. Chia cho `table[số ý]` nên bảng ghi bằng
+  // điểm tuyệt đối (câu 2 điểm) không làm câu đó vọt quá `pts`. Bảng cũ có
+  // dòng cuối bằng 1 nên chia cho 1 — kết quả không đổi.
+  //
+  // Đây cũng là cách `lib/exam/ds-score.ts` đọc bảng. Hai bộ chấm đọc khác
+  // nhau thì cùng một đề ra hai điểm, và ca kiểm thử test-multi-tf-grade.mjs
+  // tồn tại vì chuyện đó đã xảy ra một lần.
   const table = policy.dsGraduatedTable ?? DEFAULT_DS_GRADUATED;
   if (rightCount <= 0) return 0;
-  const frac =
-    table[rightCount] ?? (rightCount >= results.length ? 1 : 0);
-  return frac * pts;
+  const full = table[results.length];
+  if (full == null || full <= 0) {
+    // Bảng không phủ số ý này → chia đều, vẫn đơn điệu và đúng-hết = trọn điểm.
+    return (rightCount / total) * pts;
+  }
+  const cur = table[rightCount] ?? (rightCount >= results.length ? full : 0);
+  return Math.min(1, cur / full) * pts;
 }

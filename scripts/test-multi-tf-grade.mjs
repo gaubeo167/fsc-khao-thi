@@ -270,5 +270,79 @@ for (const n of [2, 3, 4, 5, 6, 8]) {
   );
 }
 
+/* ── Bảng lũy tiến ghi bằng ĐIỂM TUYỆT ĐỐI (mức > 1) ──────────────────── */
+//
+// Giáo viên ra câu Đúng–Sai 2 điểm muốn gõ thẳng 0,5 / 1 / 1,5 / 2 thay vì
+// quy về phân số của 1. Trước đây ô nhập chặn trần 1 điểm, và bộ chấm YCCĐ
+// đọc bảng như phần 0..1 — gõ 2 vào là câu đó ăn gấp đôi điểm của chính nó.
+//
+// Luật: bảng đọc theo TỈ LỆ VỚI DÒNG CUỐI. Nên hai bảng dưới đây phải cho ra
+// cùng một điểm, và không bảng nào vượt quá điểm của câu.
+{
+  const scaled = { ds: "graduated", dsGraduatedTable: { 1: 0.5, 2: 1, 3: 1.5, 4: 2 } };
+  const unit = { ds: "graduated", dsGraduatedTable: { 1: 0.25, 2: 0.5, 3: 0.75, 4: 1 } };
+  const q = mtf(4);
+  for (let k = 0; k <= 4; k++) {
+    const a = gradeQuestionRatio(q, ans(4, k), { ...MOET, ...scaled });
+    const b = gradeQuestionRatio(q, ans(4, k), { ...MOET, ...unit });
+    check(
+      `bảng 0,5/1/1,5/2 chấm y hệt bảng 0,25/0,5/0,75/1 · đúng ${k} ý`,
+      Math.abs(a - b) < 1e-9,
+      `${a} ≠ ${b}`,
+    );
+  }
+  const w = computeWeightedAttemptScore([q], { Q1: ans(4, 4) }, () => 2, {
+    ...MOET,
+    ...scaled,
+  });
+  check(
+    "bảng ghi bằng điểm tuyệt đối KHÔNG làm câu vọt quá điểm của nó",
+    Math.abs(w.points - 2) < 1e-9,
+    `câu 2,00đ đúng hết ra ${w.points}đ`,
+  );
+}
+
+/* ── Bộ chấm YCCĐ đọc bảng giống bộ chấm thật ─────────────────────────── */
+{
+  const outY = join(mkdtempSync(join(tmpdir(), "fsc-mtf3-")), "y.mjs");
+  execFileSync(
+    "npx",
+    [
+      "esbuild",
+      "src/features/exams/lib/yccd-scoring.ts",
+      "--bundle",
+      "--format=esm",
+      "--platform=node",
+      "--alias:@=./src",
+      `--outfile=${outY}`,
+    ],
+    { cwd: "apps/web", stdio: "pipe" },
+  );
+  const { scoreDs } = await import(outY);
+  const q = mtf(4);
+  for (const table of [
+    { 1: 0.25, 2: 0.5, 3: 0.75, 4: 1 },
+    { 1: 0.5, 2: 1, 3: 1.5, 4: 2 },
+    { 1: 0.1, 2: 0.25, 3: 0.5, 4: 1 },
+  ]) {
+    for (let k = 0; k <= 4; k++) {
+      const pts = 2;
+      const thuc =
+        gradeQuestionRatio(q, ans(4, k), { ...MOET, ds: "graduated", dsGraduatedTable: table }) *
+        pts;
+      const yccd = scoreDs(
+        Array.from({ length: 4 }, (_, i) => i < k),
+        pts,
+        { ds: "graduated", dsGraduatedTable: table },
+      );
+      check(
+        `hai bộ chấm khớp nhau · bảng [${Object.values(table).join("/")}] · đúng ${k} ý`,
+        Math.abs(thuc - yccd) < 1e-9,
+        `thật=${thuc} · YCCĐ=${yccd}`,
+      );
+    }
+  }
+}
+
 console.log(`\n${pass} pass · ${fail} fail`);
 process.exit(fail === 0 ? 0 : 1);

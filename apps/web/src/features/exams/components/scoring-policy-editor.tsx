@@ -28,6 +28,25 @@ export const FSC_DS_GRADUATED: Record<number, number> = {
   4: 1,
 };
 
+/**
+ * Mỗi cách chấm phải NÓI RA nó làm gì.
+ *
+ * Trước đây bấm "Trọng số từng ý" hay "Toàn phần" thì màn hình không đổi gì
+ * (chỉ mỗi bảng lũy tiến biến mất), nên người dùng tưởng nút chết.
+ */
+const DS_MODE_NOTE: Record<ScoringPolicyValue["ds"], string> = {
+  graduated:
+    "Đúng càng nhiều ý càng nhiều điểm, theo bảng bên dưới. Đúng hết là trọn điểm câu.",
+  weighted:
+    "Điểm chia theo trọng số của từng ý. Ý nào không đặt trọng số riêng thì tính ngang nhau — khi đó đúng 2/4 ý được nửa số điểm câu.",
+  full: "Phải đúng HẾT các ý mới có điểm. Sai một ý là 0 điểm cả câu.",
+};
+
+const MCQ_MULTI_NOTE: Record<ScoringPolicyValue["mcqMulti"], string> = {
+  full: "Phải chọn đúng và đủ mọi đáp án đúng mới có điểm.",
+  partial: "Mỗi đáp án đúng được một phần điểm; chọn thừa đáp án sai bị trừ phần tương ứng.",
+};
+
 export interface ScoringPolicyValue {
   mcqMulti: "full" | "partial";
   ds: "graduated" | "weighted" | "full";
@@ -65,6 +84,11 @@ export function ScoringPolicyEditor({
           }
         />
       )}
+      {showMcqMulti && (
+        <p className="text-hint rounded-md border bg-muted/30 px-2.5 py-1.5 text-muted-foreground">
+          {MCQ_MULTI_NOTE[value.mcqMulti]}
+        </p>
+      )}
 
       {showMultiTf && (
         <div className="space-y-2">
@@ -81,10 +105,14 @@ export function ScoringPolicyEditor({
             }
           />
 
+          <p className="text-hint rounded-md border bg-muted/30 px-2.5 py-1.5 text-muted-foreground">
+            {DS_MODE_NOTE[value.ds]}
+          </p>
+
           {value.ds === "graduated" && (
             <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
               <span className="text-hint">
-                Bảng lũy tiến (phần điểm khi đúng n ý):
+                Bảng lũy tiến — điểm khi đúng n ý:
               </span>
               {[1, 2, 3, 4].map((k) => (
                 <label
@@ -95,18 +123,14 @@ export function ScoringPolicyEditor({
                   <input
                     type="number"
                     min={0}
-                    max={1}
-                    step={0.05}
+                    step={0.25}
                     value={value.dsGraduatedTable[k] ?? 0}
                     onChange={(e) =>
                       onChange({
                         ...value,
                         dsGraduatedTable: {
                           ...value.dsGraduatedTable,
-                          [k]: Math.max(
-                            0,
-                            Math.min(1, Number(e.target.value) || 0),
-                          ),
+                          [k]: Math.max(0, Number(e.target.value) || 0),
                         },
                       })
                     }
@@ -140,10 +164,36 @@ export function ScoringPolicyEditor({
               </button>
             </div>
           )}
+
+          {value.ds === "graduated" && gradTableProblem(value.dsGraduatedTable) && (
+            <p className="text-hint rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 font-semibold text-amber-900">
+              ⚠ {gradTableProblem(value.dsGraduatedTable)}
+            </p>
+          )}
         </div>
       )}
     </div>
   );
+}
+
+/**
+ * Bảng lũy tiến đọc theo TỈ LỆ VỚI DÒNG CUỐI, nên gõ 0,5/1/1,5/2 cho câu 2
+ * điểm là hợp lệ. Hai thứ thì không: bảng đi lùi (đúng nhiều ý hơn lại ít
+ * điểm hơn) và dòng cuối bằng 0 (không có mốc để quy tỉ lệ). Cả hai đều bị
+ * bộ chấm tự chữa cháy trong im lặng, nên phải nói ra ở đây.
+ */
+function gradTableProblem(table: Record<number, number>): string | null {
+  const keys = [1, 2, 3, 4];
+  const last = table[4] ?? 0;
+  if (last <= 0) {
+    return "Mức đúng đủ 4 ý đang là 0 — bài chấm sẽ rơi về chia đều theo số ý.";
+  }
+  for (let i = 1; i < keys.length; i += 1) {
+    if ((table[keys[i]!] ?? 0) < (table[keys[i - 1]!] ?? 0)) {
+      return "Bảng đang đi lùi: đúng nhiều ý hơn mà điểm thấp hơn. Kiểm lại các mốc.";
+    }
+  }
+  return null;
 }
 
 function ModeRow({
