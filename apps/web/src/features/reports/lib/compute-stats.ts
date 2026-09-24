@@ -6,6 +6,7 @@
  */
 
 import type { ExamShift } from "@/features/exam-shifts/data/types";
+import { gradeQuestionRatio } from "@/lib/exam/grade";
 import { groupAllCorrect } from "@/lib/exam/group-score";
 import {
   matchShortAnswer,
@@ -207,6 +208,14 @@ export function buildShiftReport({
   })();
   void examMaxScoreForPool;
 
+  // Cách chấm của ca, đưa cho bộ chấm tỉ lệ. Không cài gì thì đúng mặc định
+  // của bộ chấm (Đúng–Sai lũy tiến theo quy định của Bộ).
+  const policyForRatio = {
+    mcqMulti: scoring.mcqMulti ?? "full",
+    ds: scoring.ds ?? "graduated",
+    dsGraduatedTable: scoring.dsGraduatedTable,
+  } as const;
+
   // ───── Per-student rows
   const perStudent: PerStudentRow[] = [];
   for (const att of submitted) {
@@ -239,11 +248,21 @@ export function buildShiftReport({
         continue;
       }
       autoMax++;
-      if (ans && isAnswerCorrect(q, ans)) {
-        correctCount++;
-        earned += qWeight;
-        autoEarned += qWeight;
+      // Điểm cộng theo TỈ LỆ, dùng đúng hàm của bộ chấm thật.
+      //
+      // Trước đây chỗ này là "đúng hết mới tính": học sinh đúng 2/3 ý câu nhóm
+      // thấy 6,67/10 ở màn kết quả của mình, còn bảng Báo cáo của giáo viên
+      // hiện 0/10 — hai con số nói hai chuyện khác nhau về cùng một bài. Dính
+      // mọi dạng chấm từng phần: câu nhóm, Đúng–Sai lũy tiến, trắc nghiệm
+      // nhiều đáp án chấm từng phần, trả lời ngắn ăn % đáp án.
+      //
+      // Cột "số câu đúng" vẫn đếm câu ĐÚNG HẾT — đó là nghĩa của nó.
+      const ratio = ans ? gradeQuestionRatio(q, ans, policyForRatio) ?? 0 : 0;
+      if (ratio > 0) {
+        earned += qWeight * ratio;
+        autoEarned += qWeight * ratio;
       }
+      if (ans && isAnswerCorrect(q, ans)) correctCount++;
     }
     const percent =
       examMax > 0 ? Math.round((earned / examMax) * 100) : 0;

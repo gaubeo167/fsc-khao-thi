@@ -302,5 +302,93 @@ console.log("\n── Đọc câu nhóm từ file Word (mã G) ──");
   );
 }
 
+/* ── 8. Báo cáo của GV phải cộng ĐIỂM TỪNG PHẦN ──────────────────────── */
+//
+// Lỗi /qa bắt được: học sinh làm đúng 2/3 ý của câu nhóm, màn kết quả của em
+// hiện 6,67/10, nhưng màn Báo cáo của giáo viên hiện 0/10. Báo cáo cộng điểm
+// theo kiểu ĐÚNG HẾT MỚI TÍNH, nên mọi dạng chấm từng phần (câu nhóm, Đúng–Sai
+// lũy tiến, trắc nghiệm nhiều đáp án chấm từng phần, trả lời ngắn ăn % đáp án)
+// đều rơi về 0 ở bảng của giáo viên. Hai con số nói hai chuyện khác nhau về
+// cùng một bài làm.
+console.log("\n── Báo cáo của GV cộng đúng điểm từng phần ──");
+{
+  const { buildShiftReport } = await import(
+    bundle("src/features/reports/lib/compute-stats.ts", "r.mjs")
+  );
+  const shift = {
+    id: "S1",
+    name: "Ca",
+    subjectId: "sub",
+    gradeId: "k6",
+    classIds: [],
+    campusId: "cs",
+    rooms: [{ id: "r", name: "P", studentIds: ["hs1"], proctorIds: [] }],
+    scoring: { maxScore: 10, mode: "even" },
+    startAt: "2026-02-01T01:00:00.000Z",
+    endAt: "2026-02-01T02:00:00.000Z",
+    status: "completed",
+  };
+  const attempt = {
+    id: "a1",
+    shiftId: "S1",
+    studentId: "hs1",
+    questionIds: ["G1"],
+    answers: { G1: ans({ s1: { kind: "mcq-single", optionId: "s1b" } }) },
+    startedAt: "2026-02-01T01:00:00.000Z",
+    submittedAt: "2026-02-01T01:10:00.000Z",
+    violations: { tabSwitches: 0, fullscreenExits: 0, pasteAttempts: 0 },
+  };
+  const rep = buildShiftReport({
+    shift,
+    attempts: [attempt],
+    questions: [group],
+    essayGrades: [],
+    eligible: 1,
+  });
+  check(
+    "đúng 2/3 ý câu nhóm → báo cáo ra 6,67đ (không phải 0)",
+    Math.abs(rep.totals.avgRaw - 6.67) < 0.02,
+    `đang là ${rep.totals.avgRaw}`,
+  );
+  check(
+    "cột 'câu đúng' vẫn chỉ đếm câu ĐÚNG HẾT",
+    rep.perStudent[0].correctCount === 0,
+    String(rep.perStudent[0].correctCount),
+  );
+
+  // Đúng–Sai lũy tiến cũng phải cộng từng phần — cùng một lỗi.
+  const mtf = {
+    ...group,
+    id: "T1",
+    type: "multi-tf",
+    subQuestions: [
+      { id: "t1", statement: "Ý 1", correctAnswer: true },
+      { id: "t2", statement: "Ý 2", correctAnswer: true },
+      { id: "t3", statement: "Ý 3", correctAnswer: true },
+      { id: "t4", statement: "Ý 4", correctAnswer: true },
+    ],
+  };
+  const repTf = buildShiftReport({
+    shift,
+    attempts: [
+      {
+        ...attempt,
+        questionIds: ["T1"],
+        answers: {
+          T1: { kind: "multi-tf", values: { t1: true, t2: true, t3: true, t4: false } },
+        },
+      },
+    ],
+    questions: [mtf],
+    essayGrades: [],
+    eligible: 1,
+  });
+  check(
+    "Đúng–Sai đúng 3/4 ý → báo cáo KHÔNG ra 0",
+    repTf.totals.avgRaw > 0,
+    `đang là ${repTf.totals.avgRaw}`,
+  );
+}
+
 console.log(`\n${pass} pass · ${fail} fail`);
 process.exit(fail === 0 ? 0 : 1);
