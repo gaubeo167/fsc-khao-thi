@@ -16,6 +16,10 @@ import { notFound, useParams } from "next/navigation";
 import { useMemo } from "react";
 
 import { useUsersStore } from "@/features/admin/users/users-store";
+import {
+  groupAllCorrect,
+  groupSubRatio,
+} from "@/lib/exam/group-score";
 import { keyText, matchShortAnswer } from "@/lib/exam/short-answer-match";
 import { useUserScope } from "@/features/auth/lib/use-scope";
 import { useAuthStore } from "@/features/auth/state/auth-store";
@@ -30,7 +34,10 @@ import { resolveAttemptQuestions } from "@/features/exam-forms/lib/resolve-quest
 import { useShiftsStore } from "@/features/exam-shifts/state/shifts-store";
 import { useGradingStore } from "@/features/grading/state/grading-store";
 import { RenderedContent } from "@/features/question-bank/components/rendered-content";
-import type { Question } from "@/features/question-bank/data/seed-questions";
+import type {
+  GroupSub,
+  Question,
+} from "@/features/question-bank/data/seed-questions";
 import { useQuestionsStore } from "@/features/question-bank/state/questions-store";
 import { useSubjectsStore } from "@/features/subjects/state/subjects-store";
 import {
@@ -423,6 +430,44 @@ function CorrectnessBadge({
   );
 }
 
+/**
+ * Bài làm của MỘT ý phụ trong câu nhóm, viết thành chữ đọc được.
+ *
+ * Giáo viên cần thấy học sinh sai ở ý nào chứ không phải "cả cụm sai" —
+ * cụm 8 ý mà báo một chữ "Sai" thì không dạy lại được gì.
+ */
+function renderGroupSubAnswer(sub: GroupSub, a: Answer | undefined) {
+  if (!a) return <span className="italic text-muted-foreground">Bỏ trống</span>;
+  if (sub.type === "short-answer") {
+    if (a.kind !== "short-answer" || !a.text.trim()) {
+      return <span className="italic text-muted-foreground">Bỏ trống</span>;
+    }
+    return <span className="font-mono">{a.text}</span>;
+  }
+  const opts = sub.options ?? [];
+  const chosen =
+    a.kind === "mcq-single"
+      ? a.optionId
+        ? [a.optionId]
+        : []
+      : a.kind === "mcq-multi"
+        ? a.optionIds
+        : [];
+  if (chosen.length === 0) {
+    return <span className="italic text-muted-foreground">Bỏ trống</span>;
+  }
+  return (
+    <span className="font-mono">
+      {chosen
+        .map((id) => {
+          const i = opts.findIndex((o) => o.id === id);
+          return i >= 0 ? String.fromCharCode(65 + i) : "?";
+        })
+        .join(", ")}
+    </span>
+  );
+}
+
 /** Render the student's answer for a question — one branch per question type. */
 function renderStudentAnswer(q: Question, ans: Answer | undefined) {
   if (!ans) return <span className="italic text-muted-foreground">Bỏ trống</span>;
@@ -452,6 +497,36 @@ function renderStudentAnswer(q: Question, ans: Answer | undefined) {
         return <span className="italic text-muted-foreground">Bỏ trống</span>;
       }
       return <b>{ans.value ? "Đúng" : "Sai"}</b>;
+    case "group": {
+      if (ans.kind !== "group") return "—";
+      return (
+        <ol className="ml-3 list-decimal space-y-1.5">
+          {q.subQuestions.map((sub) => {
+            const a = ans.answers[sub.id];
+            const dung = groupSubRatio(sub, a) >= 1;
+            return (
+              <li key={sub.id}>
+                <span className="inline-flex items-start gap-1.5">
+                  {a ? (
+                    dung ? (
+                      <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                    ) : (
+                      <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-600" />
+                    )
+                  ) : (
+                    <span className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  )}
+                  <span className="min-w-0">
+                    <RenderedContent content={sub.content} />
+                    <span className="mt-0.5 block">{renderGroupSubAnswer(sub, a)}</span>
+                  </span>
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+      );
+    }
     case "multi-tf":
       if (ans.kind !== "multi-tf") return "—";
       return (
@@ -567,6 +642,25 @@ function renderCorrectAnswer(q: Question) {
     }
     case "true-false":
       return <b>{q.correctAnswer ? "Đúng" : "Sai"}</b>;
+    case "group":
+      return (
+        <ol className="ml-3 list-decimal space-y-1">
+          {q.subQuestions.map((sub) => (
+            <li key={sub.id}>
+              <RenderedContent content={sub.content} />
+              <span className="mt-0.5 block font-mono">
+                {sub.type === "short-answer"
+                  ? (sub.acceptedAnswers ?? []).map(keyText).join(" / ") || "—"
+                  : (sub.options ?? [])
+                      .map((o, i) => ({ o, i }))
+                      .filter(({ o }) => o.isCorrect)
+                      .map(({ i }) => String.fromCharCode(65 + i))
+                      .join(", ") || "—"}
+              </span>
+            </li>
+          ))}
+        </ol>
+      );
     case "multi-tf":
       return (
         <ul className="ml-3 list-disc space-y-0.5">
@@ -686,6 +780,8 @@ function isCorrect(q: Question, a: Answer): boolean {
     }
     case "true-false":
       return a.kind === "true-false" && a.value === q.correctAnswer;
+    case "group":
+      return a.kind === "group" && groupAllCorrect(q.subQuestions, a.answers);
     case "multi-tf":
       return (
         a.kind === "multi-tf" &&
