@@ -62,6 +62,20 @@ export function pointsByScorePart(
  * UI rounds to 2 decimals for display. For "manual" mode the user input
  * is trusted as-is.
  */
+/**
+ * Một câu nặng bằng MẤY SUẤT điểm.
+ *
+ * Câu thường = 1. CÂU NHÓM = số ý phụ của nó: một bài đọc hiểu 8 câu phải ăn
+ * 8 phần điểm chứ không phải 1 — nếu không thì cụm 8 câu và một câu trắc
+ * nghiệm lẻ cùng giá, và đề đọc hiểu tiếng Anh chấm ra vô lý.
+ *
+ * Bên trong cụm, `groupRatio` chia đều cho các ý, nên ghép hai chỗ lại thì
+ * mỗi ý phụ ăn đúng bằng một câu trắc nghiệm thường.
+ */
+export function questionSlots(q: Question): number {
+  return q.type === "group" ? Math.max(1, q.subQuestions.length) : 1;
+}
+
 export function computePerQuestionScores(
   scoring: ScoringConfig,
   questions: Question[],
@@ -70,8 +84,9 @@ export function computePerQuestionScores(
   const out: Record<string, number> = {};
   switch (scoring.mode) {
     case "even": {
-      const each = scoring.maxScore / questions.length;
-      for (const q of questions) out[q.id] = each;
+      const slots = questions.reduce((a, q) => a + questionSlots(q), 0);
+      const each = scoring.maxScore / slots;
+      for (const q of questions) out[q.id] = each * questionSlots(q);
       return out;
     }
     case "by-difficulty": {
@@ -80,8 +95,10 @@ export function computePerQuestionScores(
         medium: 1.5,
         hard: 2,
       };
+      // Trọng số nhân với số suất, nếu không cụm 8 ý "trung bình" lại nhẹ
+      // bằng một câu trung bình lẻ.
       const totalWeight = questions.reduce(
-        (a, q) => a + (w[q.difficulty] ?? 1),
+        (a, q) => a + (w[q.difficulty] ?? 1) * questionSlots(q),
         0,
       );
       if (totalWeight === 0) {
@@ -90,7 +107,8 @@ export function computePerQuestionScores(
         return out;
       }
       for (const q of questions) {
-        out[q.id] = (scoring.maxScore * (w[q.difficulty] ?? 1)) / totalWeight;
+        out[q.id] =
+          (scoring.maxScore * (w[q.difficulty] ?? 1) * questionSlots(q)) / totalWeight;
       }
       return out;
     }
@@ -106,8 +124,9 @@ export function computePerQuestionScores(
       if (parts.length === 0) {
         // Chưa cài phần nào thì lùi về chia đều, để bản nháp dở dang không hiện
         // toàn số 0 làm giáo viên tưởng hỏng.
-        const each = scoring.maxScore / questions.length;
-        for (const q of questions) out[q.id] = each;
+        const slots = questions.reduce((a, q) => a + questionSlots(q), 0);
+        const each = scoring.maxScore / slots;
+        for (const q of questions) out[q.id] = each * questionSlots(q);
         return out;
       }
       return pointsByScorePart(questions, parts);

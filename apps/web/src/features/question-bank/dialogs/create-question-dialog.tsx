@@ -896,6 +896,13 @@ function buildTocPath(
 
 function hasAnyAnswerData(values: any, type: QuestionType): boolean {
   switch (type) {
+    case "group":
+      return (values.subQuestions ?? []).some(
+        (sub: any) =>
+          (sub?.content ?? "").trim() !== "" ||
+          (sub?.options ?? []).some((o: any) => (o?.content ?? "").trim() !== "") ||
+          (sub?.acceptedAnswers ?? []).length > 0,
+      );
     case "mcq-single":
     case "mcq-multi":
       return Array.isArray(values.options) && values.options.some(
@@ -973,6 +980,7 @@ function buildPreviewQuestion(values: any, type: QuestionType): Question | null 
         correctAnswer: Boolean(values.correctAnswer),
       } as Question;
     case "multi-tf":
+    case "group":
       if (!Array.isArray(values.subQuestions)) return null;
       return { type, ...shared, subQuestions: values.subQuestions } as Question;
     case "short-answer":
@@ -1040,6 +1048,8 @@ function answerSectionTitle(type: QuestionType): string {
       return "Các cặp đúng";
     case "multi-tf":
       return "Các câu hỏi phụ";
+    case "group":
+      return "Các câu hỏi phụ";
     case "fill-blank":
       return "Đáp án các ô trống";
     case "true-false":
@@ -1059,6 +1069,8 @@ function answerSectionTitle(type: QuestionType): string {
 
 function answerHint(type: QuestionType): string {
   switch (type) {
+    case "group":
+      return "Mỗi ý phụ có dạng và đáp án riêng";
     case "mcq-single":
       return "Đánh dấu 1 đáp án ĐÚNG duy nhất";
     case "mcq-multi":
@@ -1088,6 +1100,8 @@ function answerHint(type: QuestionType): string {
 
 function contentPlaceholder(type: QuestionType): string {
   switch (type) {
+    case "group":
+      return "vd: Đoạn văn / biểu đồ / đề bài chung. Các câu hỏi phụ đặt bên dưới.";
     case "fill-blank":
       return "vd: Thủ đô nước Anh là  · Bấm '+ Thêm ô trống' trên thanh công cụ để chèn ô tại vị trí cần điền.";
     case "true-false":
@@ -1149,6 +1163,24 @@ function defaultsForType(type: QuestionType, _campusId: string | null): any {
         subQuestions: [
           { id: "sub-1", statement: "", correctAnswer: true },
           { id: "sub-2", statement: "", correctAnswer: false },
+        ],
+      };
+    case "group":
+      return {
+        type,
+        ...base,
+        subQuestions: [
+          {
+            id: "gsub-1",
+            type: "mcq-single",
+            content: "",
+            options: [
+              { id: "gsub-1-a", content: "", isCorrect: true },
+              { id: "gsub-1-b", content: "", isCorrect: false },
+              { id: "gsub-1-c", content: "", isCorrect: false },
+              { id: "gsub-1-d", content: "", isCorrect: false },
+            ],
+          },
         ],
       };
     case "short-answer":
@@ -1222,6 +1254,7 @@ function defaultsFromExisting(q: Question): any {
     case "true-false":
       return { ...shared, correctAnswer: q.correctAnswer };
     case "multi-tf":
+    case "group":
       return { ...shared, subQuestions: q.subQuestions };
     case "short-answer":
       return { ...shared, acceptedAnswers: q.acceptedAnswers, caseSensitive: q.caseSensitive };

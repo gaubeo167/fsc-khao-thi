@@ -107,6 +107,8 @@ export const HOMEWORK_QUESTION_TYPES = new Set([
   "ordering",
   "drag-drop",
   "underline",
+  // Câu nhóm máy chấm được: mọi ý phụ đều là trắc nghiệm hoặc trả lời ngắn.
+  "group",
 ]);
 
 /** Whether a date string represents today-or-future at day granularity. */

@@ -10,6 +10,7 @@
  */
 
 import type { Question } from "@/features/question-bank/data/seed-questions";
+import { groupAllCorrect } from "@/lib/exam/group-score";
 import { matchShortAnswer } from "@/lib/exam/short-answer-match";
 import type { Answer } from "@/features/shift-exam/state/attempts-store";
 
@@ -35,6 +36,9 @@ export function isCorrect(q: Question, a: Answer): boolean {
         a.kind === "multi-tf" &&
         q.subQuestions.every((s) => a.values[s.id] === s.correctAnswer)
       );
+    case "group":
+      // "Câu đúng" = đúng HẾT ý. Điểm từng phần đi đường `groupRatio`.
+      return a.kind === "group" && groupAllCorrect(q.subQuestions, a.answers);
     case "short-answer": {
       if (a.kind !== "short-answer") return false;
       // Module dùng chung với bộ chấm server (chuẩn hoá số, ký tự đại diện,

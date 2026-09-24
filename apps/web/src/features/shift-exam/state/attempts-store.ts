@@ -5,6 +5,7 @@ import { create } from "zustand";
 
 import type { Question } from "@/features/question-bank/data/seed-questions";
 import { isFirebaseConfigured } from "@/lib/firebase";
+import { groupAllCorrect, groupRatio } from "@/lib/exam/group-score";
 import { matchShortAnswer } from "@/lib/exam/short-answer-match";
 import { COLLECTIONS } from "@/lib/firestore-collections";
 
@@ -37,6 +38,8 @@ export type Answer =
   | { kind: "drag-drop"; zones: string[] }
   /** Set of phrase strings the student chose to underline (from `[u:...]`). */
   | { kind: "underline"; underlinedPhrases: string[] }
+  /** Câu nhóm: id ý phụ → bài làm của ý đó (dùng lại đúng các dạng trên). */
+  | { kind: "group"; answers: Record<string, Answer> }
   | { kind: "essay"; text: string }
   | { kind: "ai-generated"; text: string }
   | { kind: "unsupported" };
@@ -206,6 +209,13 @@ function gradeOne(
         chosen.size === correctIds.size &&
         Array.from(correctIds).every((id) => chosen.has(id));
       return same ? { points: 1, correct: true } : { points: 0, correct: false };
+    }
+    case "group": {
+      if (a.kind !== "group") return { points: 0, correct: false };
+      return {
+        points: groupRatio(q.subQuestions, a.answers),
+        correct: groupAllCorrect(q.subQuestions, a.answers),
+      };
     }
     case "true-false": {
       if (a.kind !== "true-false" || a.value == null)

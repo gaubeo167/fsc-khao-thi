@@ -15,6 +15,7 @@ import { notFound, useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { useAuthStore } from "@/features/auth/state/auth-store";
+import { groupAllCorrect } from "@/lib/exam/group-score";
 import { keyText, matchShortAnswer } from "@/lib/exam/short-answer-match";
 import {
   DEFAULT_SCORING,
@@ -614,6 +615,8 @@ function isCorrect(
     }
     case "true-false":
       return a.kind === "true-false" && a.value === q.correctAnswer;
+    case "group":
+      return a.kind === "group" && groupAllCorrect(q.subQuestions, a.answers);
     case "multi-tf":
       return (
         a.kind === "multi-tf" &&

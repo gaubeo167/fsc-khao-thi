@@ -9,7 +9,7 @@
  * cải tiến gì ở đây, để lần gộp này không đổi dữ liệu đầu ra.
  */
 
-import type { Question, QuestionStatus } from "../data/seed-questions";
+import type { GroupSub, Question, QuestionStatus } from "../data/seed-questions";
 
 import type { DraftQuestion } from "./import-draft";
 
@@ -75,6 +75,29 @@ export function draftToQuestion(
           isCorrect: o.isCorrect,
         })),
       } as NewQuestion;
+    case "group": {
+      const subQuestions: GroupSub[] = q.groupSubs.map((sub, i) =>
+        sub.type === "short-answer"
+          ? {
+              id: `gsub-${i + 1}`,
+              type: "short-answer",
+              content: sub.content,
+              acceptedAnswers: sub.acceptedAnswers,
+              caseSensitive: false,
+            }
+          : {
+              id: `gsub-${i + 1}`,
+              type: sub.type,
+              content: sub.content,
+              options: sub.options.map((o, oi) => ({
+                id: `gsub-${i + 1}-${oi + 1}`,
+                content: o.content,
+                isCorrect: o.isCorrect,
+              })),
+            },
+      );
+      return { ...base, type: "group", subQuestions } as NewQuestion;
+    }
     case "multi-tf":
       return {
         ...base,

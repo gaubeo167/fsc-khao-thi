@@ -3,6 +3,7 @@ import {
   CheckCircle2,
   CheckSquare,
   CircleDot,
+  Layers,
   ListChecks,
   MoveDiagonal,
   Network,
@@ -25,7 +26,8 @@ export type QuestionType =
   | "underline"
   | "short-answer"
   | "essay"
-  | "ai-generated";
+  | "ai-generated"
+  | "group";
 
 export interface QuestionTypeMeta {
   id: QuestionType;
@@ -70,6 +72,14 @@ export const QUESTION_TYPES: QuestionTypeMeta[] = [
     description: "Đoạn văn + nhiều câu hỏi Đ/S",
     icon: ListChecks,
     color: "#16A34A",
+  },
+  {
+    id: "group",
+    name: "Câu nhóm (1 đề, nhiều ý)",
+    shortName: "Question group",
+    description: "Một ngữ liệu + nhiều câu hỏi phụ khác dạng nhau",
+    icon: Layers,
+    color: "#0891B2",
   },
   {
     // Trả lời ngắn ĐÃ có schema, form soạn, parser upload (mã S) và bộ chấm,

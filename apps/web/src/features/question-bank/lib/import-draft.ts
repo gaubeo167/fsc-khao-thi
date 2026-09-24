@@ -67,6 +67,13 @@ export interface DraftQuestion {
   items: string[];
   /** Kéo thả (KT) — đáp án đúng của từng vùng thả. */
   zones: string[];
+  /** CÂU NHÓM — các ý phụ, mỗi ý một dạng riêng. */
+  groupSubs: Array<{
+    type: "mcq-single" | "mcq-multi" | "short-answer";
+    content: string;
+    options: DraftOption[];
+    acceptedAnswers: ShortAnswerKey[];
+  }>;
   /** Kéo thả (KT) — mảnh gây nhiễu. */
   distractors: string[];
   explanation: string;
@@ -299,6 +306,7 @@ export function draftFromFsc(
     content: q.content ?? "",
     options: [],
     subQuestions: [],
+    groupSubs: [],
     acceptedAnswers: [],
     correctAnswer: null,
     blanks: [],
@@ -347,6 +355,12 @@ export function draftFromMaDe(
       correctAnswer: s.correctAnswer,
     })),
     acceptedAnswers: q.acceptedAnswers ?? [],
+    groupSubs: (q.groupSubs ?? []).map((sub) => ({
+      type: sub.type,
+      content: sub.content,
+      options: sub.options.map((o) => ({ content: o.content, isCorrect: o.isCorrect })),
+      acceptedAnswers: sub.acceptedAnswers,
+    })),
     correctAnswer: null,
     blanks: [],
     pairs: [],
@@ -433,6 +447,8 @@ export function draftFromGeneric(
           : q.content,
     options: q.options.map((o) => ({ content: o.content, isCorrect: o.isCorrect })),
     subQuestions: q.subQuestions ?? [],
+    // Parser đề tự soạn chưa đọc câu nhóm — chỉ khuôn mã bank (chữ G) có.
+    groupSubs: [],
     acceptedAnswers: q.acceptedAnswers ?? [],
     correctAnswer: q.correctAnswer ?? null,
     blanks: q.blanks ?? [],

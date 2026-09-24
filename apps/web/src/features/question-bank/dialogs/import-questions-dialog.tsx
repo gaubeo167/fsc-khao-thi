@@ -118,6 +118,7 @@ const SUPPORTED_TYPES: QuestionType[] = [
   "drag-drop",
   "underline",
   "essay",
+  "group",
 ];
 
 type Phase =

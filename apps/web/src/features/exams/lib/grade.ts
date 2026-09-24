@@ -1,4 +1,5 @@
 import { dsRatio } from "@/lib/exam/ds-score";
+import { groupRatio, type GroupSubAnswer } from "@/lib/exam/group-score";
 import { normaliseForCompare } from "@/lib/exam/short-answer-match";
 import { keyText, matchShortAnswer } from "@/lib/exam/short-answer-match";
 import type { Question } from "@/features/question-bank/data/seed-questions";
@@ -187,6 +188,58 @@ export function gradeQuestion(
         score: 0,
         correctText: question.rubric.map((r) => `${r.label} (${r.points}đ)`).join(" · "),
         studentText: txt ? `${txt.length} ký tự` : "(chưa làm)",
+      };
+    }
+    case "group": {
+      const a0 = answer as {
+        kind?: string;
+        answers?: Record<string, GroupSubAnswer>;
+      } | null;
+      const ans = a0?.kind === "group" ? a0.answers : undefined;
+      const ratio = groupRatio(question.subQuestions, ans);
+      const correctText = question.subQuestions
+        .map((sub, i) => {
+          if (sub.type === "short-answer") {
+            const keys = (sub.acceptedAnswers ?? []).map((k) =>
+              typeof k === "string" ? k : k.text,
+            );
+            return `${i + 1}. ${keys.join(" | ")}`;
+          }
+          const dung = (sub.options ?? [])
+            .map((o, oi) => ({ o, oi }))
+            .filter(({ o }) => o.isCorrect)
+            .map(({ oi }) => String.fromCharCode(65 + oi));
+          return `${i + 1}. ${dung.join(", ")}`;
+        })
+        .join(" · ");
+      const studentText = question.subQuestions
+        .map((sub, i) => {
+          const a = ans?.[sub.id];
+          if (!a) return `${i + 1}. (trống)`;
+          if (a.kind === "short-answer") {
+            return `${i + 1}. ${(a as { text?: string }).text || "(trống)"}`;
+          }
+          if (a.kind === "mcq-single") {
+            const chosenId = (a as { optionId?: string | null }).optionId;
+            const oi = (sub.options ?? []).findIndex((o) => o.id === chosenId);
+            return `${i + 1}. ${oi >= 0 ? String.fromCharCode(65 + oi) : "(trống)"}`;
+          }
+          if (a.kind === "mcq-multi") {
+            const letters = ((a as { optionIds?: string[] }).optionIds ?? [])
+              .map((id: string) => (sub.options ?? []).findIndex((o) => o.id === id))
+              .filter((x: number) => x >= 0)
+              .sort((x: number, y: number) => x - y)
+              .map((x: number) => String.fromCharCode(65 + x));
+            return `${i + 1}. ${letters.join(", ") || "(trống)"}`;
+          }
+          return `${i + 1}. (trống)`;
+        })
+        .join(" · ");
+      return {
+        verdict: ratio >= 1 ? "correct" : ratio > 0 ? "partial" : "wrong",
+        score: ratio,
+        correctText,
+        studentText,
       };
     }
     case "multi-tf": {

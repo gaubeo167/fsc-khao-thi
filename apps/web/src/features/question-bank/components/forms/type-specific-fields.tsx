@@ -106,6 +106,8 @@ export function TypeSpecificFields({ type, control, setValue, errors }: Props) {
       );
     case "multi-tf":
       return <MultiTfFields control={control} setValue={setValue} errors={errors} />;
+    case "group":
+      return <GroupSubFields control={control} setValue={setValue} errors={errors} />;
     case "short-answer":
       return <ShortAnswerFields control={control} errors={errors} />;
     case "fill-blank":
@@ -1123,15 +1125,19 @@ function SubQuestionRow({
 function ShortAnswerKeysField({
   control,
   error,
+  name = "acceptedAnswers",
 }: {
   control: Control<any>;
   error?: string;
+  /** Mặc định `acceptedAnswers`; câu nhóm truyền
+   *  `subQuestions.0.acceptedAnswers` để dùng lại ô nhập này. */
+  name?: string;
 }) {
   const latestRef = useRef<ShortAnswerKey[]>([]);
   return (
     <Controller
       control={control}
-      name="acceptedAnswers"
+      name={name}
       render={({ field }) => {
         // Giữ bản mới nhất trong ref: hai lần bấm "Thêm đáp án" trong cùng một
         // nhịp React đều đọc `field.value` CŨ, nên lần bấm sau ghi đè lần trước
@@ -1484,7 +1490,8 @@ function AnswerSectionHeader({
   onAi,
 }: {
   hint: string;
-  onAi: () => void;
+  /** Không truyền = ẩn nút AI (câu nhóm: mỗi ý một dạng, gợi ý chung vô nghĩa). */
+  onAi?: () => void;
 }) {
   return (
     <div className="flex items-start justify-between gap-3 rounded-lg border border-dashed bg-muted/20 p-3">
@@ -1492,14 +1499,16 @@ function AnswerSectionHeader({
         <span className="font-semibold text-foreground/85">Mẹo: </span>
         {hint}
       </p>
-      <button
-        type="button"
-        onClick={onAi}
-        className="shrink-0 inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-[12px] font-semibold text-amber-700 hover:border-amber-300 hover:bg-amber-100"
-      >
-        <Sparkles className="h-3.5 w-3.5" strokeWidth={2} />
-        AI gợi ý đáp án
-      </button>
+      {onAi && (
+        <button
+          type="button"
+          onClick={onAi}
+          className="shrink-0 inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-[12px] font-semibold text-amber-700 hover:border-amber-300 hover:bg-amber-100"
+        >
+          <Sparkles className="h-3.5 w-3.5" strokeWidth={2} />
+          AI gợi ý đáp án
+        </button>
+      )}
     </div>
   );
 }
@@ -1522,4 +1531,149 @@ function parseAcceptedAnswers(raw: string): string[] {
     if (cleaned.length > 0) candidates.add(cleaned);
   }
   return Array.from(candidates).slice(0, 8);
+}
+
+/* ── CÂU NHÓM: 1 đề bài chung + nhiều ý phụ khác dạng nhau ───────────────
+ *
+ * Khác `MultiTfFields` ở chỗ mỗi ý phụ tự chọn DẠNG của nó, nên ô nhập đáp
+ * án của từng ý cũng đổi theo: trắc nghiệm thì hiện danh sách phương án,
+ * trả lời ngắn thì hiện danh sách đáp án chấp nhận.
+ */
+
+const GROUP_SUB_TYPES: Array<{ v: "mcq-single" | "mcq-multi" | "short-answer"; label: string }> = [
+  { v: "mcq-single", label: "1 đáp án" },
+  { v: "mcq-multi", label: "Nhiều đáp án" },
+  { v: "short-answer", label: "Trả lời ngắn" },
+];
+
+function GroupSubFields({
+  control,
+  setValue,
+  errors,
+}: {
+  control: Control<any>;
+  setValue: UseFormSetValue<any>;
+  errors: Record<string, any>;
+}) {
+  const { fields, append, remove } = useFieldArray({ control, name: "subQuestions" });
+  const subs = useWatch({ control, name: "subQuestions" }) as any[] | undefined;
+
+  const addSub = () => {
+    const n = fields.length + 1;
+    append({
+      id: `gsub-${n}-${Math.random().toString(36).slice(2, 7)}`,
+      type: "mcq-single",
+      content: "",
+      options: ["a", "b", "c", "d"].map((k, i) => ({
+        id: `gsub-${n}-${k}`,
+        content: "",
+        isCorrect: i === 0,
+      })),
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      <AnswerSectionHeader hint="Đề bài chung viết ở ô nội dung phía trên. Mỗi ý phụ bên dưới có dạng và đáp án riêng." />
+
+      <ol className="space-y-3">
+        {fields.map((f, i) => {
+          const sub = subs?.[i];
+          const subType = (sub?.type ?? "mcq-single") as
+            | "mcq-single"
+            | "mcq-multi"
+            | "short-answer";
+          return (
+            <li key={f.id} className="rounded-xl border bg-card p-3">
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <span className="text-small font-semibold text-muted-foreground">
+                  Ý {i + 1}
+                </span>
+                <Controller
+                  control={control}
+                  name={`subQuestions.${i}.type`}
+                  render={({ field }) => (
+                    <div className="flex flex-wrap gap-1">
+                      {GROUP_SUB_TYPES.map((t) => (
+                        <button
+                          key={t.v}
+                          type="button"
+                          onClick={() => field.onChange(t.v)}
+                          className={cn(
+                            "text-meta rounded-md border px-2 py-0.5 font-semibold transition",
+                            field.value === t.v
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-border bg-card text-muted-foreground hover:bg-accent/30",
+                          )}
+                        >
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                />
+                <IconButton
+                  type="button"
+                  aria-label={`Xoá ý ${i + 1}`}
+                  className="ml-auto"
+                  onClick={() => remove(i)}
+                  disabled={fields.length <= 1}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </IconButton>
+              </div>
+
+              <Controller
+                control={control}
+                name={`subQuestions.${i}.content`}
+                render={({ field }) => (
+                  <RichTextField
+                    value={field.value as string}
+                    onChange={field.onChange}
+                    placeholder={`Câu hỏi của ý ${i + 1}`}
+                    invalid={Boolean(errors.subQuestions?.[i]?.content)}
+                  />
+                )}
+              />
+
+              {subType === "short-answer" ? (
+                <div className="mt-2">
+                  <ShortAnswerKeysField
+                    control={control}
+                    name={`subQuestions.${i}.acceptedAnswers`}
+                    error={
+                      (errors.subQuestions?.[i]?.acceptedAnswers?.message ??
+                        errors.subQuestions?.[i]?.message) as string
+                    }
+                  />
+                </div>
+              ) : (
+                <div className="mt-2">
+                  <McqOptionsField
+                    control={control}
+                    setValue={setValue}
+                    mode={subType === "mcq-multi" ? "multi" : "single"}
+                    name={`subQuestions.${i}.options`}
+                    error={
+                      (errors.subQuestions?.[i]?.options?.message ??
+                        errors.subQuestions?.[i]?.message) as string
+                    }
+                  />
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+
+      {typeof errors.subQuestions?.message === "string" && (
+        <p className="text-hint text-destructive">{errors.subQuestions.message}</p>
+      )}
+
+      <Button type="button" variant="outline" size="sm" onClick={addSub}>
+        <Plus className="mr-1.5 h-4 w-4" />
+        Thêm câu hỏi phụ
+      </Button>
+    </div>
+  );
 }

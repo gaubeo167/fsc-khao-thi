@@ -24,7 +24,10 @@ import {
 import type {
   ScoringConfig,
 } from "@/features/exam-shifts/data/types";
-import { pointsByScorePart } from "@/features/exam-shifts/lib/scoring";
+import {
+  pointsByScorePart,
+  questionSlots,
+} from "@/features/exam-shifts/lib/scoring";
 import type {
   Question,
 } from "@/features/question-bank/data/seed-questions";
@@ -412,21 +415,27 @@ function computePerQuestionScoring(
       hard: 2,
     };
     let denom = 0;
-    for (const snap of snapshots) denom += weights[snap.difficulty] ?? 1;
+    for (const snap of snapshots) {
+      denom += (weights[snap.difficulty] ?? 1) * questionSlots(snap as never);
+    }
     if (denom === 0) {
       // Degenerate; fall through to even.
     } else {
       for (const snap of snapshots) {
         const w = weights[snap.difficulty] ?? 1;
-        out[snap.snapshotId] = (scoring.maxScore * w) / denom;
+        out[snap.snapshotId] =
+          (scoring.maxScore * w * questionSlots(snap as never)) / denom;
       }
       return out;
     }
   }
 
-  // "even" (or fallback)
-  const per = scoring.maxScore / n;
-  for (const snap of snapshots) out[snap.snapshotId] = per;
+  // "even" (or fallback). CÂU NHÓM nặng bằng số ý phụ — xem `questionSlots`.
+  const slots = snapshots.reduce((a, s) => a + questionSlots(s as never), 0);
+  const per = scoring.maxScore / (slots || n);
+  for (const snap of snapshots) {
+    out[snap.snapshotId] = per * questionSlots(snap as never);
+  }
   return out;
 }
 

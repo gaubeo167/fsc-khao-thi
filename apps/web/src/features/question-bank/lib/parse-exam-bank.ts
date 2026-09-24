@@ -36,14 +36,15 @@ export type BankQType =
   | "mcq-multi"
   | "multi-tf"
   | "short-answer"
-  | "essay";
+  | "essay"
+  | "group";
 
 export interface ParsedBankQuestion {
   /** Full bracket code as written, e.g. "SI10.02.2.D05.a". */
   rawCode: string;
   /** Chuyên đề code to match against the TOC, e.g. "SI10.02.2". */
   chuyenDeCode: string;
-  typeLetter: "D" | "F" | "S" | "E";
+  typeLetter: "D" | "F" | "S" | "E" | "G";
   seq: string;
   difficulty: BankDifficulty;
   qType: BankQType;
@@ -57,6 +58,13 @@ export interface ParsedBankQuestion {
    *  dạng object khi người soạn ghi thêm % điểm / phản hồi:
    *  `<Key=đáp án|50%|lời nhắc>`. */
   acceptedAnswers: ShortAnswerKey[];
+  /** CÂU NHÓM (mã G): các ý phụ, mỗi ý tự có dạng riêng. */
+  groupSubs: Array<{
+    type: "mcq-single" | "mcq-multi" | "short-answer";
+    content: string;
+    options: Array<{ content: string; isCorrect: boolean }>;
+    acceptedAnswers: ShortAnswerKey[];
+  }>;
   /** Lời giải / hướng dẫn giải / đáp án viết dưới câu hỏi. Với câu tự luận
    *  đây là đáp án mẫu — về sau làm cơ sở cho chấm AI theo rubric. */
   explanation: string;
@@ -78,7 +86,7 @@ export interface ExamBankParseResult {
 // soạn gõ thêm chỉ tổ làm hỏng cả file vì một dấu chấm. Chữ loại nhận cả
 // chữ thường (d01 = D01).
 const CODE_RE =
-  /^\[\s*([A-Za-z]+\d+(?:\.\d+)+)\.([DFSEdfse])(\d+)(?:\.([abcABC]))?\s*\]\s*(.*)$/;
+  /^\[\s*([A-Za-z]+\d+(?:\.\d+)+)\.([DFSEGdfseg])(\d+)(?:\.([abcABC]))?\s*\]\s*(.*)$/;
 /** "Câu 12." viết ngay sau mã — nhãn của đề gốc, không phải nội dung. */
 const LEADING_CAU_RE = /^Câu\s*\d+\s*[.:)]?\s*/i;
 // A bracket that looks like an attempt at a code but doesn't match.
@@ -87,6 +95,10 @@ const OPTION_RE = /^([A-Z])[.)]\s*(.*)$/; // A. …  /  B) …
 // `a) …` và `a. …` — đề thật viết cả hai kiểu. Chỉ dùng cho câu mã `.F`.
 const SUBITEM_RE = /^([a-d])[).]\s*(.*)$/;
 const KEY_RE = /<Key\s*=\s*([^>]*)>/i;
+/** Mở một ý phụ của CÂU NHÓM: `<1> Nội dung câu hỏi phụ`. Dùng ngoặc nhọn
+ *  cho đồng bộ với `<Key=…>` đã có trong khuôn, và để không đụng dòng văn
+ *  xuôi nào của ngữ liệu. */
+const GROUP_SUB_RE = /^<\s*(\d+)\s*>\s*(.*)$/;
 /** Mở đầu phần lời giải viết dưới câu hỏi (hay gặp nhất ở câu tự luận).
  *  Mọi dòng sau đó thuộc về lời giải, tới khi gặp câu kế tiếp. */
 const EXPLANATION_RE =
@@ -176,7 +188,7 @@ export function parseExamBank(marked: string): ExamBankParseResult {
     if (code) {
       flush();
       const chuyenDeCode = code[1]!;
-      const typeLetter = code[2]!.toUpperCase() as "D" | "F" | "S" | "E";
+      const typeLetter = code[2]!.toUpperCase() as "D" | "F" | "S" | "E" | "G";
       const seq = code[3]!;
       const diffLetter = code[4]?.toLowerCase();
       cur = {
@@ -194,10 +206,13 @@ export function parseExamBank(marked: string): ExamBankParseResult {
               ? "short-answer"
               : typeLetter === "E"
                 ? "essay"
-                : "mcq-single", // D — may become mcq-multi in finalize
+                : typeLetter === "G"
+                  ? "group"
+                  : "mcq-single", // D — may become mcq-multi in finalize
         content: "",
         options: [],
         subQuestions: [],
+        groupSubs: [],
         acceptedAnswers: [],
         explanation: "",
         warnings: [],
@@ -228,6 +243,39 @@ export function parseExamBank(marked: string): ExamBankParseResult {
     // the option/sub-item pattern on a marker-free copy.
     const underlined = hasUnderline(line);
     const clean = stripMarkers(line);
+
+    // ── CÂU NHÓM ───────────────────────────────────────────────────────
+    // `<1> …` mở một ý phụ; từ đó mọi phương án A./B. và `<Key=…>` thuộc về
+    // ý đang mở. Mọi dòng TRƯỚC ý đầu tiên là ngữ liệu chung.
+    if (cur.typeLetter === "G") {
+      const open = GROUP_SUB_RE.exec(clean);
+      if (open) {
+        cur.groupSubs.push({
+          type: "mcq-single",
+          content: open[2]!.trim(),
+          options: [],
+          acceptedAnswers: [],
+        });
+        inExplanation = false;
+        continue;
+      }
+      const sub = cur.groupSubs[cur.groupSubs.length - 1];
+      if (sub) {
+        const k = KEY_RE.exec(clean);
+        if (k) {
+          sub.acceptedAnswers.push(parseAnswerKey(k[1]!));
+          continue;
+        }
+        const opt = OPTION_RE.exec(clean);
+        if (opt) {
+          sub.options.push({ content: opt[2]!.trim(), isCorrect: underlined });
+          continue;
+        }
+        // Dòng chữ tiếp theo của chính ý phụ đó (câu hỏi dài hai dòng).
+        sub.content = `${sub.content}\n${clean}`.trim();
+        continue;
+      }
+    }
 
     // Short-answer key — xét TRƯỚC lời giải để `<Key=…>` viết lẫn trong
     // phần lời giải vẫn được nhận là đáp án chấm máy.
@@ -302,6 +350,31 @@ function finalizeQuestion(q: ParsedBankQuestion): void {
     if (q.acceptedAnswers.length === 0) {
       q.warnings.push("Câu trả lời ngắn thiếu <Key=…> đáp án.");
     }
+  } else if (q.typeLetter === "G") {
+    if (q.groupSubs.length === 0) {
+      q.warnings.push("Câu nhóm không có ý phụ nào (thiếu dòng <1>, <2>…).");
+    }
+    q.groupSubs.forEach((sub, i) => {
+      // Dạng của ý SUY RA từ chính nội dung: có <Key=…> là trả lời ngắn,
+      // còn lại đếm số phương án gạch chân — đúng luật của mã D.
+      if (sub.acceptedAnswers.length > 0) {
+        sub.type = "short-answer";
+        if (sub.options.length > 0) {
+          q.warnings.push(`Ý ${i + 1}: vừa có <Key=…> vừa có phương án A/B — đang hiểu là trả lời ngắn.`);
+        }
+        return;
+      }
+      const dung = sub.options.filter((o) => o.isCorrect).length;
+      sub.type = dung >= 2 ? "mcq-multi" : "mcq-single";
+      if (sub.options.length < 2) {
+        q.warnings.push(`Ý ${i + 1}: thiếu phương án (cần ≥2) hoặc thiếu <Key=…>.`);
+      } else if (dung === 0) {
+        q.warnings.push(`Ý ${i + 1}: chưa gạch chân đáp án đúng.`);
+      }
+      if (!sub.content.trim()) {
+        q.warnings.push(`Ý ${i + 1}: thiếu nội dung câu hỏi.`);
+      }
+    });
   }
   if (!q.content.trim()) {
     q.warnings.push("Thiếu nội dung câu hỏi.");

@@ -102,6 +102,46 @@ export const ShortAnswerSchema = BaseFields.extend({
   caseSensitive: z.boolean().default(false),
 });
 
+/** Một ý phụ của CÂU NHÓM — tự nó là một câu hỏi thu nhỏ. */
+const GroupSubSchema = z
+  .object({
+    id: z.string(),
+    type: z.enum(["mcq-single", "mcq-multi", "short-answer"]),
+    content: z.string().trim().min(1, "Câu hỏi phụ không được trống").max(2_000_000),
+    options: z.array(McqOptionSchema).max(8).optional(),
+    acceptedAnswers: z.array(ShortAnswerKeySchema).optional(),
+    caseSensitive: z.boolean().optional(),
+    competencyId: z.string().nullable().optional(),
+    bloomLevel: BloomLevelSchema.optional(),
+  })
+  .superRefine((sub, ctx) => {
+    // Kiểm theo ĐÚNG dạng của từng ý. Không kiểm thì lưu được một ý trắc
+    // nghiệm không có phương án nào — học sinh mở ra thấy câu hỏi trống.
+    if (sub.type === "short-answer") {
+      if (!sub.acceptedAnswers || sub.acceptedAnswers.length === 0) {
+        ctx.addIssue({ code: "custom", message: "Ý trả lời ngắn cần ít nhất 1 đáp án" });
+      }
+      return;
+    }
+    const opts = sub.options ?? [];
+    if (opts.length < 2) {
+      ctx.addIssue({ code: "custom", message: "Ý trắc nghiệm cần tối thiểu 2 phương án" });
+      return;
+    }
+    const dung = opts.filter((o) => o.isCorrect).length;
+    if (sub.type === "mcq-single" && dung !== 1) {
+      ctx.addIssue({ code: "custom", message: "Ý 1 đáp án phải có đúng 1 phương án đúng" });
+    }
+    if (sub.type === "mcq-multi" && dung < 1) {
+      ctx.addIssue({ code: "custom", message: "Ý nhiều đáp án cần ít nhất 1 phương án đúng" });
+    }
+  });
+
+export const QuestionGroupSchema = BaseFields.extend({
+  type: z.literal("group"),
+  subQuestions: z.array(GroupSubSchema).min(1, "Cần ít nhất 1 câu hỏi phụ").max(30),
+});
+
 const DragDropZoneSchema = z.object({
   id: z.string(),
   correctContent: z.string().trim().min(1, "Cần nhập đáp án đúng cho vùng").max(500),
@@ -201,6 +241,7 @@ export const QuestionSchema = z.discriminatedUnion("type", [
   DragDropSchema,
   UnderlineSchema,
   EssaySchema,
+  QuestionGroupSchema,
 ]);
 
 export type QuestionFormValues = z.infer<typeof QuestionSchema>;

@@ -35,6 +35,9 @@ interface Props {
   /** "mcq-single" forces a single correct option (radio); "mcq-multi" allows many. */
   mode: "single" | "multi";
   error?: string;
+  /** Tên trường trong form. Mặc định `options` — câu nhóm truyền
+   *  `subQuestions.0.options` để dùng lại y nguyên ô nhập này. */
+  name?: string;
 }
 
 /**
@@ -43,10 +46,16 @@ interface Props {
  * For "single": clicking the correct toggle on an option unsets the others.
  * For "multi": correct toggles are independent.
  */
-export function McqOptionsField({ control, setValue, mode, error }: Props) {
+export function McqOptionsField({
+  control,
+  setValue,
+  mode,
+  error,
+  name = "options",
+}: Props) {
   const { fields, append, remove } = useFieldArray({
     control,
-    name: "options",
+    name,
   });
   const [aiTarget, setAiTarget] = useState<number | null>(null);
   // Per-option YCCĐ only for mcq-multi (each đáp án may hit a different
@@ -56,7 +65,7 @@ export function McqOptionsField({ control, setValue, mode, error }: Props) {
 
   function setCorrectSingle(index: number) {
     fields.forEach((_, i) =>
-      setValue(`options.${i}.isCorrect`, i === index, {
+      setValue(`${name}.${i}.isCorrect`, i === index, {
         shouldValidate: true,
         shouldDirty: true,
       }),
@@ -117,7 +126,7 @@ export function McqOptionsField({ control, setValue, mode, error }: Props) {
         control={control}
         name={
           aiTarget !== null
-            ? (`options.${aiTarget}.content` as const)
+            ? (`${name}.${aiTarget}.content` as const)
             : ("options.0.content" as const)
         }
         render={({ field }) => (
@@ -162,7 +171,7 @@ function OptionRow({
     <li>
       <Controller
         control={control}
-        name={`options.${idx}.isCorrect`}
+        name={`${name}.${idx}.isCorrect`}
         render={({ field: correctField }) => {
           const isCorrect = Boolean(correctField.value);
           return (
@@ -208,7 +217,7 @@ function OptionRow({
                 <div className="min-w-0 flex-1 space-y-1.5">
                   <Controller
                     control={control}
-                    name={`options.${idx}.content`}
+                    name={`${name}.${idx}.content`}
                     render={({ field: contentField }) => (
                       <WysiwygEditor
                         compact
@@ -225,7 +234,7 @@ function OptionRow({
                   {mode === "multi" && (
                     <Controller
                       control={control}
-                      name={`options.${idx}.competencyId`}
+                      name={`${name}.${idx}.competencyId`}
                       render={({ field: cField }) => (
                         <CompetencyPicker
                           subjectId={subjectId}

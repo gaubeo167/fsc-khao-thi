@@ -224,6 +224,45 @@ export interface UnderlineQuestion extends BaseQuestion {
   type: "underline";
 }
 
+/**
+ * CÂU NHÓM — một đề bài / ngữ liệu dùng chung, nhiều câu hỏi phụ bên dưới.
+ *
+ * Đây là dạng của bài đọc hiểu tiếng Anh, bài toán nhiều ý, chùm câu hỏi
+ * quanh một biểu đồ. Khác `multi-tf` ở chỗ các ý KHÔNG cùng một dạng: ý 1 có
+ * thể trắc nghiệm một đáp án, ý 2 nhiều đáp án, ý 3 trả lời ngắn.
+ *
+ * Vì sao là MỘT bản ghi trong kho chứ không phải nhiều câu trỏ chung ngữ
+ * liệu: đề được bốc theo ma trận, mà ma trận đếm theo câu. Tách ra là có ngày
+ * đề lấy 3 trong 8 câu của cùng một bài đọc, hoặc lấy câu hỏi mà bỏ mất bài
+ * đọc. Gộp một bản ghi thì chuyện đó không xảy ra được.
+ *
+ * Điểm: cụm KHÔNG tính là một câu lẻ. Khi chia điểm, cụm nặng bằng số ý phụ
+ * của nó (xem `questionSlots` trong `features/exam-shifts/lib/scoring.ts`),
+ * nên bài đọc 8 câu ăn 8 phần điểm chứ không phải 1.
+ */
+export type GroupSubType = "mcq-single" | "mcq-multi" | "short-answer";
+
+export interface GroupSub {
+  id: string;
+  type: GroupSubType;
+  /** Đề của riêng ý phụ này. */
+  content: string;
+  /** mcq-single / mcq-multi. */
+  options?: McqOption[];
+  /** short-answer. */
+  acceptedAnswers?: ShortAnswerKey[];
+  caseSensitive?: boolean;
+  /** YCCĐ + Bloom của riêng ý — như `MultiTfSub`, additive và optional. */
+  competencyId?: string | null;
+  bloomLevel?: BloomLevel;
+}
+
+export interface QuestionGroupQuestion extends BaseQuestion {
+  type: "group";
+  /** `content` của BaseQuestion chính là ngữ liệu / đề bài chung. */
+  subQuestions: GroupSub[];
+}
+
 export type Question =
   | McqSingleQuestion
   | McqMultiQuestion
@@ -236,7 +275,8 @@ export type Question =
   | DragDropQuestion
   | UnderlineQuestion
   | EssayQuestion
-  | AiGeneratedQuestion;
+  | AiGeneratedQuestion
+  | QuestionGroupQuestion;
 
 const NOW = "2026-05-14T03:00:00.000Z";
 

@@ -17,6 +17,7 @@ import type { Question } from "@/features/question-bank/data/seed-questions";
 import type { Answer } from "@/features/shift-exam/state/attempts-store";
 
 import { dsRatio } from "./ds-score";
+import { groupAllCorrect, groupRatio } from "./group-score";
 import { matchShortAnswer, normaliseForCompare } from "./short-answer-match";
 
 export function gradeQuestion(
@@ -63,6 +64,13 @@ export function gradeQuestion(
         return b.acceptedAnswers.map(normaliseForCompare).includes(guess);
       });
       return allOk ? { points: 1, correct: true } : { points: 0, correct: false };
+    }
+    case "group": {
+      if (a.kind !== "group") return { points: 0, correct: false };
+      return {
+        points: groupRatio(q.subQuestions, a.answers),
+        correct: groupAllCorrect(q.subQuestions, a.answers),
+      };
     }
     case "multi-tf": {
       if (a.kind !== "multi-tf") return { points: 0, correct: false };
@@ -174,6 +182,20 @@ export function stripAnswers(q: Question): Question {
       return {
         ...q,
         subQuestions: q.subQuestions.map((s) => ({ ...s, correctAnswer: false })),
+      };
+    case "group":
+      // Bóc đáp án của TỪNG ý theo dạng của nó. Quên một dạng ở đây là gửi
+      // thẳng đáp án xuống trình duyệt học sinh.
+      return {
+        ...q,
+        subQuestions: q.subQuestions.map((sub) =>
+          sub.type === "short-answer"
+            ? { ...sub, acceptedAnswers: [] }
+            : {
+                ...sub,
+                options: (sub.options ?? []).map((o) => ({ ...o, isCorrect: false })),
+              },
+        ),
       };
     case "ordering":
       return { ...q, items: seededShuffle(q.items, `ord-${q.id}`) };

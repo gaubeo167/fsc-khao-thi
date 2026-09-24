@@ -18,6 +18,7 @@ import type {
   MultiTfQuestion,
   OrderingQuestion,
   Question,
+  QuestionGroupQuestion,
   ShortAnswerQuestion,
   TrueFalseQuestion,
   UnderlineQuestion,
@@ -48,6 +49,16 @@ export function QuestionRenderer({
   seed,
 }: Props) {
   switch (question.type) {
+    case "group":
+      return (
+        <GroupAnswer
+          q={question}
+          answer={answer}
+          onChange={onChange}
+          disabled={disabled}
+          seed={seed}
+        />
+      );
     case "mcq-single":
       return (
         <McqSingleAnswer
@@ -1209,5 +1220,66 @@ function AiGeneratedInput({
         Câu này sẽ được AI / GV chấm sau khi nộp bài.
       </p>
     </div>
+  );
+}
+
+/**
+ * CÂU NHÓM — ngữ liệu chung đã hiện ở phần đề bài phía trên, ở đây chỉ còn
+ * các ý phụ.
+ *
+ * Mỗi ý dựng thành một câu hỏi thu nhỏ rồi ném lại cho chính
+ * `QuestionRenderer` — ý phụ không bao giờ là câu nhóm nên không có đệ quy vô
+ * hạn, và ô nhập của từng dạng không phải viết lại lần thứ hai.
+ */
+function GroupAnswer({
+  q,
+  answer,
+  onChange,
+  disabled,
+  seed,
+}: {
+  q: QuestionGroupQuestion;
+  answer: Answer | undefined;
+  onChange(a: Answer): void;
+  disabled?: boolean;
+  seed?: string;
+}) {
+  const answers = answer?.kind === "group" ? answer.answers : {};
+  return (
+    <ol className="space-y-4">
+      {q.subQuestions.map((sub, i) => {
+        const subQuestion = {
+          ...q,
+          id: sub.id,
+          type: sub.type,
+          content: sub.content,
+          options: sub.options ?? [],
+          acceptedAnswers: sub.acceptedAnswers ?? [],
+          caseSensitive: sub.caseSensitive ?? false,
+        } as unknown as Question;
+        return (
+          <li key={sub.id} className="rounded-lg border bg-card p-3">
+            {/* Không đặt cỡ chữ cứng ở đây: chữ kế thừa từ khung làm bài,
+                nơi đã chốt mật độ chữ cho màn học sinh (xem DESIGN.md). */}
+            <div className="mb-2 flex items-start gap-2">
+              <span className="font-bold text-foreground/65">{i + 1}.</span>
+              <RenderedContent content={sub.content} className="flex-1 leading-relaxed" />
+            </div>
+            <QuestionRenderer
+              question={subQuestion}
+              answer={answers[sub.id]}
+              onChange={(next) =>
+                onChange({
+                  kind: "group",
+                  answers: { ...answers, [sub.id]: next },
+                })
+              }
+              disabled={disabled}
+              seed={seed ? `${seed}-${sub.id}` : undefined}
+            />
+          </li>
+        );
+      })}
+    </ol>
   );
 }

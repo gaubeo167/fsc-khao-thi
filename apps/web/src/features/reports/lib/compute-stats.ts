@@ -6,6 +6,7 @@
  */
 
 import type { ExamShift } from "@/features/exam-shifts/data/types";
+import { groupAllCorrect } from "@/lib/exam/group-score";
 import {
   matchShortAnswer,
   normaliseForCompare,
@@ -46,6 +47,8 @@ export function isAnswerCorrect(q: Question, a: Answer | undefined): boolean {
         a.kind === "multi-tf" &&
         q.subQuestions.every((s) => a.values[s.id] === s.correctAnswer)
       );
+    case "group":
+      return a.kind === "group" && groupAllCorrect(q.subQuestions, a.answers);
     case "short-answer": {
       if (a.kind !== "short-answer") return false;
       // Module dùng chung với bộ chấm server (chuẩn hoá số, ký tự đại diện,
