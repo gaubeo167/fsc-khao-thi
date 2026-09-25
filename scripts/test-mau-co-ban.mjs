@@ -108,8 +108,8 @@ const drafts = parsed.questions.map((q, i) => draftFromGeneric(q, i));
 
 /* ── Phần hướng dẫn KHÔNG được biến thành câu hỏi ────────────────────── */
 check(
-  "đọc ra đúng 11 câu ví dụ, phần hướng dẫn bị bỏ qua",
-  drafts.length === 11,
+  "đọc ra đúng 12 câu ví dụ, phần hướng dẫn bị bỏ qua",
+  drafts.length === 12,
   `${drafts.length} câu: ${drafts.map((d) => d.type).join(", ")}`,
 );
 
@@ -126,7 +126,19 @@ const MONG_DOI = [
   ["KT", "drag-drop", "medium"],
   ["GCH", "underline", "medium"],
   ["TL", "essay", "hard"],
+  ["NHOM", "group", "medium"],
 ];
+/* Câu nhóm không chỉ cần ĐÚNG DẠNG — thiếu ý phụ thì nó là một cụm rỗng. */
+{
+  const nhom = drafts.find((d) => d.type === "group");
+  check("ví dụ câu nhóm tách đủ 3 ý phụ", (nhom?.groupSubs ?? []).length === 3, String((nhom?.groupSubs ?? []).length));
+  check(
+    "ba ý phụ đúng ba dạng khác nhau",
+    (nhom?.groupSubs ?? []).map((x) => x.type).join(",") === "mcq-single,mcq-multi,short-answer",
+    (nhom?.groupSubs ?? []).map((x) => x.type).join(","),
+  );
+}
+
 MONG_DOI.forEach(([ma, type, muc], i) => {
   const d = drafts[i];
   check(`ví dụ ${i + 1} [${ma}] → ${type}`, d?.type === type, String(d?.type));

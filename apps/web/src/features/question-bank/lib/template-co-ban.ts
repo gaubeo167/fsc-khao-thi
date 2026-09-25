@@ -233,6 +233,12 @@ export function buildBasicTemplate(): Document {
               ["KT", "Kéo thả", "Ghi Vùng 1: … cho từng vùng, Nhiễu: …", "—"],
               ["GCH", "Gạch chân", "Gạch chân cụm đúng ngay trong đề bài", "—"],
               ["TL", "Tự luận", "Không có đáp án máy — giáo viên chấm tay", "E"],
+              [
+                "NHOM",
+                "Câu nhóm (1 đề, nhiều ý)",
+                "Ngữ liệu chung, mỗi ý mở bằng <1>, <2>…",
+                "G",
+              ],
             ],
           ),
           blank(),
@@ -279,7 +285,7 @@ export function buildBasicTemplate(): Document {
            */
           h1("VÍ DỤ CHO TỪNG DẠNG (xoá và thay bằng đề của bạn)"),
           note(
-            "Mười một câu dưới đây theo đúng thứ tự bảng dạng câu ở trên, mỗi câu là một ví dụ hoàn chỉnh chép nguyên được.",
+            "Mười hai câu dưới đây theo đúng thứ tự bảng dạng câu ở trên, mỗi câu là một ví dụ hoàn chỉnh chép nguyên được.",
           ),
           blank(),
 
@@ -363,6 +369,34 @@ export function buildBasicTemplate(): Document {
             "VD",
             "TL",
             "Trình bày suy nghĩ của em về vai trò của việc đọc sách.",
+          ),
+          blank(),
+
+          // Câu nhóm: một ngữ liệu, nhiều ý phụ KHÁC DẠNG NHAU. Dạng của từng
+          // ý tự suy ra nên người soạn không phải khai báo thêm nhãn nào.
+          viDu(
+            12,
+            "TH",
+            "NHOM",
+            "Đọc đoạn thông tin sau và trả lời các câu hỏi bên dưới.",
+          ),
+          plain(
+            "Nước chiếm khoảng 70% khối lượng tế bào. Nước là dung môi hòa tan nhiều chất và tham gia điều hòa nhiệt độ cơ thể.",
+          ),
+          plain("<1> Nước chiếm khoảng bao nhiêu phần trăm khối lượng tế bào?"),
+          p([t("A. "), t("70%.", { underline: true })]),
+          plain("B. 30%."),
+          plain("C. 90%."),
+          plain("D. 50%."),
+          plain("<2> Những vai trò nào sau đây là của nước? (chọn nhiều đáp án)"),
+          p([t("A. "), t("Dung môi hòa tan nhiều chất.", { underline: true })]),
+          p([t("B. "), t("Tham gia điều hòa nhiệt độ cơ thể.", { underline: true })]),
+          plain("C. Mang thông tin di truyền."),
+          plain("D. Xúc tác phản ứng thay cho enzyme."),
+          plain("<3> Nước chiếm bao nhiêu phần trăm khối lượng tế bào? (ghi số)"),
+          plain("<Key=70>"),
+          note(
+            "Câu nhóm: ngữ liệu chung viết ngay dưới dòng “Câu N.”, mỗi câu hỏi phụ mở bằng <1>, <2>… Dạng của từng ý tự nhận ra: có <Key=…> là trả lời ngắn, còn lại đếm phương án gạch chân (1 gạch = một đáp án, từ 2 gạch = nhiều đáp án).",
           ),
           blank(),
           blank(),

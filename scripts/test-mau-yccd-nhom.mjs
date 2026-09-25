@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * Test hồi quy: FILE MẪU mà hộp thoại nhập đề PHÁT RA phải dạy được câu nhóm,
- * và đọc ngược chính file đó phải ra câu nhóm.
+ * Test hồi quy: CẢ HAI file mẫu mà hộp thoại nhập đề phát ra ("Mẫu cơ bản" và
+ * "Mẫu theo mã YCCĐ") phải dạy được câu nhóm, và đọc ngược chính file đó phải
+ * ra câu nhóm.
  *
  * Chạy:  node scripts/test-mau-yccd-nhom.mjs
  *
@@ -98,7 +99,47 @@ if (nhom) {
   check("bản nháp mang đủ 3 ý phụ", draft.groupSubs.length === 3, String(draft.groupSubs.length));
 }
 
-/* ── 2. Bộ nhận dạng khuôn phải chấp nhận chữ G ──────────────────────── */
+/* ── 2. Mẫu CƠ BẢN (nút đầu tiên trong hộp thoại) ────────────────────── */
+//
+// Đây là nút người dùng bấm nhiều nhất — nó đứng trước và dành cho đề soạn
+// nhanh. Mẫu YCCĐ có mà mẫu này thiếu thì phần lớn giáo viên vẫn không thấy
+// dạng câu nhóm ở đâu.
+{
+  const { buildBasicTemplate } = await import(
+    bundle("src/features/question-bank/lib/template-co-ban.ts", "coban.mjs")
+  );
+  const buf2 = await Packer.toBuffer(buildBasicTemplate());
+  const { value: html2 } = await mammoth.convertToHtml(
+    { buffer: buf2 },
+    {
+      styleMap: [
+        "p[style-name='Heading 1'] => h1:fresh",
+        "p[style-name='Heading 2'] => h2:fresh",
+        "u => u",
+      ],
+    },
+  );
+  const marked2 = htmlToMarkedText(html2);
+  check("mẫu cơ bản có nhãn NHOM trong bảng dạng câu", /NHOM/.test(marked2));
+  check("mẫu cơ bản có ví dụ [TH][NHOM]", /\[TH\]\[NHOM\]/.test(marked2));
+  check("mẫu cơ bản có mốc ý phụ <1>", /<\s*1\s*>/.test(marked2));
+
+  const r2 = parseGeneric(marked2);
+  const nhom2 = r2.questions.find((q) => q.typeTag === "group");
+  check("đọc ngược mẫu cơ bản ra được câu nhóm", Boolean(nhom2), `được ${r2.questions.length} câu`);
+  if (nhom2) {
+    check("ngữ liệu chung giữ lại", /70% khối lượng tế bào/.test(nhom2.content));
+    check("tách đúng 3 ý phụ", nhom2.groupSubs.length === 3, String(nhom2.groupSubs.length));
+    check("ý 1 = một đáp án", nhom2.groupSubs[0]?.type === "mcq-single", nhom2.groupSubs[0]?.type);
+    check("ý 2 = nhiều đáp án", nhom2.groupSubs[1]?.type === "mcq-multi", nhom2.groupSubs[1]?.type);
+    check("ý 3 = trả lời ngắn", nhom2.groupSubs[2]?.type === "short-answer", nhom2.groupSubs[2]?.type);
+    const d2 = draftFromGeneric(nhom2, 1);
+    check("bản nháp từ mẫu cơ bản là câu nhóm", d2.type === "group", String(d2.type));
+    check("bản nháp mang đủ 3 ý", d2.groupSubs.length === 3, String(d2.groupSubs.length));
+  }
+}
+
+/* ── 3. Bộ nhận dạng khuôn phải chấp nhận chữ G ──────────────────────── */
 //
 // File chỉ toàn câu nhóm mà bộ nhận dạng không biết chữ G thì nó rơi sang
 // khuôn khác và cả file đọc ra rỗng — tính năng có mà không ai dùng được.
