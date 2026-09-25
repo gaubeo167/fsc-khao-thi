@@ -405,6 +405,7 @@ function genericType(
   correct: number,
 ): QuestionType | null {
   if (q.typeTag) return q.typeTag;
+  if (q.typeLetter === "G") return "group";
   if (q.typeLetter === "F") return "multi-tf";
   if (q.typeLetter === "S") return "short-answer";
   if (q.typeLetter === "E") return "essay";
@@ -447,8 +448,12 @@ export function draftFromGeneric(
           : q.content,
     options: q.options.map((o) => ({ content: o.content, isCorrect: o.isCorrect })),
     subQuestions: q.subQuestions ?? [],
-    // Parser đề tự soạn chưa đọc câu nhóm — chỉ khuôn mã bank (chữ G) có.
-    groupSubs: [],
+    groupSubs: (q.groupSubs ?? []).map((sub) => ({
+      type: sub.type,
+      content: sub.content,
+      options: sub.options.map((o) => ({ content: o.content, isCorrect: o.isCorrect })),
+      acceptedAnswers: sub.acceptedAnswers,
+    })),
     acceptedAnswers: q.acceptedAnswers ?? [],
     correctAnswer: q.correctAnswer ?? null,
     blanks: q.blanks ?? [],

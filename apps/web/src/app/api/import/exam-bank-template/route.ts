@@ -47,7 +47,7 @@ export async function GET() {
           ]),
           p([
             t(
-              "• Loại: D = Trắc nghiệm, F = Đúng/Sai, S = Trả lời ngắn, E = Tự luận.",
+              "• Loại: D = Trắc nghiệm, F = Đúng/Sai, S = Trả lời ngắn, E = Tự luận, G = Câu nhóm (1 đề bài, nhiều ý).",
             ),
           ]),
           p([
@@ -62,6 +62,11 @@ export async function GET() {
           ]),
           p([
             t("• Câu Trả lời ngắn: ghi đáp án trong <Key=…> ngay dưới câu hỏi."),
+          ]),
+          p([
+            t(
+              "• Câu nhóm (G): ngữ liệu chung viết ngay sau mã, mỗi câu hỏi phụ mở bằng <1>, <2>… Dạng của từng ý tự nhận ra: có <Key=…> là trả lời ngắn, còn lại đếm phương án gạch chân (1 gạch = một đáp án, ≥2 gạch = nhiều đáp án).",
+            ),
           ]),
           p([
             t(
@@ -127,6 +132,34 @@ export async function GET() {
               "- Ứng dụng công nghệ sinh học giúp tăng năng suất mà giảm tác động môi trường.",
             ),
           ]),
+          p([t("")]),
+
+          // G — câu nhóm: một ngữ liệu, nhiều ý phụ khác dạng nhau
+          p([
+            t("[SI10.02.2.G01] ", { bold: true }),
+            t("Đọc đoạn thông tin sau và trả lời các câu hỏi bên dưới."),
+          ]),
+          p([
+            t(
+              "Nước chiếm khoảng 70% khối lượng tế bào. Nước là dung môi hòa tan nhiều chất và tham gia điều hòa nhiệt độ cơ thể.",
+            ),
+          ]),
+          p([t("<1> Nước chiếm khoảng bao nhiêu phần trăm khối lượng tế bào?")]),
+          p([t("A. 30%.")]),
+          p([t("B. "), t("70%.", { underline: true })]),
+          p([t("C. 90%.")]),
+          p([t("D. 50%.")]),
+          p([
+            t(
+              "<2> Những vai trò nào sau đây là của nước trong tế bào? (chọn nhiều đáp án)",
+            ),
+          ]),
+          p([t("A. "), t("Dung môi hòa tan nhiều chất.", { underline: true })]),
+          p([t("B. "), t("Tham gia điều hòa nhiệt độ cơ thể.", { underline: true })]),
+          p([t("C. Mang thông tin di truyền.")]),
+          p([t("D. Xúc tác phản ứng thay cho enzyme.")]),
+          p([t("<3> Nước chiếm bao nhiêu phần trăm khối lượng tế bào? (ghi số)")]),
+          p([t("<Key=70>")]),
         ],
       },
     ],

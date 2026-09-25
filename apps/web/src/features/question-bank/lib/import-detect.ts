@@ -31,7 +31,7 @@ export interface DetectResult {
 }
 
 /** `[SI10.02.2.D05.a] …` — dòng mở đầu câu của khuôn "mã đề". */
-const MA_DE_RE = /^\s*\[\s*[A-Za-z]+\d+(?:\.\d+)+\.[DFSEdfse]\d+(?:\.[abcABC])?\s*\]/;
+const MA_DE_RE = /^\s*\[\s*[A-Za-z]+\d+(?:\.\d+)+\.[DFSEGdfseg]\d+(?:\.[abcABC])?\s*\]/;
 
 /** `# Câu 1`, `=== CÂU 1 ===`, `Câu 1`, `Câu 1:` — mở đầu câu khuôn FSC. */
 const FSC_HEADER_RE =

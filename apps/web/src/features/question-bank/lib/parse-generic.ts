@@ -40,6 +40,13 @@ export interface GenericQuestion {
   options: GenericOption[];
   /** Ý con của câu Đúng/Sai (mã .F) — gạch chân = Đúng. */
   subQuestions: Array<{ statement: string; correctAnswer: boolean }>;
+  /** CÂU NHÓM (mã G): các ý phụ, mỗi ý tự có dạng riêng. */
+  groupSubs: Array<{
+    type: "mcq-single" | "mcq-multi" | "short-answer";
+    content: string;
+    options: Array<{ content: string; isCorrect: boolean }>;
+    acceptedAnswers: ShortAnswerKey[];
+  }>;
   /** Đáp án câu trả lời ngắn (mã .S), đọc từ `<Key=…>`. */
   acceptedAnswers: ShortAnswerKey[];
   /** Đúng/Sai MỘT mệnh đề (mã DS): `Đáp án: Đúng`. */
@@ -68,7 +75,7 @@ export interface GenericQuestion {
    * ngắn KHÔNG có A/B/C/D nào để đếm, nên nếu bỏ chữ này thì đúng những câu
    * đó ra "chưa nhận ra dạng" dù đề đã ghi rõ loại ngay trong mã.
    */
-  typeLetter: "D" | "F" | "S" | "E" | null;
+  typeLetter: "D" | "F" | "S" | "E" | "G" | null;
   /**
    * Dạng câu đọc từ nhãn `[TN]` / `[DS]` / `[TLN]` / `[TL]` — dành cho đề
    * KHÔNG có mã YCCĐ. Xem bảng nhãn ở `TYPE_TOKENS`.
@@ -98,7 +105,7 @@ const NUMBERED_RE = /^\s*(\d{1,3})\s*[.)]\s*(.*)$/;
 
 /** Mã chuyên đề `[SI10.02.15.D01]`, đứng ở BẤT KỲ đâu trong dòng. */
 const CODE_ANYWHERE_RE =
-  /\[\s*([A-Za-z]+\d+(?:\.\d+)+\.[DFSEdfse]\d+(?:\.[abcABC])?)\s*\]/;
+  /\[\s*([A-Za-z]+\d+(?:\.\d+)+\.[DFSEGdfseg]\d+(?:\.[abcABC])?)\s*\]/;
 
 /** Dòng mở đầu bằng mã — khuôn "mã đề" nhưng không có chữ Câu. */
 const CODE_AT_START_RE = /^\s*\[\s*[A-Za-z]+\d+(?:\.\d+)+\.[DFSEdfse]\d+/;
@@ -131,6 +138,10 @@ const SUBITEM_RE = /^\s*([a-dA-D])[).]\s*(.*)$/;
 
 /** Đáp án trả lời ngắn: `<Key=42>` hoặc `<Key=42|50%|gợi ý>`. */
 const KEY_RE = /<Key\s*=\s*([^>]*)>/i;
+
+/** CÂU NHÓM: `<1> Nội dung câu hỏi phụ` mở một ý. Dùng ngoặc nhọn cho đồng bộ
+ *  với `<Key=…>` đã có trong khuôn, và để không đụng dòng văn xuôi nào. */
+const GROUP_SUB_RE = /^\s*<\s*(\d+)\s*>\s*(.*)$/;
 
 /* ── Dòng dữ liệu của các dạng câu có cấu trúc ────────────────────────────
  *
@@ -242,7 +253,8 @@ export type GenericTypeTag =
   | "ordering"
   | "drag-drop"
   | "underline"
-  | "essay";
+  | "essay"
+  | "group";
 
 const TYPE_TOKENS: Record<string, GenericTypeTag> = {
   // Trắc nghiệm
@@ -267,7 +279,28 @@ const TYPE_TOKENS: Record<string, GenericTypeTag> = {
   // Chấm tay
   TL: "essay",
   E: "essay",
+  // Câu nhóm: một đề bài, nhiều ý phụ khác dạng nhau
+  G: "group",
+  NHOM: "group",
 };
+
+/**
+ * Dạng của từng ý phụ SUY RA từ nội dung, người soạn không phải khai báo:
+ * có `<Key=…>` là trả lời ngắn, còn lại đếm số phương án gạch chân — đúng
+ * luật của mã D.
+ */
+function finalizeGroupSubs(
+  subs: GenericQuestion["groupSubs"],
+): GenericQuestion["groupSubs"] {
+  for (const sub of subs) {
+    if (sub.acceptedAnswers.length > 0) {
+      sub.type = "short-answer";
+      continue;
+    }
+    sub.type = sub.options.filter((o) => o.isCorrect).length >= 2 ? "mcq-multi" : "mcq-single";
+  }
+  return subs;
+}
 
 /** Một cụm ngoặc vuông bất kỳ, ngắn — đủ dài cho `[NB-TLN]`, không nuốt cả câu. */
 const TAG_GROUP_RE = /\[([^[\]]{1,24})\]/g;
@@ -681,6 +714,7 @@ function parseBlock(
   const contentLines: string[] = [];
   const options: GenericOption[] = [];
   const subQuestions: GenericQuestion["subQuestions"] = [];
+  const groupSubs: GenericQuestion["groupSubs"] = [];
   /** Chỉ số ý Đúng/Sai đang chờ nội dung ở dòng kế tiếp. */
   let pendingSub: number | null = null;
   const acceptedAnswers: ShortAnswerKey[] = [];
@@ -711,8 +745,8 @@ function parseBlock(
     const codeM = line.match(CODE_ANYWHERE_RE);
     if (codeM && !rawCode) {
       rawCode = codeM[1];
-      chuyenDeCode = codeM[1].replace(/\.[DFSEdfse]\d+(?:\.[abcABC])?$/, "");
-      const lm = codeM[1].match(/\.([DFSEdfse])\d+(?:\.[abcABC])?$/);
+      chuyenDeCode = codeM[1].replace(/\.[DFSEGdfseg]\d+(?:\.[abcABC])?$/, "");
+      const lm = codeM[1].match(/\.([DFSEGdfseg])\d+(?:\.[abcABC])?$/);
       if (lm) {
         typeLetter = lm[1].toUpperCase() as GenericQuestion["typeLetter"];
       }
@@ -785,6 +819,48 @@ function parseBlock(
     if (inExplanation) {
       explanationLines.push(line);
       return;
+    }
+
+    // ── CÂU NHÓM (mã .G) ───────────────────────────────────────────────
+    // `<1> …` mở một ý phụ; từ đó phương án A./B. và `<Key=…>` thuộc về ý
+    // đang mở. Mọi dòng TRƯỚC ý đầu tiên là ngữ liệu chung.
+    if (typeLetter === "G" || typeTag === "group") {
+      const { clean, marked } = stripUnderline(line);
+      const open = GROUP_SUB_RE.exec(clean);
+      if (open) {
+        groupSubs.push({
+          type: "mcq-single",
+          content: (open[2] ?? "").trim(),
+          options: [],
+          acceptedAnswers: [],
+        });
+        return;
+      }
+      const sub = groupSubs[groupSubs.length - 1];
+      if (sub) {
+        const k = KEY_RE.exec(clean);
+        if (k) {
+          sub.acceptedAnswers.push(parseAnswerKey(k[1]!));
+          return;
+        }
+        const opts = splitOptions(line);
+        if (opts.length > 0) {
+          for (const o of opts) {
+            sub.options.push({ content: o.text, isCorrect: o.underlined });
+          }
+          return;
+        }
+        // Câu hỏi của ý viết dài hai dòng.
+        const more = clean.trim();
+        if (more) {
+          sub.content = `${sub.content}\n${more}`.trim();
+          if (marked.some(Boolean)) {
+            // Gạch chân nằm ở dòng nội dung của ý — không phải phương án.
+          }
+          return;
+        }
+        return;
+      }
     }
 
     // Đáp án trả lời ngắn: xét TRƯỚC lời giải, để `<Key=…>` viết lẫn trong
@@ -887,6 +963,7 @@ function parseBlock(
     chuyenDeCode,
     rawCode,
     typeLetter,
+    groupSubs: finalizeGroupSubs(groupSubs),
     typeTag,
     difficulty,
     warnings: w,
